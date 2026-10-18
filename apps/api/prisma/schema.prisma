@@ -20,12 +20,50 @@ model Quiz {
 }
 
 model Question {
-  id            Int      @id @default(autoincrement())
-  quizId        Int
-  text          String
-  options       Json
+  id           Int         @id @default(autoincrement())
+  quizId       Int
+  answerPoolId Int?
+  text         String
+  options      Json
   correctAnswer String
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  quiz          Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  quiz         Quiz        @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  answerPool   AnswerPool? @relation(fields: [answerPoolId], references: [id], onDelete: SetNull)
+
+  @@index([answerPoolId])
+}
+
+model CommonQuestion {
+  id           Int         @id @default(autoincrement())
+  answerPoolId Int?
+  text         String
+  options      Json
+  correctAnswer String
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  answerPool   AnswerPool? @relation(fields: [answerPoolId], references: [id], onDelete: SetNull)
+
+  @@index([answerPoolId])
+}
+
+model AnswerPool {
+  id              Int                 @id @default(autoincrement())
+  name            String              @unique
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  answers         AnswerPoolAnswer[]
+  questions       Question[]
+  commonQuestions CommonQuestion[]
+}
+
+model AnswerPoolAnswer {
+  id           Int        @id @default(autoincrement())
+  answerPoolId Int
+  value        String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  answerPool   AnswerPool @relation(fields: [answerPoolId], references: [id], onDelete: Cascade)
+
+  @@unique([answerPoolId, value])
 }
