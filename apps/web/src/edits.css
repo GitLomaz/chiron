@@ -1,0 +1,66 @@
+.card-edit {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 8px 11px;
+  border: 1px solid #d5e3f9;
+  border-radius: 7px;
+  background: #eaf1fd;
+  color: #2f67b8;
+  font-size: .72rem;
+  font-weight: 800;
+  transition: background-color .15s, border-color .15s;
+}
+
+.card-edit:hover {
+  background: #dce9fc;
+  border-color: #bdd4f4;
+}
+
+.card-edit:focus-visible {
+  outline: 3px solid #ddebff;
+  outline-offset: 2px;
+}
+
+.pool-summary {
+  display: block;
+  margin: 10px 0 2px;
+  color: #647997;
+  font-size: .68rem;
+  font-weight: 700;
+}
+
+.quiz-settings {
+  margin: -12px 0 20px;
+  padding: 16px 20px;
+}
+
+.checkbox-label {
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 11px;
+  cursor: pointer;
+}
+
+.checkbox-label input {
+  width: 17px;
+  height: 17px;
+  margin: 1px 0 0;
+  accent-color: #2f67b8;
+}
+
+.checkbox-label span {
+  display: grid;
+  gap: 3px;
+}
+
+.checkbox-label strong {
+  color: #34435c;
+  font-size: .78rem;
+}
+
+.checkbox-label small {
+  color: #77859b;
+  font-size: .7rem;
+  font-weight: 500;
+  line-height: 1.45;
+}

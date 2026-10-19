@@ -12,6 +12,7 @@ model Quiz {
   guid        String     @unique @default(uuid()) @db.Uuid
   title       String
   description String?
+  randomizeQuestionOrder Boolean @default(false)
   startedAt   DateTime   @default(now())
   endedAt     DateTime?
   createdAt   DateTime   @default(now())
@@ -23,6 +24,7 @@ model Question {
   id           Int         @id @default(autoincrement())
   quizId       Int
   answerPoolId Int?
+  answerCount  Int?
   text         String
   options      Json
   correctAnswer String
@@ -37,6 +39,7 @@ model Question {
 model CommonQuestion {
   id           Int         @id @default(autoincrement())
   answerPoolId Int?
+  answerCount  Int?
   text         String
   options      Json
   correctAnswer String

@@ -33,13 +33,17 @@ A minimal quiz-management foundation built as an npm-workspaces monorepo.
    npm run db:migrate
    ```
 
-4. Start both applications:
+4. Start the admin app, API, and student player:
 
    ```sh
    npm run dev
    ```
 
-   The frontend is served at `http://localhost:5173`; the API is at `http://localhost:3000` and `GET /health` returns its status.
+   The admin app is served at `http://localhost:5173`, the student player at `http://localhost:5174`, and the API is at `http://localhost:3000` (`GET /health` returns its status).
+
+## Student quiz player
+
+Share a quiz using its UUID at `http://localhost:5174/quiz/<quiz-guid>`. The student player also accepts the UUID in its join field. It only reads `GET /play/:guid`; scores and answers remain in the student's browser and are not submitted or stored.
 
 ## Commands
 

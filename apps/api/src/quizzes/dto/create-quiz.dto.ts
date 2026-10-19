@@ -1,4 +1,4 @@
-import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class CreateQuizDto {
   @IsString()
@@ -10,4 +10,8 @@ export class CreateQuizDto {
   @IsString()
   @MaxLength(2000)
   description?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  randomizeQuestionOrder?: boolean;
 }

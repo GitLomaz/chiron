@@ -3,6 +3,8 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { CreateQuizDto } from './dto/create-quiz.dto';
+import { UpdateQuizDto } from './dto/update-quiz.dto';
+import { CreateAnswerPoolDto } from './dto/create-answer-pool.dto';
 
 @Injectable()
 export class QuizzesService {
@@ -25,36 +27,164 @@ export class QuizzesService {
     return quiz;
   }
 
-  create({ title, description }: CreateQuizDto) {
+  create({ title, description, randomizeQuestionOrder }: CreateQuizDto) {
     if (!title.trim()) {
       throw new BadRequestException('title cannot be blank');
     }
 
     return this.prisma.quiz.create({
-      data: { title: title.trim(), description: description?.trim() || null },
+      data: {
+        title: title.trim(),
+        description: description?.trim() || null,
+        randomizeQuestionOrder: randomizeQuestionOrder ?? false,
+      },
+    });
+  }
+
+  async update(id: number, { randomizeQuestionOrder }: UpdateQuizDto) {
+    await this.findOne(id);
+    return this.prisma.quiz.update({
+      where: { id },
+      data: { randomizeQuestionOrder },
     });
   }
 
   async addQuestion(quizId: number, question: CreateQuestionDto) {
     await this.findOne(quizId);
-    const options = question.options.map((option) => option.trim());
-    const correctAnswer = question.correctAnswer.trim();
-
-    if (!question.text.trim() || options.some((option) => !option) || !correctAnswer) {
-      throw new BadRequestException('Question text and answer options cannot be blank');
-    }
-
-    if (!options.includes(correctAnswer)) {
-      throw new BadRequestException('correctAnswer must match one of the provided options');
-    }
+    const { text, correctAnswer, options, answerPoolId, answerCount } = await this.prepareQuestion(question);
 
     return this.prisma.question.create({
       data: {
         quizId,
-        text: question.text.trim(),
+        text,
         options: options as Prisma.InputJsonValue,
         correctAnswer,
+        answerPoolId,
+        answerCount,
       },
     });
+  }
+
+  async updateQuestion(quizId: number, questionId: number, question: CreateQuestionDto) {
+    const existing = await this.prisma.question.findFirst({ where: { id: questionId, quizId } });
+    if (!existing) throw new NotFoundException(`Question ${questionId} was not found in quiz ${quizId}`);
+    const { text, correctAnswer, options, answerPoolId, answerCount } = await this.prepareQuestion(question);
+    return this.prisma.question.update({
+      where: { id: questionId },
+      data: { text, correctAnswer, options: options as Prisma.InputJsonValue, answerPoolId, answerCount },
+    });
+  }
+
+  findCommonQuestions() {
+    return this.prisma.commonQuestion.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: { answerPool: { include: { answers: { orderBy: { value: 'asc' } } } } },
+    });
+  }
+
+  async createCommonQuestion(question: CreateQuestionDto) {
+    const { text, correctAnswer, options, answerPoolId, answerCount } = await this.prepareQuestion(question);
+    return this.prisma.commonQuestion.create({
+      data: { text, correctAnswer, options: options as Prisma.InputJsonValue, answerPoolId, answerCount },
+      include: { answerPool: { include: { answers: true } } },
+    });
+  }
+
+  async updateCommonQuestion(id: number, question: CreateQuestionDto) {
+    const existing = await this.prisma.commonQuestion.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException(`Common question ${id} was not found`);
+    const { text, correctAnswer, options, answerPoolId, answerCount } = await this.prepareQuestion(question);
+    return this.prisma.commonQuestion.update({
+      where: { id },
+      data: { text, correctAnswer, options: options as Prisma.InputJsonValue, answerPoolId, answerCount },
+      include: { answerPool: { include: { answers: true } } },
+    });
+  }
+
+  findAnswerPools() {
+    return this.prisma.answerPool.findMany({
+      orderBy: { name: 'asc' },
+      include: { answers: { orderBy: { value: 'asc' } }, _count: { select: { questions: true, commonQuestions: true } } },
+    });
+  }
+
+  async createAnswerPool(pool: CreateAnswerPoolDto) {
+    const name = pool.name.trim();
+    const answers = this.cleanUnique(pool.answers);
+    if (!name || !answers.length) throw new BadRequestException('A pool name and at least one answer are required');
+    return this.prisma.answerPool.create({
+      data: { name, answers: { create: answers.map((value) => ({ value })) } },
+      include: { answers: true, _count: { select: { questions: true, commonQuestions: true } } },
+    });
+  }
+
+  async updateAnswerPool(id: number, pool: CreateAnswerPoolDto) {
+    const name = pool.name.trim();
+    const answers = this.cleanUnique(pool.answers);
+    if (!name || !answers.length) throw new BadRequestException('A pool name and at least one answer are required');
+    const existing = await this.prisma.answerPool.findUnique({
+      where: { id },
+      include: {
+        questions: { select: { correctAnswer: true, answerCount: true } },
+        commonQuestions: { select: { correctAnswer: true, answerCount: true } },
+      },
+    });
+    if (!existing) throw new NotFoundException(`Answer pool ${id} was not found`);
+    const invalidQuestion = [...existing.questions, ...existing.commonQuestions].find((question) => {
+      if (!question.answerCount) return false;
+      const availableAnswers = answers.includes(question.correctAnswer) ? answers.length : answers.length + 1;
+      return question.answerCount > availableAnswers;
+    });
+    if (invalidQuestion) {
+      throw new BadRequestException('This pool would not contain enough answers for a question that already uses it');
+    }
+    return this.prisma.answerPool.update({
+      where: { id },
+      data: { name, answers: { deleteMany: {}, create: answers.map((value) => ({ value })) } },
+      include: { answers: { orderBy: { value: 'asc' } }, _count: { select: { questions: true, commonQuestions: true } } },
+    });
+  }
+
+  async addCommonQuestion(quizId: number, commonQuestionId: number) {
+    await this.findOne(quizId);
+    const commonQuestion = await this.prisma.commonQuestion.findUnique({ where: { id: commonQuestionId } });
+    if (!commonQuestion) throw new NotFoundException(`Common question ${commonQuestionId} was not found`);
+    return this.prisma.question.create({
+      data: {
+        quizId,
+        text: commonQuestion.text,
+        options: commonQuestion.options as Prisma.InputJsonValue,
+        correctAnswer: commonQuestion.correctAnswer,
+        answerPoolId: commonQuestion.answerPoolId,
+        answerCount: commonQuestion.answerCount,
+      },
+    });
+  }
+
+  private async prepareQuestion(question: CreateQuestionDto) {
+    const text = question.text.trim();
+    const correctAnswer = question.correctAnswer.trim();
+    if (!text || !correctAnswer) throw new BadRequestException('Question text and the correct answer cannot be blank');
+
+    let wrongAnswers = this.cleanUnique(question.wrongAnswers ?? []).filter((answer) => answer !== correctAnswer);
+    let answerCount: number | null = null;
+    if (question.answerPoolId) {
+      const pool = await this.prisma.answerPool.findUnique({
+        where: { id: question.answerPoolId }, include: { answers: true },
+      });
+      if (!pool) throw new NotFoundException(`Answer pool ${question.answerPoolId} was not found`);
+      wrongAnswers = pool.answers.map((answer) => answer.value).filter((answer) => answer !== correctAnswer);
+      if (!question.answerCount) throw new BadRequestException('Number of answers shown is required when using an answer pool');
+      if (question.answerCount > wrongAnswers.length + 1) {
+        throw new BadRequestException(`Number of answers shown cannot exceed ${wrongAnswers.length + 1} for this answer pool`);
+      }
+      answerCount = question.answerCount;
+    }
+    if (wrongAnswers.length < 1) throw new BadRequestException('Provide at least one wrong answer or select an answer pool');
+    return { text, correctAnswer, options: this.cleanUnique([correctAnswer, ...wrongAnswers]), answerPoolId: question.answerPoolId, answerCount };
+  }
+
+  private cleanUnique(values: string[]) {
+    return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
   }
 }
