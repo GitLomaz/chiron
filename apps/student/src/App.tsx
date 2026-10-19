@@ -16,6 +16,7 @@ type Quiz = {
   guid: string;
   title: string;
   description: string | null;
+  theme: 'standard' | 'kids';
   questions: QuizQuestion[];
 };
 
@@ -205,5 +206,5 @@ export default function App() {
   if (!guid) return <Welcome />;
   if (loading) return <main className="page status-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><div className="loader" aria-label="Loading quiz" /><p>Loading your quiz…</p></main>;
   if (error || !quiz) return <main className="page status-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><section className="error-card"><p className="eyebrow">QUIZ UNAVAILABLE</p><h1>We couldn’t open that quiz.</h1><p>{error || 'Try pasting the quiz ID again.'}</p><QuizCodeForm initialCode={guid} onSubmit={goToQuiz} /><button className="text-button" onClick={() => goToQuiz('')}>Use another quiz</button></section></main>;
-  return <Player key={quiz.guid} quiz={quiz} />;
+  return <div className={`student-app theme-${quiz.theme}`}><Player key={quiz.guid} quiz={quiz} /></div>;
 }

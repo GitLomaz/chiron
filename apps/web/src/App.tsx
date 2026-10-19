@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
-type Quiz = { id: number; guid: string; title: string; description: string | null; randomizeQuestionOrder: boolean; _count?: { questions: number } };
-type Question = { id: number; text: string; options: string[]; correctAnswer: string; answerPoolId?: number | null; answerCount?: number | null };
+type QuizTheme = 'standard' | 'kids';
+type Quiz = { id: number; guid: string; title: string; description: string | null; randomizeQuestionOrder: boolean; theme: QuizTheme; _count?: { questions: number } };
+type Question = { id: number; text: string; options: string[]; correctAnswer: string; answerPoolId?: number | null; answerCount?: number | null; answerPool?: { name: string } | null };
 type QuizDetail = Quiz & { questions: Question[] };
 type AnswerPool = { id: number; name: string; answers: { id: number; value: string }[]; _count?: { questions: number; commonQuestions: number } };
 type CommonQuestion = Question & { answerPool?: AnswerPool | null };
@@ -131,6 +132,22 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
     }
   }
 
+  async function updateTheme(theme: QuizTheme) {
+    setSavingSettings(true);
+    setError('');
+    try {
+      const updatedQuiz = await request<Quiz>(`/quizzes/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ theme }),
+      });
+      setQuiz((current) => current ? { ...current, theme: updatedQuiz.theme } : current);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update quiz settings');
+    } finally {
+      setSavingSettings(false);
+    }
+  }
+
   async function copyStudentLink() {
     if (!quiz) return;
     try {
@@ -149,10 +166,13 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
     <button className="back-link" onClick={() => go('/quizzes')}>Back to quizzes</button>
     <PageHeading eyebrow="QUIZ EDITOR" title={quiz.title} description={quiz.description || 'No description has been added to this quiz.'} action={<button className="subtle-button" onClick={() => void copyStudentLink()}>{shareCopied ? 'Student link copied' : 'Copy student link'}</button>} />
     <section className="surface quiz-settings">
-      <label className="checkbox-label">
-        <input type="checkbox" checked={quiz.randomizeQuestionOrder} disabled={savingSettings} onChange={(event) => void updateQuestionOrder(event.target.checked)} />
-        <span><strong>Randomize question order</strong><small>Students receive the quiz questions in a different order each time it is opened.</small></span>
-      </label>
+      <div className="quiz-settings-grid">
+        <label className="checkbox-label">
+          <input type="checkbox" checked={quiz.randomizeQuestionOrder} disabled={savingSettings} onChange={(event) => void updateQuestionOrder(event.target.checked)} />
+          <span><strong>Randomize question order</strong><small>Students receive the quiz questions in a different order each time it is opened.</small></span>
+        </label>
+        <label className="theme-select"><span><strong>Student theme</strong><small>Choose the visual style students see while taking this quiz.</small></span><select value={quiz.theme} disabled={savingSettings} onChange={(event) => void updateTheme(event.target.value as QuizTheme)}><option value="standard">Standard</option><option value="kids">Kid-friendly</option></select></label>
+      </div>
     </section>
     {error && <p className="error">{error}</p>}
     <div className="editor-grid">
@@ -162,10 +182,8 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
           {quiz.questions.map((question, index) => <li key={question.id}>
             <span className="question-number">{String(index + 1).padStart(2, '0')}</span>
             <div>
-              <strong>{question.text}</strong>
-              <div className="answer-chips">{question.options.map((answer) => <span className={answer === question.correctAnswer ? 'answer-chip correct' : 'answer-chip'} key={answer}>{answer === question.correctAnswer && 'Correct: '}{answer}</span>)}</div>
-              {question.answerPoolId && <small className="pool-summary">Answer pool · shows {question.answerCount ?? 'all'} answers</small>}
-              <button className="card-edit" onClick={() => setEditing(question)}>Edit question</button>
+              <div className="question-row-head"><strong>{question.text}</strong><button className="card-edit" onClick={() => setEditing(question)}>Edit question</button></div>
+              {question.answerPool ? <div className="answer-chips"><span className="answer-chip correct">Correct: {question.correctAnswer}</span><span className="answer-pool-badge">Answer pool: {question.answerPool.name}</span></div> : <div className="answer-chips">{question.options.map((answer) => <span className={answer === question.correctAnswer ? 'answer-chip correct' : 'answer-chip'} key={answer}>{answer === question.correctAnswer && 'Correct: '}{answer}</span>)}</div>}
             </div>
           </li>)}
         </ol>}

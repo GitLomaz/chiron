@@ -13,6 +13,7 @@ model Quiz {
   title       String
   description String?
   randomizeQuestionOrder Boolean @default(false)
+  theme       String     @default("standard")
   startedAt   DateTime   @default(now())
   endedAt     DateTime?
   createdAt   DateTime   @default(now())

@@ -20,14 +20,19 @@ export class QuizzesService {
   async findOne(id: number) {
     const quiz = await this.prisma.quiz.findUnique({
       where: { id },
-      include: { questions: { orderBy: { createdAt: 'asc' } } },
+      include: {
+        questions: {
+          orderBy: { createdAt: 'asc' },
+          include: { answerPool: { select: { name: true } } },
+        },
+      },
     });
 
     if (!quiz) throw new NotFoundException(`Quiz ${id} was not found`);
     return quiz;
   }
 
-  create({ title, description, randomizeQuestionOrder }: CreateQuizDto) {
+  create({ title, description, randomizeQuestionOrder, theme }: CreateQuizDto) {
     if (!title.trim()) {
       throw new BadRequestException('title cannot be blank');
     }
@@ -37,15 +42,16 @@ export class QuizzesService {
         title: title.trim(),
         description: description?.trim() || null,
         randomizeQuestionOrder: randomizeQuestionOrder ?? false,
+        theme: theme ?? 'standard',
       },
     });
   }
 
-  async update(id: number, { randomizeQuestionOrder }: UpdateQuizDto) {
+  async update(id: number, { randomizeQuestionOrder, theme }: UpdateQuizDto) {
     await this.findOne(id);
     return this.prisma.quiz.update({
       where: { id },
-      data: { randomizeQuestionOrder },
+      data: { randomizeQuestionOrder, theme },
     });
   }
 

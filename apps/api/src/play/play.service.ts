@@ -13,6 +13,7 @@ export class PlayService {
         title: true,
         description: true,
         randomizeQuestionOrder: true,
+        theme: true,
         questions: {
           orderBy: { createdAt: 'asc' },
           select: {
