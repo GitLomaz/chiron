@@ -1,0 +1,204 @@
+.student-app {
+  min-height: 100vh;
+}
+
+/* Give every active quiz a roomier, more legible full-screen layout. */
+.student-app .quiz-page {
+  width: 100%;
+  max-width: none;
+  min-height: 100vh;
+  padding: clamp(24px, 4vw, 56px) clamp(22px, 6vw, 96px);
+}
+
+.student-app .quiz-header,
+.student-app .progress {
+  max-width: 1280px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.student-app .quiz-header {
+  margin-bottom: clamp(24px, 4vh, 48px);
+}
+
+.student-app .progress {
+  height: 8px;
+  margin-bottom: clamp(28px, 5vh, 60px);
+}
+
+.student-app .question-card {
+  display: flex;
+  width: min(100%, 1180px);
+  min-height: min(700px, calc(100vh - 200px));
+  margin: 0 auto;
+  padding: clamp(32px, 5vw, 72px);
+  flex-direction: column;
+  justify-content: center;
+}
+
+.student-app .question-card h1 {
+  max-width: 1000px;
+  font-size: clamp(2.25rem, 4.8vw, 4.5rem);
+  line-height: 1.08;
+}
+
+.student-app .options {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: clamp(32px, 5vh, 60px) 0;
+}
+
+.student-app .option {
+  min-height: 96px;
+  padding: 20px 22px;
+  gap: 18px;
+  border-radius: 18px;
+  font-size: clamp(1.1rem, 1.7vw, 1.45rem);
+  line-height: 1.32;
+}
+
+.student-app .option-key {
+  flex-basis: 38px;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  font-size: .9rem;
+}
+
+.student-app .answer-status {
+  font-size: .82rem;
+}
+
+.student-app .answer-feedback {
+  margin-top: -28px;
+  margin-bottom: 28px;
+  padding: 16px 18px;
+  font-size: 1.05rem;
+}
+
+.student-app .question-actions {
+  margin-top: auto;
+  padding-top: 16px;
+}
+
+.student-app .question-actions .primary-button,
+.student-app .intro-card .primary-button,
+.student-app .results-card .primary-button {
+  min-height: 54px;
+  padding: 14px 22px;
+  font-size: 1rem;
+}
+
+/* The kid-friendly theme uses high-contrast, playful colors without changing quiz behavior. */
+.theme-kids.quiz-page,
+.theme-kids .quiz-page {
+  background:
+    radial-gradient(circle at 7% 9%, #ffe44d 0 6rem, transparent 6.2rem),
+    radial-gradient(circle at 94% 16%, #63d8ff 0 8rem, transparent 8.2rem),
+    radial-gradient(circle at 88% 91%, #ff9fc9 0 8rem, transparent 8.2rem),
+    #eefaff;
+}
+
+.theme-kids .brand {
+  color: #243569;
+}
+
+.theme-kids .brand-mark,
+.theme-kids .primary-button {
+  background: #ff5a8a;
+  box-shadow: 0 8px 18px #ff5a8a4d;
+}
+
+.theme-kids .primary-button:hover:not(:disabled) {
+  background: #e94275;
+}
+
+.theme-kids .intro-card,
+.theme-kids .question-card,
+.theme-kids .results-card {
+  border: 4px solid #5ac7f2;
+  border-radius: 34px;
+  box-shadow: 0 20px 0 #b8eaff, 0 28px 60px #246a9140;
+}
+
+.theme-kids .eyebrow {
+  color: #e64c7a;
+}
+
+.theme-kids .question-card h1,
+.theme-kids .intro-card h1,
+.theme-kids .results-card h1 {
+  color: #243569;
+}
+
+.theme-kids .progress {
+  background: #bdefff;
+}
+
+.theme-kids .progress span {
+  background: linear-gradient(90deg, #ff5a8a, #ff9e42, #ffdf40);
+}
+
+.theme-kids .option {
+  border: 3px solid #d4e7f8;
+  box-shadow: 0 4px 0 #d4e7f8;
+  color: #253560;
+  font-weight: 700;
+}
+
+.theme-kids .option:nth-child(4n + 1) { background: #fff1a8; border-color: #f0cf43; box-shadow: 0 4px 0 #f0cf43; }
+.theme-kids .option:nth-child(4n + 2) { background: #c9f3ff; border-color: #5ac7f2; box-shadow: 0 4px 0 #5ac7f2; }
+.theme-kids .option:nth-child(4n + 3) { background: #ffd1e2; border-color: #f586ac; box-shadow: 0 4px 0 #f586ac; }
+.theme-kids .option:nth-child(4n) { background: #d8f8c8; border-color: #7fcf6b; box-shadow: 0 4px 0 #7fcf6b; }
+
+.theme-kids .option:hover:not(:disabled) {
+  transform: translateY(-3px) rotate(-.25deg);
+}
+
+.theme-kids .option.selected {
+  outline: 4px solid #635bdf;
+  outline-offset: 2px;
+}
+
+.theme-kids .option-key {
+  background: #fff;
+  color: #354a83;
+}
+
+.theme-kids .score-ring {
+  background: conic-gradient(#ff5a8a var(--score), #bdefff 0);
+}
+
+@media (max-width: 760px) {
+  .student-app .quiz-page {
+    padding: 20px 16px 32px;
+  }
+
+  .student-app .question-card {
+    min-height: auto;
+    padding: 30px 21px;
+  }
+
+  .student-app .question-card h1 {
+    font-size: clamp(2rem, 9vw, 3rem);
+  }
+
+  .student-app .options {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin: 30px 0;
+  }
+
+  .student-app .option {
+    min-height: 78px;
+    padding: 16px;
+    font-size: 1.05rem;
+  }
+
+  .theme-kids .intro-card,
+  .theme-kids .question-card,
+  .theme-kids .results-card {
+    border-width: 3px;
+    border-radius: 24px;
+  }
+}
