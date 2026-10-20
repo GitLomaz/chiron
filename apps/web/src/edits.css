@@ -11,6 +11,12 @@
   transition: background-color .15s, border-color .15s;
 }
 
+.page-actions { display: flex; gap: 9px; align-items: center; }
+.session-link { display: grid; gap: 7px; margin-top: 17px; }
+.session-link strong { font-size: .8rem; color: #34435c; }
+.session-link code { display: block; overflow: auto; padding: 9px; border-radius: 6px; background: #f3f6fa; color: #506078; font-size: .66rem; white-space: nowrap; }
+.session-link .secondary { justify-self: start; }
+
 .card-edit:hover {
   background: #dce9fc;
   border-color: #bdd4f4;

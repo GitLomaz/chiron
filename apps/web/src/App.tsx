@@ -10,6 +10,7 @@ type AnswerPool = { id: number; name: string; answers: { id: number; value: stri
 type CommonQuestion = Question & { answerPool?: AnswerPool | null };
 type QuestionData = { text: string; correctAnswer: string; wrongAnswers?: string[]; answerPoolId?: number; answerCount?: number };
 type PoolData = { name: string; answers: string[] };
+type ModeratedSession = { sessionId: string; facilitatorToken: string; phase: 'lobby' };
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, { headers: { 'Content-Type': 'application/json', ...options?.headers }, ...options });
@@ -19,6 +20,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 function studentQuizUrl(guid: string) {
   return `${(import.meta.env.VITE_STUDENT_APP_URL ?? 'http://localhost:5174').replace(/\/$/, '')}/quiz/${guid}`;
 }
+function studentSessionUrl(sessionId: string) { return `${(import.meta.env.VITE_STUDENT_APP_URL ?? 'http://localhost:5174').replace(/\/$/, '')}/moderated/${sessionId}`; }
+function facilitatorSessionUrl(session: ModeratedSession) { return `${(import.meta.env.VITE_STUDENT_APP_URL ?? 'http://localhost:5174').replace(/\/$/, '')}/facilitate/${session.sessionId}?token=${session.facilitatorToken}`; }
 function useRoute() { const [path, setPath] = useState(window.location.pathname); useEffect(() => { const update = () => setPath(window.location.pathname); window.addEventListener('popstate', update); return () => window.removeEventListener('popstate', update); }, []); const go = (nextPath: string) => { window.history.pushState({}, '', nextPath); setPath(nextPath); }; return { path, go }; }
 
 function AdminShell({ path, go, children }: { path: string; go: (value: string) => void; children: ReactNode }) {
@@ -63,6 +66,9 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
   const [error, setError] = useState('');
   const [shareCopied, setShareCopied] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [moderatedSession, setModeratedSession] = useState<ModeratedSession | null>(null);
+  const [creatingSession, setCreatingSession] = useState(false);
+  const [sessionLinkCopied, setSessionLinkCopied] = useState<'student' | 'facilitator' | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -159,12 +165,24 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
     }
   }
 
+  async function createModeratedSession() {
+    setCreatingSession(true); setError('');
+    try { setModeratedSession(await request<ModeratedSession>(`/moderated-sessions/quiz/${id}`, { method: 'POST' })); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Could not create the moderated test'); }
+    finally { setCreatingSession(false); }
+  }
+  async function copySessionLink(kind: 'student' | 'facilitator') {
+    if (!moderatedSession) return;
+    try { await navigator.clipboard.writeText(kind === 'student' ? studentSessionUrl(moderatedSession.sessionId) : facilitatorSessionUrl(moderatedSession)); setSessionLinkCopied(kind); window.setTimeout(() => setSessionLinkCopied(null), 2000); }
+    catch { setError('Could not copy that link.'); }
+  }
+
   if (!quiz && !error) return <p className="state">Loading quiz...</p>;
   if (!quiz) return <><button className="back-link" onClick={() => go('/quizzes')}>Back to quizzes</button><p className="error">{error}</p></>;
 
   return <>
     <button className="back-link" onClick={() => go('/quizzes')}>Back to quizzes</button>
-    <PageHeading eyebrow="QUIZ EDITOR" title={quiz.title} description={quiz.description || 'No description has been added to this quiz.'} action={<button className="subtle-button" onClick={() => void copyStudentLink()}>{shareCopied ? 'Student link copied' : 'Copy student link'}</button>} />
+    <PageHeading eyebrow="QUIZ EDITOR" title={quiz.title} description={quiz.description || 'No description has been added to this quiz.'} action={<div className="page-actions"><button className="subtle-button" onClick={() => void copyStudentLink()}>{shareCopied ? 'Student link copied' : 'Copy student link'}</button><button className="primary" disabled={creatingSession} onClick={() => void createModeratedSession()}>{creatingSession ? 'Creating…' : 'Create moderated test'}</button></div>} />
     <section className="surface quiz-settings">
       <div className="quiz-settings-grid">
         <label className="checkbox-label">
@@ -197,6 +215,7 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
       </aside>
     </div>
     {editing && <Modal title="Edit quiz question" onClose={() => setEditing(null)} wide><p className="modal-intro">Changes apply only to this quiz; they do not change the shared common question.</p><QuestionForm key={editing.id} pools={pools} onSave={saveQuestion} saving={saving} submitLabel="Save changes" initial={editing} /></Modal>}
+    {moderatedSession && <Modal title="Moderated test ready" onClose={() => setModeratedSession(null)}><p className="modal-intro">This live test exists only while the API is running. Share the student link; keep the facilitator link private.</p><div className="session-link"><strong>Student link</strong><code>{studentSessionUrl(moderatedSession.sessionId)}</code><button className="secondary" onClick={() => void copySessionLink('student')}>{sessionLinkCopied === 'student' ? 'Copied' : 'Copy student link'}</button></div><div className="session-link"><strong>Facilitator link</strong><code>{facilitatorSessionUrl(moderatedSession)}</code><button className="secondary" onClick={() => void copySessionLink('facilitator')}>{sessionLinkCopied === 'facilitator' ? 'Copied' : 'Copy facilitator link'}</button></div></Modal>}
   </>;
 }
 
