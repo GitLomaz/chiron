@@ -22,7 +22,7 @@ export class QuizzesService {
       where: { id },
       include: {
         questions: {
-          orderBy: { createdAt: 'asc' },
+          orderBy: { position: 'asc' },
           include: { answerPool: { select: { name: true } } },
         },
       },
@@ -58,10 +58,12 @@ export class QuizzesService {
   async addQuestion(quizId: number, question: CreateQuestionDto) {
     await this.findOne(quizId);
     const { text, correctAnswer, options, answerPoolId, answerCount } = await this.prepareQuestion(question);
+    const { _max } = await this.prisma.question.aggregate({ where: { quizId }, _max: { position: true } });
 
     return this.prisma.question.create({
       data: {
         quizId,
+        position: (_max.position ?? -1) + 1,
         text,
         options: options as Prisma.InputJsonValue,
         correctAnswer,
@@ -79,6 +81,25 @@ export class QuizzesService {
       where: { id: questionId },
       data: { text, correctAnswer, options: options as Prisma.InputJsonValue, answerPoolId, answerCount },
     });
+  }
+
+  async updateQuestionEnabled(quizId: number, questionId: number, isEnabled: boolean) {
+    const existing = await this.prisma.question.findFirst({ where: { id: questionId, quizId } });
+    if (!existing) throw new NotFoundException(`Question ${questionId} was not found in quiz ${quizId}`);
+    await this.prisma.question.update({ where: { id: questionId }, data: { isEnabled } });
+    return this.findOne(quizId);
+  }
+
+  async reorderQuestions(quizId: number, questionIds: number[]) {
+    const questions = await this.prisma.question.findMany({ where: { quizId }, select: { id: true } });
+    const existingIds = new Set(questions.map((question) => question.id));
+    const requestedIds = new Set(questionIds);
+    if (requestedIds.size !== questionIds.length || requestedIds.size !== existingIds.size || [...requestedIds].some((id) => !existingIds.has(id))) {
+      throw new BadRequestException('Question order must contain every question in this quiz exactly once');
+    }
+
+    await this.prisma.$transaction(questionIds.map((questionId, position) => this.prisma.question.update({ where: { id: questionId }, data: { position } })));
+    return this.findOne(quizId);
   }
 
   findCommonQuestions() {
@@ -155,9 +176,11 @@ export class QuizzesService {
     await this.findOne(quizId);
     const commonQuestion = await this.prisma.commonQuestion.findUnique({ where: { id: commonQuestionId } });
     if (!commonQuestion) throw new NotFoundException(`Common question ${commonQuestionId} was not found`);
+    const { _max } = await this.prisma.question.aggregate({ where: { quizId }, _max: { position: true } });
     return this.prisma.question.create({
       data: {
         quizId,
+        position: (_max.position ?? -1) + 1,
         text: commonQuestion.text,
         options: commonQuestion.options as Prisma.InputJsonValue,
         correctAnswer: commonQuestion.correctAnswer,

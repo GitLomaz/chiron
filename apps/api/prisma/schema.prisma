@@ -24,6 +24,8 @@ model Quiz {
 model Question {
   id           Int         @id @default(autoincrement())
   quizId       Int
+  position     Int
+  isEnabled    Boolean     @default(true)
   answerPoolId Int?
   answerCount  Int?
   text         String
@@ -35,6 +37,7 @@ model Question {
   answerPool   AnswerPool? @relation(fields: [answerPoolId], references: [id], onDelete: SetNull)
 
   @@index([answerPoolId])
+  @@index([quizId, position])
 }
 
 model CommonQuestion {

@@ -1,8 +1,10 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Put } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Put } from '@nestjs/common';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { CreateQuizDto } from './dto/create-quiz.dto';
 import { UpdateQuizDto } from './dto/update-quiz.dto';
 import { CreateAnswerPoolDto } from './dto/create-answer-pool.dto';
+import { ReorderQuestionsDto } from './dto/reorder-questions.dto';
+import { UpdateQuestionEnabledDto } from './dto/update-question-enabled.dto';
 import { QuizzesService } from './quizzes.service';
 
 @Controller('quizzes')
@@ -67,6 +69,14 @@ export class QuizzesController {
     return this.quizzesService.addQuestion(id, createQuestionDto);
   }
 
+  @Put(':id/questions/order')
+  reorderQuestions(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() { questionIds }: ReorderQuestionsDto,
+  ) {
+    return this.quizzesService.reorderQuestions(id, questionIds);
+  }
+
   @Put(':id/questions/:questionId')
   updateQuestion(
     @Param('id', ParseIntPipe) id: number,
@@ -74,6 +84,15 @@ export class QuizzesController {
     @Body() question: CreateQuestionDto,
   ) {
     return this.quizzesService.updateQuestion(id, questionId, question);
+  }
+
+  @Patch(':id/questions/:questionId')
+  updateQuestionEnabled(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('questionId', ParseIntPipe) questionId: number,
+    @Body() { isEnabled }: UpdateQuestionEnabledDto,
+  ) {
+    return this.quizzesService.updateQuestionEnabled(id, questionId, isEnabled);
   }
 
   @Post(':id/questions/common/:commonQuestionId')

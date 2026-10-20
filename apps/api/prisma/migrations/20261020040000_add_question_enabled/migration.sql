@@ -1,0 +1,2 @@
+ALTER TABLE "Question"
+    ADD COLUMN "isEnabled" BOOLEAN NOT NULL DEFAULT true;

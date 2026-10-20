@@ -90,6 +90,7 @@
 }
 
 /* The kid-friendly theme uses high-contrast, playful colors without changing quiz behavior. */
+.theme-kids.quiz-page,
 .theme-kids .quiz-page {
   background:
     radial-gradient(circle at 7% 9%, #ffe44d 0 6rem, transparent 6.2rem),

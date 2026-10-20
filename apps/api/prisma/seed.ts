@@ -139,7 +139,8 @@ async function main() {
 
   const frenchQuizTitle = 'French Vocabulary: English Translations';
   const existingFrenchQuiz = await prisma.quiz.findFirst({ where: { title: frenchQuizTitle } });
-  const frenchQuestions = frenchVocabulary.map(([french, translation]) => ({
+  const frenchQuestions = frenchVocabulary.map(([french, translation], position) => ({
+    position,
     text: french,
     correctAnswer: translation,
     options: frenchEnglishAnswers as Prisma.InputJsonValue,

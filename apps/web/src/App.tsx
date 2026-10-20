@@ -1,16 +1,17 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 type QuizTheme = 'standard' | 'kids';
 type Quiz = { id: number; guid: string; title: string; description: string | null; randomizeQuestionOrder: boolean; theme: QuizTheme; _count?: { questions: number } };
-type Question = { id: number; text: string; options: string[]; correctAnswer: string; answerPoolId?: number | null; answerCount?: number | null; answerPool?: { name: string } | null };
+type Question = { id: number; text: string; options: string[]; correctAnswer: string; isEnabled: boolean; answerPoolId?: number | null; answerCount?: number | null; answerPool?: { name: string } | null };
 type QuizDetail = Quiz & { questions: Question[] };
 type AnswerPool = { id: number; name: string; answers: { id: number; value: string }[]; _count?: { questions: number; commonQuestions: number } };
 type CommonQuestion = Question & { answerPool?: AnswerPool | null };
 type QuestionData = { text: string; correctAnswer: string; wrongAnswers?: string[]; answerPoolId?: number; answerCount?: number };
+type QuestionPreviewData = { text: string; options: string[] };
 type PoolData = { name: string; answers: string[] };
-type ModeratedSession = { sessionId: string; facilitatorToken: string; phase: 'lobby' };
+type ModeratedSession = { sessionId: string; facilitatorToken: string; pin: string; phase: 'lobby' };
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, { headers: { 'Content-Type': 'application/json', ...options?.headers }, ...options });
@@ -20,7 +21,6 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 function studentQuizUrl(guid: string) {
   return `${(import.meta.env.VITE_STUDENT_APP_URL ?? 'http://localhost:5174').replace(/\/$/, '')}/quiz/${guid}`;
 }
-function studentSessionUrl(sessionId: string) { return `${(import.meta.env.VITE_STUDENT_APP_URL ?? 'http://localhost:5174').replace(/\/$/, '')}/moderated/${sessionId}`; }
 function facilitatorSessionUrl(session: ModeratedSession) { return `${(import.meta.env.VITE_STUDENT_APP_URL ?? 'http://localhost:5174').replace(/\/$/, '')}/facilitate/${session.sessionId}?token=${session.facilitatorToken}`; }
 function useRoute() { const [path, setPath] = useState(window.location.pathname); useEffect(() => { const update = () => setPath(window.location.pathname); window.addEventListener('popstate', update); return () => window.removeEventListener('popstate', update); }, []); const go = (nextPath: string) => { window.history.pushState({}, '', nextPath); setPath(nextPath); }; return { path, go }; }
 
@@ -39,12 +39,40 @@ function QuizList({ go }: { go: (path: string) => void }) {
   return <><PageHeading eyebrow="QUIZ LIBRARY" title="Quizzes" description="Create, organize and prepare the quizzes your team publishes." action={<button className="primary" onClick={() => setShowCreate(true)}>+ New quiz</button>} />{error && <p className="error">{error}</p>}<section className="surface"><div className="surface-head"><div><h2>All quizzes</h2><p>{quizzes.length} quiz{quizzes.length === 1 ? '' : 'zes'} in your workspace</p></div><button className="subtle-button" onClick={() => void load()}>Refresh</button></div>{quizzes.length === 0 ? <Empty icon="▦" title="No quizzes yet" copy="Create your first quiz to begin building its question set." /> : <div className="data-list">{quizzes.map((quiz) => <button className="quiz-row" key={quiz.id} onClick={() => go(`/quizzes/${quiz.id}`)}><span className="list-icon">▦</span><span className="row-main"><strong>{quiz.title}</strong><small>{quiz.description || 'No description added'}</small></span><span className="question-total">{quiz._count?.questions ?? 0}<small>questions</small></span><span className="chevron">›</span></button>)}</div>}</section>{showCreate && <Modal title="Create a quiz" onClose={() => setShowCreate(false)}><form onSubmit={createQuiz}><label>Quiz title<input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Winter knowledge check" maxLength={200} required /></label><label>Description <span>optional</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={4} placeholder="What should participants expect?" maxLength={2000} /></label><div className="form-actions"><button type="button" className="subtle-button" onClick={() => setShowCreate(false)}>Cancel</button><button className="primary" disabled={saving}>{saving ? 'Creating…' : 'Create quiz'}</button></div></form></Modal>}</>;
 }
 
-function QuestionForm({ pools, onSave, saving, submitLabel, initial }: { pools: AnswerPool[]; onSave: (data: QuestionData) => Promise<void>; saving: boolean; submitLabel: string; initial?: Question }) {
+function QuestionForm({ pools, onSave, saving, submitLabel, initial, onPreviewChange }: { pools: AnswerPool[]; onSave: (data: QuestionData) => Promise<void>; saving: boolean; submitLabel: string; initial?: Question; onPreviewChange?: (preview: QuestionPreviewData) => void }) {
   const [text, setText] = useState(initial?.text ?? ''), [correctAnswer, setCorrectAnswer] = useState(initial?.correctAnswer ?? ''), [wrongAnswers, setWrongAnswers] = useState(initial ? initial.options.filter((answer) => answer !== initial.correctAnswer) : ['', '', '']), [source, setSource] = useState<'static' | 'pool'>(initial?.answerPoolId ? 'pool' : 'static'), [poolId, setPoolId] = useState(initial?.answerPoolId?.toString() ?? ''), [answerCount, setAnswerCount] = useState((initial?.answerCount ?? 4).toString()), [formError, setFormError] = useState('');
   const updateWrong = (index: number, value: string) => setWrongAnswers((current) => current.map((answer, i) => i === index ? value : answer));
-  async function submit(event: FormEvent) { event.preventDefault(); setFormError(''); if (source === 'static' && !wrongAnswers.some((answer) => answer.trim())) { setFormError('Add at least one wrong answer.'); return; } if (source === 'pool' && (!poolId || Number(answerCount) < 2)) { setFormError('Select an answer pool and enter at least two answers shown.'); return; } try { await onSave({ text, correctAnswer, ...(source === 'static' ? { wrongAnswers } : { answerPoolId: Number(poolId), answerCount: Number(answerCount) }) }); if (!initial) { setText(''); setCorrectAnswer(''); setWrongAnswers(['', '', '']); setPoolId(''); setAnswerCount('4'); } } catch (err) { setFormError(err instanceof Error ? err.message : 'Could not save this question'); } }
   const selectedPool = pools.find((pool) => pool.id === Number(poolId));
+  const previewOptions = useMemo(() => [
+    correctAnswer,
+    ...(source === 'static'
+      ? wrongAnswers
+      : (selectedPool?.answers.map((answer) => answer.value).slice(0, Math.max(0, Number(answerCount) - 1)) ?? [])),
+  ].map((answer) => answer.trim()).filter((answer, index, answers) => answer && answers.indexOf(answer) === index), [answerCount, correctAnswer, selectedPool, source, wrongAnswers]);
+
+  useEffect(() => { onPreviewChange?.({ text: text.trim(), options: previewOptions }); }, [onPreviewChange, previewOptions, text]);
+  async function submit(event: FormEvent) { event.preventDefault(); setFormError(''); if (source === 'static' && !wrongAnswers.some((answer) => answer.trim())) { setFormError('Add at least one wrong answer.'); return; } if (source === 'pool' && (!poolId || Number(answerCount) < 2)) { setFormError('Select an answer pool and enter at least two answers shown.'); return; } try { await onSave({ text, correctAnswer, ...(source === 'static' ? { wrongAnswers } : { answerPoolId: Number(poolId), answerCount: Number(answerCount) }) }); if (!initial) { setText(''); setCorrectAnswer(''); setWrongAnswers(['', '', '']); setPoolId(''); setAnswerCount('4'); } } catch (err) { setFormError(err instanceof Error ? err.message : 'Could not save this question'); } }
   return <form onSubmit={submit} className="question-form"><label>Question<textarea value={text} onChange={(event) => setText(event.target.value)} rows={3} placeholder="Type the question participants will see" maxLength={2000} required /></label><label>Correct answer<input value={correctAnswer} onChange={(event) => setCorrectAnswer(event.target.value)} placeholder="The one correct response" maxLength={500} required /></label><fieldset className="answer-source"><legend>Wrong answer source</legend><div className="source-tabs"><button type="button" className={source === 'static' ? 'selected' : ''} onClick={() => setSource('static')}>Static answers</button><button type="button" className={source === 'pool' ? 'selected' : ''} onClick={() => setSource('pool')}>Answer pool</button></div>{source === 'static' ? <div className="wrong-answers">{wrongAnswers.map((answer, index) => <input key={index} value={answer} onChange={(event) => updateWrong(index, event.target.value)} placeholder={`Wrong answer ${index + 1}`} maxLength={500} />)}<button className="inline-button" type="button" onClick={() => setWrongAnswers((current) => [...current, ''])}>+ Add another wrong answer</button></div> : <div className="pool-fields"><label className="pool-select">Choose pool<select value={poolId} onChange={(event) => setPoolId(event.target.value)} required><option value="">Select an answer pool</option>{pools.map((pool) => <option key={pool.id} value={pool.id}>{pool.name} · {pool.answers.length} answers</option>)}</select>{pools.length === 0 && <small>No pools yet. Create one from the Answer Pools page.</small>}</label><label>Number of answers shown<input type="number" min="2" max={selectedPool ? selectedPool.answers.length + 1 : undefined} value={answerCount} onChange={(event) => setAnswerCount(event.target.value)} required /><small>Includes the correct answer; choices will be randomized later.</small></label></div>}</fieldset>{formError && <p className="error">{formError}</p>}<button className="primary" disabled={saving}>{saving ? 'Saving…' : submitLabel}</button></form>;
+}
+
+function QuestionEditor({ draft, theme, editing, pools, mode, onModeChange, commonQuestions, onCreateQuestion, onSaveQuestion, onAddCommonQuestion, saving, onPreviewChange }: { draft: QuestionPreviewData | null; theme: QuizTheme; editing: Question | null; pools: AnswerPool[]; mode: 'new' | 'common'; onModeChange: (mode: 'new' | 'common') => void; commonQuestions: CommonQuestion[]; onCreateQuestion: (data: QuestionData) => Promise<void>; onSaveQuestion: (data: QuestionData) => Promise<void>; onAddCommonQuestion: (questionId: number) => Promise<void>; saving: boolean; onPreviewChange: (preview: QuestionPreviewData) => void }) {
+  const hasQuestion = Boolean(draft?.text || draft?.options.length);
+  const [activeTab, setActiveTab] = useState<'editor' | 'preview'>('editor');
+
+  useEffect(() => { setActiveTab('editor'); }, [editing?.id]);
+
+  return <aside className={`surface question-preview-panel${editing ? ' is-editing' : ''}`}>
+    <div className="surface-head"><div><h2>{editing ? 'Edit question' : mode === 'new' ? 'Add a question' : 'Common questions'}</h2><p>Student view · {theme === 'kids' ? 'Kid-friendly theme' : 'Standard theme'}</p></div></div>
+    <div className="source-tabs editor-tabs question-editor-tabs"><button type="button" className={activeTab === 'editor' ? 'selected' : ''} onClick={() => setActiveTab('editor')}>{editing ? 'Edit' : 'Add'}</button><button type="button" className={activeTab === 'preview' ? 'selected' : ''} onClick={() => setActiveTab('preview')}>Preview</button></div>
+    <div hidden={activeTab !== 'editor'}>{editing ? <div className="preview-editor"><div className="preview-editor-intro"><h3>Modify this question</h3><p>Your changes are ready to preview at any time.</p></div><QuestionForm key={editing.id} pools={pools} onSave={onSaveQuestion} saving={saving} submitLabel="Save changes" initial={editing} onPreviewChange={onPreviewChange} /></div> : <div className="preview-editor">{mode === 'new' ? <><div className="preview-editor-intro preview-editor-intro-with-action"><div><h3>Build a question</h3><p>Open Preview to check the student experience.</p></div><button className="inline-button question-source-action" type="button" onClick={() => onModeChange('common')}>Use a common question</button></div><QuestionForm pools={pools} onSave={onCreateQuestion} saving={saving} submitLabel="Add to quiz" onPreviewChange={onPreviewChange} /></> : <div className="common-picker"><div className="preview-editor-intro preview-editor-intro-with-action"><div><h3>Choose a common question</h3><p>Add an approved question from your shared library.</p></div><button className="inline-button question-source-action" type="button" onClick={() => onModeChange('new')}>Create from scratch</button></div>{commonQuestions.length === 0 ? <Empty icon="?" title="Library is empty" copy="Create a common question to reuse it here." /> : commonQuestions.map((question) => <div className="common-card" key={question.id}><strong>{question.text}</strong><small>{question.answerPool ? `Uses ${question.answerPool.name}` : `${question.options.length - 1} static wrong answers`}</small><button className="secondary" disabled={saving} onClick={() => void onAddCommonQuestion(question.id)}>Add to quiz</button></div>)}</div>}</div>}</div>
+    <div hidden={activeTab !== 'preview'} className={`student-question-preview preview-theme-${theme}`}>
+      {hasQuestion ? <>
+        <div className="preview-topline"><span className="preview-brand"><b>Q</b> Quizboard</span><span>Question 1 of 1</span></div>
+        <div className="preview-progress"><span /></div>
+        <div className="preview-card"><p>QUESTION 01</p><h3>{draft?.text || 'Your question will appear here.'}</h3><div className="preview-options">{draft?.options.map((option, index) => <div className="preview-option" key={`${option}-${index}`}><span>{String.fromCharCode(65 + index)}</span>{option}</div>)}</div>{!draft?.options.length && <small className="preview-hint">Add answers to see the choices students will receive.</small>}</div>
+      </> : <div className="preview-empty"><span>?</span><h3>Your question preview</h3><p>Start writing a question and its answers to see the student experience here.</p></div>}
+    </div>
+  </aside>;
 }
 
 function LegacyQuizPage({ id, go }: { id: number; go: (path: string) => void }) {
@@ -61,14 +89,16 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
   const [pools, setPools] = useState<AnswerPool[]>([]);
   const [commonQuestions, setCommonQuestions] = useState<CommonQuestion[]>([]);
   const [mode, setMode] = useState<'new' | 'common'>('new');
+  const [questionPreview, setQuestionPreview] = useState<QuestionPreviewData | null>(null);
   const [editing, setEditing] = useState<Question | null>(null);
+  const [draggingQuestionId, setDraggingQuestionId] = useState<number | null>(null);
+  const [reordering, setReordering] = useState(false);
+  const [togglingQuestionId, setTogglingQuestionId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [shareCopied, setShareCopied] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
-  const [moderatedSession, setModeratedSession] = useState<ModeratedSession | null>(null);
   const [creatingSession, setCreatingSession] = useState(false);
-  const [sessionLinkCopied, setSessionLinkCopied] = useState<'student' | 'facilitator' | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -103,6 +133,7 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
     try {
       await request(`/quizzes/${id}/questions/${editing.id}`, { method: 'PUT', body: JSON.stringify(data) });
       setEditing(null);
+      setQuestionPreview(null);
       await load();
     } finally {
       setSaving(false);
@@ -119,6 +150,48 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
       setError(err instanceof Error ? err.message : 'Could not add the common question');
     } finally {
       setSaving(false);
+    }
+  }
+
+  function startNewQuestion() {
+    setEditing(null);
+    setMode('new');
+    setQuestionPreview(null);
+  }
+
+  async function moveQuestion(targetQuestionId: number) {
+    if (!quiz || draggingQuestionId === null || draggingQuestionId === targetQuestionId) return;
+    const sourceIndex = quiz.questions.findIndex((question) => question.id === draggingQuestionId);
+    const targetIndex = quiz.questions.findIndex((question) => question.id === targetQuestionId);
+    if (sourceIndex < 0 || targetIndex < 0) return;
+
+    const reordered = [...quiz.questions];
+    const [movedQuestion] = reordered.splice(sourceIndex, 1);
+    reordered.splice(targetIndex, 0, movedQuestion);
+    setQuiz((current) => current ? { ...current, questions: reordered } : current);
+    setDraggingQuestionId(null);
+    setReordering(true);
+    setError('');
+    try {
+      const updatedQuiz = await request<QuizDetail>(`/quizzes/${id}/questions/order`, { method: 'PUT', body: JSON.stringify({ questionIds: reordered.map((question) => question.id) }) });
+      setQuiz(updatedQuiz);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not reorder questions');
+      await load();
+    } finally {
+      setReordering(false);
+    }
+  }
+
+  async function setQuestionEnabled(questionId: number, isEnabled: boolean) {
+    setTogglingQuestionId(questionId);
+    setError('');
+    try {
+      setQuiz(await request<QuizDetail>(`/quizzes/${id}/questions/${questionId}`, { method: 'PATCH', body: JSON.stringify({ isEnabled }) }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update this question');
+    } finally {
+      setTogglingQuestionId(null);
     }
   }
 
@@ -167,14 +240,14 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
 
   async function createModeratedSession() {
     setCreatingSession(true); setError('');
-    try { setModeratedSession(await request<ModeratedSession>(`/moderated-sessions/quiz/${id}`, { method: 'POST' })); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Could not create the moderated test'); }
-    finally { setCreatingSession(false); }
-  }
-  async function copySessionLink(kind: 'student' | 'facilitator') {
-    if (!moderatedSession) return;
-    try { await navigator.clipboard.writeText(kind === 'student' ? studentSessionUrl(moderatedSession.sessionId) : facilitatorSessionUrl(moderatedSession)); setSessionLinkCopied(kind); window.setTimeout(() => setSessionLinkCopied(null), 2000); }
-    catch { setError('Could not copy that link.'); }
+    try {
+      const session = await request<ModeratedSession>(`/moderated-sessions/quiz/${id}`, { method: 'POST' });
+      window.location.assign(facilitatorSessionUrl(session));
+    }
+    catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create the moderated test');
+      setCreatingSession(false);
+    }
   }
 
   if (!quiz && !error) return <p className="state">Loading quiz...</p>;
@@ -193,29 +266,26 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
       </div>
     </section>
     {error && <p className="error">{error}</p>}
-    <div className="editor-grid">
+    <div className="editor-grid editor-grid-two">
       <section className="surface questions-surface">
         <div className="surface-head"><div><h2>Questions</h2><p>{quiz.questions.length} currently in this quiz</p></div></div>
-        {quiz.questions.length === 0 ? <Empty icon="?" title="No questions yet" copy="Create a new question or add one from your common question library." /> : <ol className="question-list">
-          {quiz.questions.map((question, index) => <li key={question.id}>
-            <span className="question-number">{String(index + 1).padStart(2, '0')}</span>
-            <div>
-              <div className="question-row-head"><strong>{question.text}</strong><button className="card-edit" onClick={() => setEditing(question)}>Edit question</button></div>
-              {question.answerPool ? <div className="answer-chips"><span className="answer-chip correct">Correct: {question.correctAnswer}</span><span className="answer-pool-badge">Answer pool: {question.answerPool.name}</span></div> : <div className="answer-chips">{question.options.map((answer) => <span className={answer === question.correctAnswer ? 'answer-chip correct' : 'answer-chip'} key={answer}>{answer === question.correctAnswer && 'Correct: '}{answer}</span>)}</div>}
-            </div>
+        <ol className="question-list">
+          {quiz.questions.map((question, index) => <li key={question.id} className={`${editing?.id === question.id ? 'selected-question' : ''}${draggingQuestionId === question.id ? ' dragging-question' : ''}${question.isEnabled ? '' : ' disabled-question'}`} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); void moveQuestion(question.id); }}>
+            <button className="question-select" type="button" aria-pressed={editing?.id === question.id} onClick={() => { setEditing(question); setQuestionPreview({ text: question.text, options: question.options }); }}>
+              <span className="question-number">{String(index + 1).padStart(2, '0')}</span>
+              <span className="question-list-content">
+                <strong>{question.text}</strong>
+                {question.answerPool ? <span className="answer-chips"><span className="answer-chip correct">Correct: {question.correctAnswer}</span><span className="answer-pool-badge">Answer pool: {question.answerPool.name}</span></span> : <span className="answer-chips">{question.options.map((answer) => <span className={answer === question.correctAnswer ? 'answer-chip correct' : 'answer-chip'} key={answer}>{answer === question.correctAnswer && 'Correct: '}{answer}</span>)}</span>}
+              </span>
+            </button>
+            <label className="question-toggle" onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={question.isEnabled} disabled={togglingQuestionId === question.id} onChange={(event) => void setQuestionEnabled(question.id, event.target.checked)} /><span>{question.isEnabled ? 'Included' : 'Skipped'}</span></label>
+            <button className="question-grip" type="button" draggable={!reordering} disabled={reordering} aria-label={`Drag question ${index + 1} to reorder`} title="Drag to reorder" onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', String(question.id)); setDraggingQuestionId(question.id); }} onDragEnd={() => setDraggingQuestionId(null)}>⠿</button>
           </li>)}
-        </ol>}
+          <li className="new-question-slot"><button type="button" onClick={startNewQuestion}><span>+</span><strong>Add a new question</strong><small>Build a new question from scratch</small></button></li>
+        </ol>
       </section>
-      <aside className="surface add-question">
-        <div className="source-tabs editor-tabs"><button className={mode === 'new' ? 'selected' : ''} onClick={() => setMode('new')}>Create question</button><button className={mode === 'common' ? 'selected' : ''} onClick={() => setMode('common')}>Use common</button></div>
-        {mode === 'new' ? <><div className="section-intro"><h2>New question</h2><p>Choose static wrong answers or attach a reusable answer pool.</p></div><QuestionForm pools={pools} onSave={addOwnQuestion} saving={saving} submitLabel="Add to quiz" /></> : <div className="common-picker">
-          <div className="section-intro"><h2>Common questions</h2><p>Add an approved question from your shared library.</p></div>
-          {commonQuestions.length === 0 ? <Empty icon="?" title="Library is empty" copy="Create a common question to reuse it here." /> : commonQuestions.map((question) => <div className="common-card" key={question.id}><strong>{question.text}</strong><small>{question.answerPool ? `Uses ${question.answerPool.name}` : `${question.options.length - 1} static wrong answers`}</small><button className="secondary" disabled={saving} onClick={() => void addCommonQuestion(question.id)}>Add to quiz</button></div>)}
-        </div>}
-      </aside>
+      <QuestionEditor draft={mode === 'new' || editing ? questionPreview : null} theme={quiz.theme} editing={editing} pools={pools} mode={mode} onModeChange={setMode} commonQuestions={commonQuestions} onCreateQuestion={addOwnQuestion} onSaveQuestion={saveQuestion} onAddCommonQuestion={addCommonQuestion} saving={saving} onPreviewChange={setQuestionPreview} />
     </div>
-    {editing && <Modal title="Edit quiz question" onClose={() => setEditing(null)} wide><p className="modal-intro">Changes apply only to this quiz; they do not change the shared common question.</p><QuestionForm key={editing.id} pools={pools} onSave={saveQuestion} saving={saving} submitLabel="Save changes" initial={editing} /></Modal>}
-    {moderatedSession && <Modal title="Moderated test ready" onClose={() => setModeratedSession(null)}><p className="modal-intro">This live test exists only while the API is running. Share the student link; keep the facilitator link private.</p><div className="session-link"><strong>Student link</strong><code>{studentSessionUrl(moderatedSession.sessionId)}</code><button className="secondary" onClick={() => void copySessionLink('student')}>{sessionLinkCopied === 'student' ? 'Copied' : 'Copy student link'}</button></div><div className="session-link"><strong>Facilitator link</strong><code>{facilitatorSessionUrl(moderatedSession)}</code><button className="secondary" onClick={() => void copySessionLink('facilitator')}>{sessionLinkCopied === 'facilitator' ? 'Copied' : 'Copy facilitator link'}</button></div></Modal>}
   </>;
 }
 

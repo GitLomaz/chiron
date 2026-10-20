@@ -15,7 +15,8 @@ export class PlayService {
         randomizeQuestionOrder: true,
         theme: true,
         questions: {
-          orderBy: { createdAt: 'asc' },
+          where: { isEnabled: true },
+          orderBy: { position: 'asc' },
           select: {
             id: true,
             text: true,

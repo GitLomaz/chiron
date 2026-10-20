@@ -11,6 +11,30 @@ export class ModeratedController {
     return this.moderatedService.create(quizId);
   }
 
+  @Post('pin/:pin/participants')
+  join(
+    @Param('pin') pin: string,
+    @Body() body: JoinModeratedSessionDto,
+  ) {
+    return this.moderatedService.join(pin, body.name);
+  }
+
+  @Post('pin/:pin/answers')
+  submitAnswer(
+    @Param('pin') pin: string,
+    @Body() body: SubmitModeratedAnswerDto,
+  ) {
+    return this.moderatedService.submitAnswer(pin, body);
+  }
+
+  @Get('pin/:pin')
+  studentState(
+    @Param('pin') pin: string,
+    @Query('participantId') participantId?: string,
+  ) {
+    return this.moderatedService.studentState(pin, participantId);
+  }
+
   @Get(':sessionId/facilitator')
   facilitatorState(
     @Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string,
@@ -35,27 +59,4 @@ export class ModeratedController {
     return this.moderatedService.next(sessionId, body.facilitatorToken);
   }
 
-  @Post(':sessionId/participants')
-  join(
-    @Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string,
-    @Body() body: JoinModeratedSessionDto,
-  ) {
-    return this.moderatedService.join(sessionId, body.name);
-  }
-
-  @Post(':sessionId/answers')
-  submitAnswer(
-    @Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string,
-    @Body() body: SubmitModeratedAnswerDto,
-  ) {
-    return this.moderatedService.submitAnswer(sessionId, body);
-  }
-
-  @Get(':sessionId')
-  studentState(
-    @Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string,
-    @Query('participantId') participantId?: string,
-  ) {
-    return this.moderatedService.studentState(sessionId, participantId);
-  }
 }
