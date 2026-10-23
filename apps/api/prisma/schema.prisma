@@ -14,6 +14,8 @@ model Quiz {
   description String?
   randomizeQuestionOrder Boolean @default(false)
   theme       String     @default("standard")
+  // -1 is unlimited; otherwise values are 15 through 180 in 15-second steps.
+  defaultTimerSeconds Int @default(-1)
   startedAt   DateTime   @default(now())
   endedAt     DateTime?
   createdAt   DateTime   @default(now())
@@ -25,7 +27,12 @@ model Question {
   id           Int         @id @default(autoincrement())
   quizId       Int
   position     Int
+  itemType     String      @default("question")
+  gameType     String?
+  gameDurationSeconds Int?
   isEnabled    Boolean     @default(true)
+  // null inherits Quiz.defaultTimerSeconds. See the quiz field for values.
+  timerSeconds Int?
   answerPoolId Int?
   answerCount  Int?
   text         String

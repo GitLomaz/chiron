@@ -169,6 +169,16 @@
   background: conic-gradient(#ff5a8a var(--score), #bdefff 0);
 }
 
+.theme-kids .question-card.timed-question {
+  --timer-ring-color: #ff5a8a;
+  border-color: transparent;
+}
+
+.theme-kids .question-card.timed-question::after {
+  inset: -6px;
+  padding: 6px;
+}
+
 @media (max-width: 760px) {
   .student-app .quiz-page {
     padding: 20px 16px 32px;

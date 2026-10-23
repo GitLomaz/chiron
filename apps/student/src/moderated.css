@@ -14,12 +14,36 @@
 .theme-kids .moderated-join-form input { border-color: #b9e8fb; color: #243569; }
 .theme-kids .moderated-join-form input:focus { border-color: #5ac7f2; box-shadow: 0 0 0 4px #5ac7f233; }
 .waiting-card { text-align: center; }
+.answer-summary { display: grid; gap: 7px; max-width: 500px; margin: 24px auto 0; padding: 17px 20px; border: 1px solid; border-radius: 16px; text-align: left; }
+.answer-summary strong { font-size: 1rem; }
+.answer-summary span { font-size: .88rem; line-height: 1.45; }
+.answer-summary.correct { background: #effbf5; border-color: #bde8cf; color: #176a42; }
+.answer-summary.incorrect { background: #fff4f5; border-color: #f2c5ce; color: #922e42; }
+.score-so-far { display: grid; grid-template-columns: 1fr auto; align-items: center; max-width: 500px; margin: 18px auto 0; padding: 15px 18px; border: 1px solid #e3e1f2; border-radius: 14px; color: #5f597f; text-align: left; }
+.score-so-far span { font: 500 .68rem 'DM Mono', monospace; letter-spacing: .08em; text-transform: uppercase; }
+.score-so-far strong { color: #302b5c; font-size: 1.35rem; }
+.score-so-far small { grid-column: 1 / -1; margin-top: 3px; color: #847f9e; font-size: .76rem; }
+.theme-kids .answer-summary.correct { background: #effbe8; border-color: #b9df96; color: #2f6e39; }
+.theme-kids .answer-summary.incorrect { background: #fff0f5; border-color: #f3b3cb; color: #a53763; }
+.theme-kids .score-so-far { background: #fff; border-color: #b9e8fb; }
 .small-loader { width: 25px; height: 25px; margin: 28px auto 0; border-width: 3px; }
 .facilitator-page { max-width: 1100px; }
 .facilitator-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(270px, .75fr); gap: 22px; align-items: start; }
 .control-card h1 { font-size: clamp(1.8rem, 4vw, 2.65rem); }
 .control-question { margin: 25px 0 10px; color: #373158; font-size: 1.12rem; font-weight: 700; line-height: 1.5; }
 .control-count { margin: 0 0 25px; color: #6d688d; }
+.control-count .timer-badge { margin-left: 8px; vertical-align: middle; }
+.auto-advance-control { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 14px; margin-top: 20px; padding: 16px 0; border-top: 1px solid #e7e5f4; color: #403b64; cursor: pointer; }
+.auto-advance-control > span { display: grid; gap: 3px; }
+.auto-advance-control strong { font-size: .82rem; }
+.auto-advance-control small { color: #7b7695; font-size: .73rem; font-weight: 500; line-height: 1.4; }
+.auto-advance-control input { position: absolute; opacity: 0; pointer-events: none; }
+.auto-advance-control i { position: relative; width: 42px; height: 24px; border-radius: 999px; background: #d8d5e9; transition: background-color .2s; }
+.auto-advance-control i::after { content: ''; position: absolute; width: 18px; height: 18px; top: 3px; left: 3px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px #29244d40; transition: transform .2s; }
+.auto-advance-control input:checked + i { background: #4f46e5; }
+.auto-advance-control input:checked + i::after { transform: translateX(18px); }
+.auto-advance-control input:focus-visible + i { outline: 3px solid #7169e955; outline-offset: 3px; }
+.auto-advance-control input:disabled + i { opacity: .5; }
 .next-preview { border-top: 1px solid #e7e5f4; margin-top: 28px; padding-top: 20px; }
 .next-preview strong { display: block; color: #373158; line-height: 1.5; }
 .participant-panel { background: #fff; border: 1px solid #e7e5fb; border-radius: 20px; padding: 24px; }
@@ -29,6 +53,9 @@
 .participant-panel li { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid #eeeefa; padding: 13px 0; color: #403b64; font-size: .9rem; font-weight: 600; }
 .participant-panel small { color: #918ba4; font: 500 .68rem 'DM Mono', monospace; }
 .participant-panel small.done { color: #198557; }
+.participant-score { display: flex; align-items: center; gap: 7px; color: #6d668d; font-size: .72rem; white-space: nowrap; }
+.participant-score strong { color: #373158; font: 700 .78rem 'DM Mono', monospace; }
+.participant-score small + small { border-left: 1px solid #ddd9ed; padding-left: 7px; }
 .student-access { border-bottom: 1px solid #e7e5f4; margin-bottom: 20px; padding-bottom: 20px; }
 .student-access .join-pin { display: block; color: #27234d; font: 700 2rem 'DM Mono', monospace; letter-spacing: .12em; margin: 5px 0 9px; }
 .student-access p:not(.eyebrow) { color: #77718f; font-size: .9rem; margin: 0 0 10px; }

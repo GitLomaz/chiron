@@ -1,4 +1,4 @@
-import { IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 
 export class JoinModeratedSessionDto {
   @IsString()
@@ -25,4 +25,9 @@ export class SubmitModeratedAnswerDto {
 export class FacilitatorActionDto {
   @IsUUID('4')
   facilitatorToken!: string;
+}
+
+export class UpdateModeratedSettingsDto extends FacilitatorActionDto {
+  @IsBoolean()
+  autoAdvanceOnTimeout!: boolean;
 }

@@ -1,4 +1,5 @@
-import { IsArray, IsInt, IsOptional, IsPositive, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsArray, IsIn, IsInt, IsOptional, IsPositive, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { TIMER_SECONDS } from './create-quiz.dto';
 
 export class CreateQuestionDto {
   @IsString()
@@ -28,4 +29,9 @@ export class CreateQuestionDto {
   @Min(2)
   @Max(500)
   answerCount?: number;
+
+  @IsOptional()
+  @IsInt()
+  @IsIn(TIMER_SECONDS)
+  timerSeconds?: number | null;
 }

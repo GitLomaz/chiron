@@ -5,6 +5,7 @@ import { UpdateQuizDto } from './dto/update-quiz.dto';
 import { CreateAnswerPoolDto } from './dto/create-answer-pool.dto';
 import { ReorderQuestionsDto } from './dto/reorder-questions.dto';
 import { UpdateQuestionEnabledDto } from './dto/update-question-enabled.dto';
+import { CreateGameDto } from './dto/create-game.dto';
 import { QuizzesService } from './quizzes.service';
 
 @Controller('quizzes')
@@ -67,6 +68,23 @@ export class QuizzesController {
     @Body() createQuestionDto: CreateQuestionDto,
   ) {
     return this.quizzesService.addQuestion(id, createQuestionDto);
+  }
+
+  @Post(':id/games')
+  addGame(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() game: CreateGameDto,
+  ) {
+    return this.quizzesService.addGame(id, game);
+  }
+
+  @Put(':id/games/:gameId')
+  updateGame(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('gameId', ParseIntPipe) gameId: number,
+    @Body() game: CreateGameDto,
+  ) {
+    return this.quizzesService.updateGame(id, gameId, game);
   }
 
   @Put(':id/questions/order')

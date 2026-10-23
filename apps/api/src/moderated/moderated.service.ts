@@ -3,7 +3,7 @@ import { randomInt, randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { SubmitModeratedAnswerDto } from './dto/moderated-session.dto';
 
-type SessionQuestion = { id: string; text: string; options: string[] };
+type SessionQuestion = { id: string; text: string; options: string[]; correctAnswer: string; timerSeconds: number | null };
 type Participant = { id: string; name: string; answers: Map<string, string>; joinedAt: Date };
 type ModeratedSession = {
   id: string;
@@ -12,6 +12,9 @@ type ModeratedSession = {
   quiz: { title: string; description: string | null; theme: string; questions: SessionQuestion[] };
   phase: 'lobby' | 'question' | 'complete';
   currentQuestionIndex: number;
+  currentQuestionOpenedAt: Date | null;
+  autoAdvanceOnTimeout: boolean;
+  autoAdvanceTimer: NodeJS.Timeout | null;
   participants: Map<string, Participant>;
   createdAt: Date;
 };
@@ -26,7 +29,7 @@ export class ModeratedService {
   async create(quizId: number) {
     const quiz = await this.prisma.quiz.findUnique({
       where: { id: quizId },
-      include: { questions: { where: { isEnabled: true }, orderBy: { position: 'asc' } } },
+      include: { questions: { where: { isEnabled: true, itemType: 'question' }, orderBy: { position: 'asc' } } },
     });
     if (!quiz) throw new NotFoundException(`Quiz ${quizId} was not found`);
     if (!quiz.questions.length) throw new BadRequestException('Enable at least one question before creating a moderated test');
@@ -42,13 +45,15 @@ export class ModeratedService {
       // is always included even when a question draws only part of an answer pool.
       return {
         id: String(question.id), text: question.text,
+        correctAnswer: question.correctAnswer,
+        timerSeconds: this.effectiveTimer(question.timerSeconds, quiz.defaultTimerSeconds),
         options: this.shuffle([question.correctAnswer, ...this.shuffle(wrongAnswers, `${id}-${question.id}-wrong`).slice(0, count - 1)], `${id}-${question.id}`),
       };
     });
     const session = {
       id, pin, facilitatorToken,
       quiz: { title: quiz.title, description: quiz.description, theme: quiz.theme, questions },
-      phase: 'lobby', currentQuestionIndex: -1, participants: new Map(), createdAt: new Date(),
+      phase: 'lobby', currentQuestionIndex: -1, currentQuestionOpenedAt: null, autoAdvanceOnTimeout: false, autoAdvanceTimer: null, participants: new Map(), createdAt: new Date(),
     } satisfies ModeratedSession;
     this.sessions.set(id, session);
     this.sessionsByPin.set(pin, session);
@@ -59,6 +64,7 @@ export class ModeratedService {
     const session = this.getByPin(pin);
     const participant = participantId ? session.participants.get(participantId) : undefined;
     const question = session.phase === 'question' ? session.quiz.questions[session.currentQuestionIndex] : undefined;
+    const answer = question && participant ? participant.answers.get(question.id) : undefined;
     return {
       pin: session.pin,
       title: session.quiz.title,
@@ -66,7 +72,16 @@ export class ModeratedService {
       theme: session.quiz.theme,
       phase: session.phase,
       participant: participant ? { id: participant.id, name: participant.name } : null,
-      currentQuestion: question ? { ...question, number: session.currentQuestionIndex + 1, total: session.quiz.questions.length, answered: participant?.answers.has(question.id) ?? false } : null,
+      score: participant ? this.score(session, participant) : null,
+      currentQuestion: question ? {
+        ...this.publicQuestion(question),
+        number: session.currentQuestionIndex + 1,
+        total: session.quiz.questions.length,
+        answered: answer !== undefined,
+        result: answer === undefined ? null : { answer, correctAnswer: question.correctAnswer, isCorrect: answer === question.correctAnswer },
+        timedOut: this.hasTimedOut(session, question),
+        timerEndsAt: this.timerEndsAt(session, question)?.toISOString() ?? null,
+      } : null,
     };
   }
 
@@ -78,11 +93,14 @@ export class ModeratedService {
       : session.quiz.questions[session.currentQuestionIndex + 1] ?? null;
     const answered = currentQuestion ? [...session.participants.values()].filter((participant) => participant.answers.has(currentQuestion.id)).length : 0;
     return {
-      sessionId: session.id, pin: session.pin, title: session.quiz.title, description: session.quiz.description, phase: session.phase,
-      questionCount: session.quiz.questions.length, currentQuestion: currentQuestion ? { ...currentQuestion, number: session.currentQuestionIndex + 1 } : null,
-      nextQuestion: nextQuestion ? { ...nextQuestion, number: session.phase === 'lobby' ? 1 : session.currentQuestionIndex + 2 } : null,
+      sessionId: session.id, pin: session.pin, title: session.quiz.title, description: session.quiz.description, phase: session.phase, autoAdvanceOnTimeout: session.autoAdvanceOnTimeout,
+      questionCount: session.quiz.questions.length, currentQuestion: currentQuestion ? { ...this.publicQuestion(currentQuestion), number: session.currentQuestionIndex + 1, timerEndsAt: this.timerEndsAt(session, currentQuestion)?.toISOString() ?? null } : null,
+      nextQuestion: nextQuestion ? { ...this.publicQuestion(nextQuestion), number: session.phase === 'lobby' ? 1 : session.currentQuestionIndex + 2 } : null,
       participants: [...session.participants.values()].map((participant) => ({
-        id: participant.id, name: participant.name, answeredCurrentQuestion: currentQuestion ? participant.answers.has(currentQuestion.id) : false,
+        id: participant.id,
+        name: participant.name,
+        answeredCurrentQuestion: currentQuestion ? participant.answers.has(currentQuestion.id) : false,
+        score: this.score(session, participant),
       })),
       answeredCount: answered,
     };
@@ -93,17 +111,22 @@ export class ModeratedService {
     if (session.phase !== 'lobby') throw new BadRequestException('This test has already started');
     session.phase = 'question';
     session.currentQuestionIndex = 0;
+    session.currentQuestionOpenedAt = new Date();
+    this.scheduleAutoAdvance(session);
     return this.facilitatorState(sessionId, token);
   }
 
   next(sessionId: string, token: string) {
     const session = this.authorize(sessionId, token);
     if (session.phase !== 'question') throw new BadRequestException('Start the test before moving to a question');
-    if (session.currentQuestionIndex >= session.quiz.questions.length - 1) {
-      session.phase = 'complete';
-    } else {
-      session.currentQuestionIndex += 1;
-    }
+    this.advance(session);
+    return this.facilitatorState(sessionId, token);
+  }
+
+  updateSettings(sessionId: string, token: string, autoAdvanceOnTimeout: boolean) {
+    const session = this.authorize(sessionId, token);
+    session.autoAdvanceOnTimeout = autoAdvanceOnTimeout;
+    this.scheduleAutoAdvance(session);
     return this.facilitatorState(sessionId, token);
   }
 
@@ -124,6 +147,7 @@ export class ModeratedService {
     if (session.phase !== 'question') throw new BadRequestException('Wait for the facilitator to open a question');
     const question = session.quiz.questions[session.currentQuestionIndex];
     if (body.questionId !== question.id) throw new BadRequestException('That question is no longer active');
+    if (this.hasTimedOut(session, question)) throw new BadRequestException('Time has expired for this question');
     if (!question.options.includes(body.answer)) throw new BadRequestException('Choose one of the available answers');
     participant.answers.set(question.id, body.answer);
     return { answered: true };
@@ -153,6 +177,72 @@ export class ModeratedService {
     const session = this.get(sessionId);
     if (!token || session.facilitatorToken !== token) throw new ForbiddenException('That facilitator code is not valid');
     return session;
+  }
+
+  private effectiveTimer(questionTimerSeconds: number | null, defaultTimerSeconds: number) {
+    const value = questionTimerSeconds ?? defaultTimerSeconds;
+    return value === -1 || value === null ? null : value;
+  }
+
+  private publicQuestion(question: SessionQuestion) {
+    return { id: question.id, text: question.text, options: question.options, timerSeconds: question.timerSeconds };
+  }
+
+  private score(session: ModeratedSession, participant: Participant) {
+    let correct = 0;
+    let answered = 0;
+    for (const question of session.quiz.questions) {
+      const answer = participant.answers.get(question.id);
+      if (answer === undefined) continue;
+      answered += 1;
+      if (answer === question.correctAnswer) correct += 1;
+    }
+    return { correct, answered };
+  }
+
+  private timerEndsAt(session: ModeratedSession, question: SessionQuestion) {
+    if (question.timerSeconds === null || !session.currentQuestionOpenedAt) return null;
+    return new Date(session.currentQuestionOpenedAt.getTime() + (question.timerSeconds * 1000));
+  }
+
+  private hasTimedOut(session: ModeratedSession, question: SessionQuestion) {
+    const endsAt = this.timerEndsAt(session, question);
+    return endsAt !== null && endsAt.getTime() <= Date.now();
+  }
+
+  private advance(session: ModeratedSession) {
+    this.clearAutoAdvanceTimer(session);
+    if (session.currentQuestionIndex >= session.quiz.questions.length - 1) {
+      session.phase = 'complete';
+      return;
+    }
+    session.currentQuestionIndex += 1;
+    session.currentQuestionOpenedAt = new Date();
+    this.scheduleAutoAdvance(session);
+  }
+
+  private scheduleAutoAdvance(session: ModeratedSession) {
+    this.clearAutoAdvanceTimer(session);
+    if (!session.autoAdvanceOnTimeout || session.phase !== 'question') return;
+    const question = session.quiz.questions[session.currentQuestionIndex];
+    const endsAt = this.timerEndsAt(session, question);
+    if (!endsAt) return;
+    const questionId = question.id;
+    const run = () => {
+      if (session.phase !== 'question' || session.quiz.questions[session.currentQuestionIndex]?.id !== questionId) return;
+      if (!this.hasTimedOut(session, question)) {
+        this.scheduleAutoAdvance(session);
+        return;
+      }
+      this.advance(session);
+    };
+    session.autoAdvanceTimer = setTimeout(run, Math.max(0, endsAt.getTime() - Date.now()) + 10);
+  }
+
+  private clearAutoAdvanceTimer(session: ModeratedSession) {
+    if (!session.autoAdvanceTimer) return;
+    clearTimeout(session.autoAdvanceTimer);
+    session.autoAdvanceTimer = null;
   }
 
   private shuffle<T>(items: T[], seed: string) {

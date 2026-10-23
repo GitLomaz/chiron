@@ -1,4 +1,6 @@
-import { IsBoolean, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+
+export const TIMER_SECONDS = [-1, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180] as const;
 
 export class CreateQuizDto {
   @IsString()
@@ -18,4 +20,9 @@ export class CreateQuizDto {
   @IsOptional()
   @IsIn(['standard', 'kids'])
   theme?: 'standard' | 'kids';
+
+  @IsOptional()
+  @IsInt()
+  @IsIn(TIMER_SECONDS)
+  defaultTimerSeconds?: number;
 }

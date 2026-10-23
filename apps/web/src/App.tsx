@@ -3,15 +3,27 @@ import type { FormEvent, ReactNode } from 'react';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 type QuizTheme = 'standard' | 'kids';
-type Quiz = { id: number; guid: string; title: string; description: string | null; randomizeQuestionOrder: boolean; theme: QuizTheme; _count?: { questions: number } };
-type Question = { id: number; text: string; options: string[]; correctAnswer: string; isEnabled: boolean; answerPoolId?: number | null; answerCount?: number | null; answerPool?: { name: string } | null };
+type Quiz = { id: number; guid: string; title: string; description: string | null; randomizeQuestionOrder: boolean; theme: QuizTheme; defaultTimerSeconds: number; _count?: { questions: number } };
+type QuizItemType = 'question' | 'game';
+type GameType = 'coin_catch' | 'match_pairs' | 'tower_stack';
+type Question = { id: number; text: string; options: string[]; correctAnswer: string; isEnabled: boolean; itemType: QuizItemType; gameType?: GameType | null; gameDurationSeconds?: number | null; answerPoolId?: number | null; answerCount?: number | null; timerSeconds: number | null; answerPool?: { name: string } | null };
 type QuizDetail = Quiz & { questions: Question[] };
 type AnswerPool = { id: number; name: string; answers: { id: number; value: string }[]; _count?: { questions: number; commonQuestions: number } };
 type CommonQuestion = Question & { answerPool?: AnswerPool | null };
-type QuestionData = { text: string; correctAnswer: string; wrongAnswers?: string[]; answerPoolId?: number; answerCount?: number };
+type QuestionData = { text: string; correctAnswer: string; wrongAnswers?: string[]; answerPoolId?: number; answerCount?: number; timerSeconds?: number | null };
 type QuestionPreviewData = { text: string; options: string[] };
 type PoolData = { name: string; answers: string[] };
 type ModeratedSession = { sessionId: string; facilitatorToken: string; pin: string; phase: 'lobby' };
+
+const TIMER_SECONDS = [-1, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180] as const;
+const GAME_DURATION_SECONDS = [10, 15, 20, 30, 45, 60, 90, 120] as const;
+function timerSettingLabel(seconds: number | null) {
+  if (seconds === null) return 'Use quiz default';
+  if (seconds === -1) return 'Unlimited';
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return minutes ? `${minutes} min${remainder ? ` ${remainder} sec` : ''}` : `${seconds} seconds`;
+}
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, { headers: { 'Content-Type': 'application/json', ...options?.headers }, ...options });
@@ -25,7 +37,7 @@ function facilitatorSessionUrl(session: ModeratedSession) { return `${(import.me
 function useRoute() { const [path, setPath] = useState(window.location.pathname); useEffect(() => { const update = () => setPath(window.location.pathname); window.addEventListener('popstate', update); return () => window.removeEventListener('popstate', update); }, []); const go = (nextPath: string) => { window.history.pushState({}, '', nextPath); setPath(nextPath); }; return { path, go }; }
 
 function AdminShell({ path, go, children }: { path: string; go: (value: string) => void; children: ReactNode }) {
-  const items = [{ path: '/quizzes', label: 'Quizzes', icon: '▦' }, { path: '/questions', label: 'Common Questions', icon: '?' }, { path: '/answer-pools', label: 'Answer Pools', icon: '◌' }]; const active = path.startsWith('/quizzes/') ? '/quizzes' : path;
+  const items = [{ path: '/quizzes', label: 'Quizzes', icon: '▦' }, { path: '/games', label: 'Games', icon: '★' }, { path: '/questions', label: 'Common Questions', icon: '?' }, { path: '/answer-pools', label: 'Answer Pools', icon: '◌' }]; const active = path.startsWith('/quizzes/') ? '/quizzes' : path;
   return <div className="admin-shell"><aside className="sidebar"><button className="brand" onClick={() => go('/quizzes')}><span className="brand-mark">Q</span><span>Quizboard<small>ADMIN PORTAL</small></span></button><nav aria-label="Main navigation">{items.map((item) => <button key={item.path} className={active === item.path ? 'nav-link active' : 'nav-link'} onClick={() => go(item.path)}><span>{item.icon}</span>{item.label}</button>)}</nav><div className="sidebar-foot"><span className="avatar">AD</span><div><strong>Admin</strong><small>Content manager</small></div></div></aside><div className="page-wrap"><header className="topbar"><div><span className="crumb">ADMINISTRATION</span><span className="topbar-title">Quiz management</span></div><button className="help-button" aria-label="Help">?</button></header><main className="content">{children}</main></div></div>;
 }
 function PageHeading({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: ReactNode }) { return <div className="page-heading"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{description}</p></div>{action}</div>; }
@@ -39,8 +51,16 @@ function QuizList({ go }: { go: (path: string) => void }) {
   return <><PageHeading eyebrow="QUIZ LIBRARY" title="Quizzes" description="Create, organize and prepare the quizzes your team publishes." action={<button className="primary" onClick={() => setShowCreate(true)}>+ New quiz</button>} />{error && <p className="error">{error}</p>}<section className="surface"><div className="surface-head"><div><h2>All quizzes</h2><p>{quizzes.length} quiz{quizzes.length === 1 ? '' : 'zes'} in your workspace</p></div><button className="subtle-button" onClick={() => void load()}>Refresh</button></div>{quizzes.length === 0 ? <Empty icon="▦" title="No quizzes yet" copy="Create your first quiz to begin building its question set." /> : <div className="data-list">{quizzes.map((quiz) => <button className="quiz-row" key={quiz.id} onClick={() => go(`/quizzes/${quiz.id}`)}><span className="list-icon">▦</span><span className="row-main"><strong>{quiz.title}</strong><small>{quiz.description || 'No description added'}</small></span><span className="question-total">{quiz._count?.questions ?? 0}<small>questions</small></span><span className="chevron">›</span></button>)}</div>}</section>{showCreate && <Modal title="Create a quiz" onClose={() => setShowCreate(false)}><form onSubmit={createQuiz}><label>Quiz title<input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Winter knowledge check" maxLength={200} required /></label><label>Description <span>optional</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={4} placeholder="What should participants expect?" maxLength={2000} /></label><div className="form-actions"><button type="button" className="subtle-button" onClick={() => setShowCreate(false)}>Cancel</button><button className="primary" disabled={saving}>{saving ? 'Creating…' : 'Create quiz'}</button></div></form></Modal>}</>;
 }
 
-function QuestionForm({ pools, onSave, saving, submitLabel, initial, onPreviewChange }: { pools: AnswerPool[]; onSave: (data: QuestionData) => Promise<void>; saving: boolean; submitLabel: string; initial?: Question; onPreviewChange?: (preview: QuestionPreviewData) => void }) {
-  const [text, setText] = useState(initial?.text ?? ''), [correctAnswer, setCorrectAnswer] = useState(initial?.correctAnswer ?? ''), [wrongAnswers, setWrongAnswers] = useState(initial ? initial.options.filter((answer) => answer !== initial.correctAnswer) : ['', '', '']), [source, setSource] = useState<'static' | 'pool'>(initial?.answerPoolId ? 'pool' : 'static'), [poolId, setPoolId] = useState(initial?.answerPoolId?.toString() ?? ''), [answerCount, setAnswerCount] = useState((initial?.answerCount ?? 4).toString()), [formError, setFormError] = useState('');
+function GamesPage() {
+  return <><PageHeading eyebrow="GAME TYPES" title="Games" description="Browse the game types that can be added to a quiz. Configure each game after adding it to a quiz." /><section className="surface"><div className="surface-head"><div><h2>Available games</h2><p>3 game types available</p></div></div><div className="game-catalog"><article className="game-catalog-card"><span className="game-catalog-icon">★</span><div><p className="eyebrow">INTERACTIVE GAME</p><h3>Coin Catch</h3><p>Students click falling coins and avoid vegetables in a short game break.</p><small>Configurable duration · 10 seconds to 2 minutes</small></div></article><article className="game-catalog-card"><span className="game-catalog-icon">⌑</span><div><p className="eyebrow">MEMORY GAME</p><h3>Match Pairs</h3><p>Students flip cards to uncover and match all of the pairs.</p><small>Configurable duration · 10 seconds to 2 minutes</small></div></article><article className="game-catalog-card"><span className="game-catalog-icon">▤</span><div><p className="eyebrow">ARCADE GAME</p><h3>Tower Stack</h3><p>Drop moving blocks, trim the overhang, and build the tallest tower.</p><small>Configurable duration · 10 seconds to 2 minutes</small></div></article></div></section></>;
+}
+
+function GamePicker({ onClose, onSelect, saving }: { onClose: () => void; onSelect: (gameType: GameType) => void; saving: boolean }) {
+  return <Modal title="Add a game" onClose={onClose} wide><p className="modal-intro">Choose a game type to add it at the end of this quiz. You can drag it into place and configure it afterward.</p><div className="game-picker"><button type="button" disabled={saving} onClick={() => onSelect('coin_catch')}><span>★</span><span><strong>Coin Catch</strong><small>Catch coins, avoid veggies</small><em>20 seconds by default · configurable</em></span><b>+</b></button><button type="button" disabled={saving} onClick={() => onSelect('match_pairs')}><span>⌑</span><span><strong>Match Pairs</strong><small>Flip cards and find the matching pairs</small><em>20 seconds by default · configurable</em></span><b>+</b></button><button type="button" disabled={saving} onClick={() => onSelect('tower_stack')}><span>▤</span><span><strong>Tower Stack</strong><small>Drop blocks and build the tallest tower</small><em>20 seconds by default · configurable</em></span><b>+</b></button></div></Modal>;
+}
+
+function QuestionForm({ pools, onSave, saving, submitLabel, initial, onPreviewChange, showTimer = false }: { pools: AnswerPool[]; onSave: (data: QuestionData) => Promise<void>; saving: boolean; submitLabel: string; initial?: Question; onPreviewChange?: (preview: QuestionPreviewData) => void; showTimer?: boolean }) {
+  const [text, setText] = useState(initial?.text ?? ''), [correctAnswer, setCorrectAnswer] = useState(initial?.correctAnswer ?? ''), [wrongAnswers, setWrongAnswers] = useState(initial ? initial.options.filter((answer) => answer !== initial.correctAnswer) : ['', '', '']), [source, setSource] = useState<'static' | 'pool'>(initial?.answerPoolId ? 'pool' : 'static'), [poolId, setPoolId] = useState(initial?.answerPoolId?.toString() ?? ''), [answerCount, setAnswerCount] = useState((initial?.answerCount ?? 4).toString()), [timerSeconds, setTimerSeconds] = useState(initial?.timerSeconds?.toString() ?? ''), [formError, setFormError] = useState('');
   const updateWrong = (index: number, value: string) => setWrongAnswers((current) => current.map((answer, i) => i === index ? value : answer));
   const selectedPool = pools.find((pool) => pool.id === Number(poolId));
   const previewOptions = useMemo(() => [
@@ -51,8 +71,8 @@ function QuestionForm({ pools, onSave, saving, submitLabel, initial, onPreviewCh
   ].map((answer) => answer.trim()).filter((answer, index, answers) => answer && answers.indexOf(answer) === index), [answerCount, correctAnswer, selectedPool, source, wrongAnswers]);
 
   useEffect(() => { onPreviewChange?.({ text: text.trim(), options: previewOptions }); }, [onPreviewChange, previewOptions, text]);
-  async function submit(event: FormEvent) { event.preventDefault(); setFormError(''); if (source === 'static' && !wrongAnswers.some((answer) => answer.trim())) { setFormError('Add at least one wrong answer.'); return; } if (source === 'pool' && (!poolId || Number(answerCount) < 2)) { setFormError('Select an answer pool and enter at least two answers shown.'); return; } try { await onSave({ text, correctAnswer, ...(source === 'static' ? { wrongAnswers } : { answerPoolId: Number(poolId), answerCount: Number(answerCount) }) }); if (!initial) { setText(''); setCorrectAnswer(''); setWrongAnswers(['', '', '']); setPoolId(''); setAnswerCount('4'); } } catch (err) { setFormError(err instanceof Error ? err.message : 'Could not save this question'); } }
-  return <form onSubmit={submit} className="question-form"><label>Question<textarea value={text} onChange={(event) => setText(event.target.value)} rows={3} placeholder="Type the question participants will see" maxLength={2000} required /></label><label>Correct answer<input value={correctAnswer} onChange={(event) => setCorrectAnswer(event.target.value)} placeholder="The one correct response" maxLength={500} required /></label><fieldset className="answer-source"><legend>Wrong answer source</legend><div className="source-tabs"><button type="button" className={source === 'static' ? 'selected' : ''} onClick={() => setSource('static')}>Static answers</button><button type="button" className={source === 'pool' ? 'selected' : ''} onClick={() => setSource('pool')}>Answer pool</button></div>{source === 'static' ? <div className="wrong-answers">{wrongAnswers.map((answer, index) => <input key={index} value={answer} onChange={(event) => updateWrong(index, event.target.value)} placeholder={`Wrong answer ${index + 1}`} maxLength={500} />)}<button className="inline-button" type="button" onClick={() => setWrongAnswers((current) => [...current, ''])}>+ Add another wrong answer</button></div> : <div className="pool-fields"><label className="pool-select">Choose pool<select value={poolId} onChange={(event) => setPoolId(event.target.value)} required><option value="">Select an answer pool</option>{pools.map((pool) => <option key={pool.id} value={pool.id}>{pool.name} · {pool.answers.length} answers</option>)}</select>{pools.length === 0 && <small>No pools yet. Create one from the Answer Pools page.</small>}</label><label>Number of answers shown<input type="number" min="2" max={selectedPool ? selectedPool.answers.length + 1 : undefined} value={answerCount} onChange={(event) => setAnswerCount(event.target.value)} required /><small>Includes the correct answer; choices will be randomized later.</small></label></div>}</fieldset>{formError && <p className="error">{formError}</p>}<button className="primary" disabled={saving}>{saving ? 'Saving…' : submitLabel}</button></form>;
+  async function submit(event: FormEvent) { event.preventDefault(); setFormError(''); if (source === 'static' && !wrongAnswers.some((answer) => answer.trim())) { setFormError('Add at least one wrong answer.'); return; } if (source === 'pool' && (!poolId || Number(answerCount) < 2)) { setFormError('Select an answer pool and enter at least two answers shown.'); return; } try { await onSave({ text, correctAnswer, ...(source === 'static' ? { wrongAnswers } : { answerPoolId: Number(poolId), answerCount: Number(answerCount) }), ...(showTimer ? { timerSeconds: timerSeconds === '' ? null : Number(timerSeconds) } : {}) }); if (!initial) { setText(''); setCorrectAnswer(''); setWrongAnswers(['', '', '']); setPoolId(''); setAnswerCount('4'); setTimerSeconds(''); } } catch (err) { setFormError(err instanceof Error ? err.message : 'Could not save this question'); } }
+  return <form onSubmit={submit} className="question-form"><label>Question<textarea value={text} onChange={(event) => setText(event.target.value)} rows={3} placeholder="Type the question participants will see" maxLength={2000} required /></label><label>Correct answer<input value={correctAnswer} onChange={(event) => setCorrectAnswer(event.target.value)} placeholder="The one correct response" maxLength={500} required /></label><fieldset className="answer-source"><legend>Wrong answer source</legend><div className="source-tabs"><button type="button" className={source === 'static' ? 'selected' : ''} onClick={() => setSource('static')}>Static answers</button><button type="button" className={source === 'pool' ? 'selected' : ''} onClick={() => setSource('pool')}>Answer pool</button></div>{source === 'static' ? <div className="wrong-answers">{wrongAnswers.map((answer, index) => <input key={index} value={answer} onChange={(event) => updateWrong(index, event.target.value)} placeholder={`Wrong answer ${index + 1}`} maxLength={500} />)}<button className="inline-button" type="button" onClick={() => setWrongAnswers((current) => [...current, ''])}>+ Add another wrong answer</button></div> : <div className="pool-fields"><label className="pool-select">Choose pool<select value={poolId} onChange={(event) => setPoolId(event.target.value)} required><option value="">Select an answer pool</option>{pools.map((pool) => <option key={pool.id} value={pool.id}>{pool.name} · {pool.answers.length} answers</option>)}</select>{pools.length === 0 && <small>No pools yet. Create one from the Answer Pools page.</small>}</label><label>Number of answers shown<input type="number" min="2" max={selectedPool ? selectedPool.answers.length + 1 : undefined} value={answerCount} onChange={(event) => setAnswerCount(event.target.value)} required /><small>Includes the correct answer; choices will be randomized later.</small></label></div>}</fieldset>{showTimer && <label>Question timer<select value={timerSeconds} onChange={(event) => setTimerSeconds(event.target.value)}><option value="">Use quiz default</option>{TIMER_SECONDS.map((seconds) => <option key={seconds} value={seconds}>{timerSettingLabel(seconds)}</option>)}</select><small>Overrides the quiz default for this question.</small></label>}{formError && <p className="error">{formError}</p>}<button className="primary" disabled={saving}>{saving ? 'Saving…' : submitLabel}</button></form>;
 }
 
 function QuestionEditor({ draft, theme, editing, pools, mode, onModeChange, commonQuestions, onCreateQuestion, onSaveQuestion, onAddCommonQuestion, saving, onPreviewChange }: { draft: QuestionPreviewData | null; theme: QuizTheme; editing: Question | null; pools: AnswerPool[]; mode: 'new' | 'common'; onModeChange: (mode: 'new' | 'common') => void; commonQuestions: CommonQuestion[]; onCreateQuestion: (data: QuestionData) => Promise<void>; onSaveQuestion: (data: QuestionData) => Promise<void>; onAddCommonQuestion: (questionId: number) => Promise<void>; saving: boolean; onPreviewChange: (preview: QuestionPreviewData) => void }) {
@@ -64,7 +84,7 @@ function QuestionEditor({ draft, theme, editing, pools, mode, onModeChange, comm
   return <aside className={`surface question-preview-panel${editing ? ' is-editing' : ''}`}>
     <div className="surface-head"><div><h2>{editing ? 'Edit question' : mode === 'new' ? 'Add a question' : 'Common questions'}</h2><p>Student view · {theme === 'kids' ? 'Kid-friendly theme' : 'Standard theme'}</p></div></div>
     <div className="source-tabs editor-tabs question-editor-tabs"><button type="button" className={activeTab === 'editor' ? 'selected' : ''} onClick={() => setActiveTab('editor')}>{editing ? 'Edit' : 'Add'}</button><button type="button" className={activeTab === 'preview' ? 'selected' : ''} onClick={() => setActiveTab('preview')}>Preview</button></div>
-    <div hidden={activeTab !== 'editor'}>{editing ? <div className="preview-editor"><div className="preview-editor-intro"><h3>Modify this question</h3><p>Your changes are ready to preview at any time.</p></div><QuestionForm key={editing.id} pools={pools} onSave={onSaveQuestion} saving={saving} submitLabel="Save changes" initial={editing} onPreviewChange={onPreviewChange} /></div> : <div className="preview-editor">{mode === 'new' ? <><div className="preview-editor-intro preview-editor-intro-with-action"><div><h3>Build a question</h3><p>Open Preview to check the student experience.</p></div><button className="inline-button question-source-action" type="button" onClick={() => onModeChange('common')}>Use a common question</button></div><QuestionForm pools={pools} onSave={onCreateQuestion} saving={saving} submitLabel="Add to quiz" onPreviewChange={onPreviewChange} /></> : <div className="common-picker"><div className="preview-editor-intro preview-editor-intro-with-action"><div><h3>Choose a common question</h3><p>Add an approved question from your shared library.</p></div><button className="inline-button question-source-action" type="button" onClick={() => onModeChange('new')}>Create from scratch</button></div>{commonQuestions.length === 0 ? <Empty icon="?" title="Library is empty" copy="Create a common question to reuse it here." /> : commonQuestions.map((question) => <div className="common-card" key={question.id}><strong>{question.text}</strong><small>{question.answerPool ? `Uses ${question.answerPool.name}` : `${question.options.length - 1} static wrong answers`}</small><button className="secondary" disabled={saving} onClick={() => void onAddCommonQuestion(question.id)}>Add to quiz</button></div>)}</div>}</div>}</div>
+    <div hidden={activeTab !== 'editor'}>{editing ? <div className="preview-editor"><div className="preview-editor-intro"><h3>Modify this question</h3><p>Your changes are ready to preview at any time.</p></div><QuestionForm key={editing.id} pools={pools} onSave={onSaveQuestion} saving={saving} submitLabel="Save changes" initial={editing} onPreviewChange={onPreviewChange} showTimer /></div> : <div className="preview-editor">{mode === 'new' ? <><div className="preview-editor-intro preview-editor-intro-with-action"><div><h3>Build a question</h3><p>Open Preview to check the student experience.</p></div><button className="inline-button question-source-action" type="button" onClick={() => onModeChange('common')}>Use a common question</button></div><QuestionForm pools={pools} onSave={onCreateQuestion} saving={saving} submitLabel="Add to quiz" onPreviewChange={onPreviewChange} showTimer /></> : <div className="common-picker"><div className="preview-editor-intro preview-editor-intro-with-action"><div><h3>Choose a common question</h3><p>Add an approved question from your shared library.</p></div><button className="inline-button question-source-action" type="button" onClick={() => onModeChange('new')}>Create from scratch</button></div>{commonQuestions.length === 0 ? <Empty icon="?" title="Library is empty" copy="Create a common question to reuse it here." /> : commonQuestions.map((question) => <div className="common-card" key={question.id}><strong>{question.text}</strong><small>{question.answerPool ? `Uses ${question.answerPool.name}` : `${question.options.length - 1} static wrong answers`}</small><button className="secondary" disabled={saving} onClick={() => void onAddCommonQuestion(question.id)}>Add to quiz</button></div>)}</div>}</div>}</div>
     <div hidden={activeTab !== 'preview'} className={`student-question-preview preview-theme-${theme}`}>
       {hasQuestion ? <>
         <div className="preview-topline"><span className="preview-brand"><b>Q</b> Quizboard</span><span>Question 1 of 1</span></div>
@@ -73,6 +93,17 @@ function QuestionEditor({ draft, theme, editing, pools, mode, onModeChange, comm
       </> : <div className="preview-empty"><span>?</span><h3>Your question preview</h3><p>Start writing a question and its answers to see the student experience here.</p></div>}
     </div>
   </aside>;
+}
+
+function GameEditor({ game, saving, onSave }: { game: Question; saving: boolean; onSave: (data: { gameType: GameType; text: string; durationSeconds: number }) => Promise<void> }) {
+  const [text, setText] = useState(game.text);
+  const [durationSeconds, setDurationSeconds] = useState(game.gameDurationSeconds ?? 20);
+  const [gameType, setGameType] = useState<GameType>(game.gameType ?? 'coin_catch');
+  const [error, setError] = useState('');
+  const details = gameType === 'match_pairs' ? { icon: '⌑', name: 'Match Pairs', copy: 'Students flip cards to uncover matching pairs.', rules: ['Find all 6 pairs', 'Finish before time runs out'] } : gameType === 'tower_stack' ? { icon: '▤', name: 'Tower Stack', copy: 'Students drop blocks to build a tall tower.', rules: ['Successful stack: +10 points', 'Perfect stacks build a combo'] } : { icon: '★', name: 'Coin Catch', copy: 'Students catch coins and avoid veggies.', rules: ['Coins: +1 point', 'Veggies: −1 point'] };
+  function changeGameType(nextType: GameType) { const currentDefault = gameType === 'match_pairs' ? 'Match Pairs' : gameType === 'tower_stack' ? 'Tower Stack' : 'Coin Catch'; setGameType(nextType); if (text === currentDefault) setText(nextType === 'match_pairs' ? 'Match Pairs' : nextType === 'tower_stack' ? 'Tower Stack' : 'Coin Catch'); }
+  async function submit(event: FormEvent) { event.preventDefault(); setError(''); try { await onSave({ gameType, text, durationSeconds }); } catch (err) { setError(err instanceof Error ? err.message : 'Could not save this game'); } }
+  return <aside className="surface question-preview-panel game-editor-panel"><div className="surface-head"><div><h2>Configure game</h2><p>Student game break</p></div></div><div className="game-editor-banner"><span>{details.icon}</span><div><strong>{details.name}</strong><small>{details.copy}</small></div></div><form className="question-form" onSubmit={submit}><label>Game type<select value={gameType} onChange={(event) => changeGameType(event.target.value as GameType)}><option value="coin_catch">Coin Catch</option><option value="match_pairs">Match Pairs</option><option value="tower_stack">Tower Stack</option></select><small>Changing type keeps this item in the same quiz position.</small></label><label>Game title<input value={text} onChange={(event) => setText(event.target.value)} maxLength={200} required /></label><label>Game duration<select value={durationSeconds} onChange={(event) => setDurationSeconds(Number(event.target.value))}>{GAME_DURATION_SECONDS.map((seconds) => <option key={seconds} value={seconds}>{seconds} seconds</option>)}</select><small>How long students have to play before continuing.</small></label><div className="game-rules"><strong>Rules</strong>{details.rules.map((rule) => <span key={rule}>{rule}</span>)}</div>{error && <p className="error">{error}</p>}<button className="primary" disabled={saving}>{saving ? 'Saving…' : 'Save game settings'}</button></form></aside>;
 }
 
 function LegacyQuizPage({ id, go }: { id: number; go: (path: string) => void }) {
@@ -99,6 +130,7 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
   const [shareCopied, setShareCopied] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [creatingSession, setCreatingSession] = useState(false);
+  const [showGamePicker, setShowGamePicker] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -148,6 +180,34 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not add the common question');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function addGame(gameType: GameType) {
+    setSaving(true);
+    setError('');
+    try {
+      await request(`/quizzes/${id}/games`, { method: 'POST', body: JSON.stringify({ gameType }) });
+      setEditing(null);
+      setQuestionPreview(null);
+      setShowGamePicker(false);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not add the game');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveGame(data: { gameType: GameType; text: string; durationSeconds: number }) {
+    if (!editing || editing.itemType !== 'game') return;
+    setSaving(true);
+    setError('');
+    try {
+      await request(`/quizzes/${id}/games/${editing.id}`, { method: 'PUT', body: JSON.stringify(data) });
+      await load();
     } finally {
       setSaving(false);
     }
@@ -227,6 +287,22 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
     }
   }
 
+  async function updateDefaultTimer(defaultTimerSeconds: number) {
+    setSavingSettings(true);
+    setError('');
+    try {
+      const updatedQuiz = await request<Quiz>(`/quizzes/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ defaultTimerSeconds }),
+      });
+      setQuiz((current) => current ? { ...current, defaultTimerSeconds: updatedQuiz.defaultTimerSeconds } : current);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update quiz settings');
+    } finally {
+      setSavingSettings(false);
+    }
+  }
+
   async function copyStudentLink() {
     if (!quiz) return;
     try {
@@ -263,29 +339,30 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
           <span><strong>Randomize question order</strong><small>Students receive the quiz questions in a different order each time it is opened.</small></span>
         </label>
         <label className="theme-select"><span><strong>Student theme</strong><small>Choose the visual style students see while taking this quiz.</small></span><select value={quiz.theme} disabled={savingSettings} onChange={(event) => void updateTheme(event.target.value as QuizTheme)}><option value="standard">Standard</option><option value="kids">Kid-friendly</option></select></label>
+        <label className="theme-select"><span><strong>Default question timer</strong><small>Used unless a question overrides it.</small></span><select value={quiz.defaultTimerSeconds} disabled={savingSettings} onChange={(event) => void updateDefaultTimer(Number(event.target.value))}>{TIMER_SECONDS.map((seconds) => <option key={seconds} value={seconds}>{timerSettingLabel(seconds)}</option>)}</select></label>
       </div>
     </section>
     {error && <p className="error">{error}</p>}
     <div className="editor-grid editor-grid-two">
       <section className="surface questions-surface">
-        <div className="surface-head"><div><h2>Questions</h2><p>{quiz.questions.length} currently in this quiz</p></div></div>
+        <div className="surface-head"><div><h2>Quiz items</h2><p>{quiz.questions.length} questions and games in this quiz</p></div></div>
         <ol className="question-list">
-          {quiz.questions.map((question, index) => <li key={question.id} className={`${editing?.id === question.id ? 'selected-question' : ''}${draggingQuestionId === question.id ? ' dragging-question' : ''}${question.isEnabled ? '' : ' disabled-question'}`} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); void moveQuestion(question.id); }}>
-            <button className="question-select" type="button" aria-pressed={editing?.id === question.id} onClick={() => { setEditing(question); setQuestionPreview({ text: question.text, options: question.options }); }}>
+          {quiz.questions.map((question, index) => <li key={question.id} className={`quiz-item-${question.itemType}${editing?.id === question.id ? ' selected-question' : ''}${draggingQuestionId === question.id ? ' dragging-question' : ''}${question.isEnabled ? '' : ' disabled-question'}`} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); void moveQuestion(question.id); }}>
+            <button className="question-select" type="button" aria-pressed={editing?.id === question.id} onClick={() => { setEditing(question); setQuestionPreview(question.itemType === 'question' ? { text: question.text, options: question.options } : null); }}>
               <span className="question-number">{String(index + 1).padStart(2, '0')}</span>
               <span className="question-list-content">
-                <strong>{question.text}</strong>
-                {question.answerPool ? <span className="answer-chips"><span className="answer-chip correct">Correct: {question.correctAnswer}</span><span className="answer-pool-badge">Answer pool: {question.answerPool.name}</span></span> : <span className="answer-chips">{question.options.map((answer) => <span className={answer === question.correctAnswer ? 'answer-chip correct' : 'answer-chip'} key={answer}>{answer === question.correctAnswer && 'Correct: '}{answer}</span>)}</span>}
+                {question.itemType === 'game' ? <><strong><span className="game-item-badge">GAME</span>{question.text}</strong><small className="question-timer-setting">{question.gameType === 'match_pairs' ? 'Match Pairs · flip cards to find matching pairs' : question.gameType === 'tower_stack' ? 'Tower Stack · drop blocks to build a tower' : 'Coin Catch · collect coins and avoid falling veggies'} · {question.gameDurationSeconds ?? 20} seconds</small></> : <><strong>{question.text}</strong>{question.answerPool ? <span className="answer-chips"><span className="answer-chip correct">Correct: {question.correctAnswer}</span><span className="answer-pool-badge">Answer pool: {question.answerPool.name}</span></span> : <span className="answer-chips">{question.options.map((answer) => <span className={answer === question.correctAnswer ? 'answer-chip correct' : 'answer-chip'} key={answer}>{answer === question.correctAnswer && 'Correct: '}{answer}</span>)}</span>}<small className="question-timer-setting">Timer: {question.timerSeconds === null ? `${timerSettingLabel(quiz.defaultTimerSeconds)} (quiz default)` : timerSettingLabel(question.timerSeconds)}</small></>}
               </span>
             </button>
             <label className="question-toggle" onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={question.isEnabled} disabled={togglingQuestionId === question.id} onChange={(event) => void setQuestionEnabled(question.id, event.target.checked)} /><span>{question.isEnabled ? 'Included' : 'Skipped'}</span></label>
             <button className="question-grip" type="button" draggable={!reordering} disabled={reordering} aria-label={`Drag question ${index + 1} to reorder`} title="Drag to reorder" onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', String(question.id)); setDraggingQuestionId(question.id); }} onDragEnd={() => setDraggingQuestionId(null)}>⠿</button>
           </li>)}
-          <li className="new-question-slot"><button type="button" onClick={startNewQuestion}><span>+</span><strong>Add a new question</strong><small>Build a new question from scratch</small></button></li>
+          <li className="new-question-slot"><button type="button" onClick={startNewQuestion}><span>+</span><strong>Add a new question</strong><small>Build a new question from scratch</small></button><button type="button" className="add-game-button" disabled={saving} onClick={() => setShowGamePicker(true)}><span>★</span><strong>Add a game</strong><small>Choose a game type for this quiz</small></button></li>
         </ol>
       </section>
-      <QuestionEditor draft={mode === 'new' || editing ? questionPreview : null} theme={quiz.theme} editing={editing} pools={pools} mode={mode} onModeChange={setMode} commonQuestions={commonQuestions} onCreateQuestion={addOwnQuestion} onSaveQuestion={saveQuestion} onAddCommonQuestion={addCommonQuestion} saving={saving} onPreviewChange={setQuestionPreview} />
+      {editing?.itemType === 'game' ? <GameEditor key={editing.id} game={editing} saving={saving} onSave={saveGame} /> : <QuestionEditor draft={mode === 'new' || editing ? questionPreview : null} theme={quiz.theme} editing={editing} pools={pools} mode={mode} onModeChange={setMode} commonQuestions={commonQuestions} onCreateQuestion={addOwnQuestion} onSaveQuestion={saveQuestion} onAddCommonQuestion={addCommonQuestion} saving={saving} onPreviewChange={setQuestionPreview} />}
     </div>
+    {showGamePicker && <GamePicker saving={saving} onClose={() => setShowGamePicker(false)} onSelect={(gameType) => void addGame(gameType)} />}
   </>;
 }
 
@@ -312,4 +389,4 @@ function AnswerPoolsPage() {
   return <><PageHeading eyebrow="REUSABLE RESPONSES" title="Answer Pools" description="Maintain sets of wrong answers that can be attached to questions." action={<button className="primary" onClick={() => setShowCreate(true)}>+ New answer pool</button>} />{error && <p className="error">{error}</p>}<section className="surface"><div className="surface-head"><div><h2>Saved pools</h2><p>{pools.length} answer pool{pools.length === 1 ? '' : 's'}</p></div></div>{pools.length === 0 ? <Empty icon="O" title="No answer pools yet" copy="Pool answers are used as reusable wrong-answer options." /> : <div className="pool-grid">{pools.map((pool) => <article className="pool-card" key={pool.id}><div className="pool-title"><span className="list-icon">O</span><div><h3>{pool.name}</h3><small>{pool.answers.length} answers</small></div></div><div className="pool-answers">{pool.answers.slice(0, 6).map((answer) => <span key={answer.id}>{answer.value}</span>)}{pool.answers.length > 6 && <span>+{pool.answers.length - 6} more</span>}</div><p>Used by {(pool._count?.questions ?? 0) + (pool._count?.commonQuestions ?? 0)} question{(pool._count?.questions ?? 0) + (pool._count?.commonQuestions ?? 0) === 1 ? '' : 's'}</p><button className="card-edit" onClick={() => setEditing(pool)}>Edit pool</button></article>)}</div>}</section>{(showCreate || editing) && <Modal title={editing ? 'Edit answer pool' : 'New answer pool'} onClose={closeModal}><p className="modal-intro">Each answer in this pool can be used as a wrong answer on a question.</p><AnswerPoolForm key={editing?.id ?? 'new'} initial={editing ?? undefined} onSave={save} saving={saving} /></Modal>}</>;
 }
 
-export default function App() { const { path, go } = useRoute(); const quizMatch = path.match(/^\/quizzes\/(\d+)$/); const page = quizMatch ? <QuizPage id={Number(quizMatch[1])} go={go} /> : path === '/questions' ? <CommonQuestionsPage /> : path === '/answer-pools' ? <AnswerPoolsPage /> : <QuizList go={go} />; return <AdminShell path={path} go={go}>{page}</AdminShell>; }
+export default function App() { const { path, go } = useRoute(); const quizMatch = path.match(/^\/quizzes\/(\d+)$/); const page = quizMatch ? <QuizPage id={Number(quizMatch[1])} go={go} /> : path === '/games' ? <GamesPage /> : path === '/questions' ? <CommonQuestionsPage /> : path === '/answer-pools' ? <AnswerPoolsPage /> : <QuizList go={go} />; return <AdminShell path={path} go={go}>{page}</AdminShell>; }

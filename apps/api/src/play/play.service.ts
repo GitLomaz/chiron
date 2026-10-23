@@ -14,16 +14,20 @@ export class PlayService {
         description: true,
         randomizeQuestionOrder: true,
         theme: true,
+        defaultTimerSeconds: true,
         questions: {
           where: { isEnabled: true },
           orderBy: { position: 'asc' },
           select: {
             id: true,
+            itemType: true,
+            gameType: true,
             text: true,
             options: true,
             correctAnswer: true,
             answerPoolId: true,
             answerCount: true,
+            timerSeconds: true,
           },
         },
       },
@@ -32,7 +36,9 @@ export class PlayService {
     if (!quiz) throw new NotFoundException('That quiz link could not be found');
 
     const { randomizeQuestionOrder, questions, ...quizDetails } = quiz;
-    const orderedQuestions = randomizeQuestionOrder ? this.shuffle(questions) : questions;
+    // Games remain at their authored positions; only quiz questions shuffle
+    // among the question slots so a planned game break is never displaced.
+    const orderedQuestions = randomizeQuestionOrder ? this.shuffleQuestionsInPlace(questions) : questions;
 
     return {
       ...quizDetails,
@@ -53,5 +59,11 @@ export class PlayService {
       [shuffled[index], shuffled[randomIndex]] = [shuffled[randomIndex], shuffled[index]];
     }
     return shuffled;
+  }
+
+  private shuffleQuestionsInPlace<T extends { itemType: string }>(items: T[]) {
+    const shuffledQuestions = this.shuffle(items.filter((item) => item.itemType === 'question'));
+    let questionIndex = 0;
+    return items.map((item) => item.itemType === 'question' ? shuffledQuestions[questionIndex++] : item);
   }
 }

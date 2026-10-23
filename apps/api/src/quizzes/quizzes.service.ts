@@ -5,6 +5,7 @@ import { CreateQuestionDto } from './dto/create-question.dto';
 import { CreateQuizDto } from './dto/create-quiz.dto';
 import { UpdateQuizDto } from './dto/update-quiz.dto';
 import { CreateAnswerPoolDto } from './dto/create-answer-pool.dto';
+import { CreateGameDto } from './dto/create-game.dto';
 
 @Injectable()
 export class QuizzesService {
@@ -32,7 +33,7 @@ export class QuizzesService {
     return quiz;
   }
 
-  create({ title, description, randomizeQuestionOrder, theme }: CreateQuizDto) {
+  create({ title, description, randomizeQuestionOrder, theme, defaultTimerSeconds }: CreateQuizDto) {
     if (!title.trim()) {
       throw new BadRequestException('title cannot be blank');
     }
@@ -43,15 +44,16 @@ export class QuizzesService {
         description: description?.trim() || null,
         randomizeQuestionOrder: randomizeQuestionOrder ?? false,
         theme: theme ?? 'standard',
+        defaultTimerSeconds: defaultTimerSeconds ?? -1,
       },
     });
   }
 
-  async update(id: number, { randomizeQuestionOrder, theme }: UpdateQuizDto) {
+  async update(id: number, { randomizeQuestionOrder, theme, defaultTimerSeconds }: UpdateQuizDto) {
     await this.findOne(id);
     return this.prisma.quiz.update({
       where: { id },
-      data: { randomizeQuestionOrder, theme },
+      data: { randomizeQuestionOrder, theme, defaultTimerSeconds },
     });
   }
 
@@ -69,6 +71,39 @@ export class QuizzesService {
         correctAnswer,
         answerPoolId,
         answerCount,
+        timerSeconds: question.timerSeconds ?? null,
+      },
+    });
+  }
+
+  async addGame(quizId: number, game: CreateGameDto) {
+    await this.findOne(quizId);
+    const { _max } = await this.prisma.question.aggregate({ where: { quizId }, _max: { position: true } });
+    const text = game.text?.trim() || this.gameTitle(game.gameType);
+    return this.prisma.question.create({
+      data: {
+        quizId,
+        position: (_max.position ?? -1) + 1,
+        itemType: 'game',
+        gameType: game.gameType,
+        gameDurationSeconds: game.durationSeconds ?? 20,
+        text,
+        // These required legacy fields are deliberately unused by game items.
+        correctAnswer: '',
+        options: [],
+      },
+    });
+  }
+
+  async updateGame(quizId: number, gameId: number, game: CreateGameDto) {
+    const existing = await this.prisma.question.findFirst({ where: { id: gameId, quizId, itemType: 'game' } });
+    if (!existing) throw new NotFoundException(`Game ${gameId} was not found in quiz ${quizId}`);
+    return this.prisma.question.update({
+      where: { id: gameId },
+      data: {
+        text: game.text?.trim() || this.gameTitle(game.gameType),
+        gameType: game.gameType,
+        gameDurationSeconds: game.durationSeconds ?? existing.gameDurationSeconds ?? 20,
       },
     });
   }
@@ -79,7 +114,7 @@ export class QuizzesService {
     const { text, correctAnswer, options, answerPoolId, answerCount } = await this.prepareQuestion(question);
     return this.prisma.question.update({
       where: { id: questionId },
-      data: { text, correctAnswer, options: options as Prisma.InputJsonValue, answerPoolId, answerCount },
+      data: { text, correctAnswer, options: options as Prisma.InputJsonValue, answerPoolId, answerCount, timerSeconds: question.timerSeconds ?? null },
     });
   }
 
@@ -186,6 +221,7 @@ export class QuizzesService {
         correctAnswer: commonQuestion.correctAnswer,
         answerPoolId: commonQuestion.answerPoolId,
         answerCount: commonQuestion.answerCount,
+        timerSeconds: null,
       },
     });
   }
@@ -215,5 +251,11 @@ export class QuizzesService {
 
   private cleanUnique(values: string[]) {
     return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+  }
+
+  private gameTitle(gameType: CreateGameDto['gameType']) {
+    if (gameType === 'match_pairs') return 'Match Pairs';
+    if (gameType === 'tower_stack') return 'Tower Stack';
+    return 'Coin Catch';
   }
 }
