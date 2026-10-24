@@ -167,7 +167,48 @@ async function main() {
     });
   }
 
-  console.log('Seeded US States, Animals, the Grand Canyon common question, and the French vocabulary quiz.');
+  const mathQuizTitle = 'Math Sprint: Numbers & Patterns';
+  const mathQuestions = [
+    ['What is 7 + 5?', '12', ['11', '13', '14']],
+    ['What is 15 − 8?', '7', ['6', '8', '9']],
+    ['What is 6 × 4?', '24', ['20', '22', '28']],
+    ['What is 36 ÷ 6?', '6', ['5', '7', '8']],
+    ['What is 9 + 13?', '22', ['21', '23', '24']],
+    ['What is 8 × 7?', '56', ['48', '54', '64']],
+    ['What is half of 50?', '25', ['20', '24', '30']],
+    ['What number comes next: 2, 4, 6, 8, ...?', '10', ['9', '11', '12']],
+    ['What is 100 − 37?', '63', ['53', '57', '73']],
+    ['What is 11 + 19?', '30', ['29', '31', '32']],
+    ['What is 5 × 9?', '45', ['40', '35', '50']],
+    ['What is 72 ÷ 8?', '9', ['8', '7', '10']],
+  ] as const;
+  const mathQuizItems = mathQuestions.flatMap(([text, correctAnswer, wrongAnswers], questionIndex) => {
+    const position = questionIndex + Math.floor(questionIndex / 3);
+    const question = { position, text, correctAnswer, options: [correctAnswer, ...wrongAnswers] as unknown as Prisma.InputJsonValue };
+    if ((questionIndex + 1) % 3 !== 0) return [question];
+    return [question, {
+      position: position + 1,
+      itemType: 'game',
+      gameType: 'match_pairs',
+      gameDurationSeconds: 30,
+      text: `Match Pairs break ${Math.floor(questionIndex / 3) + 1}`,
+      correctAnswer: '',
+      options: [] as unknown as Prisma.InputJsonValue,
+    }];
+  });
+  const mathQuizData = {
+    title: mathQuizTitle,
+    description: 'Twelve quick math questions with four Match Pairs game breaks.',
+    theme: 'kids',
+  };
+  const existingMathQuiz = await prisma.quiz.findFirst({ where: { title: mathQuizTitle } });
+  if (existingMathQuiz) {
+    await prisma.quiz.update({ where: { id: existingMathQuiz.id }, data: { ...mathQuizData, questions: { deleteMany: {}, create: mathQuizItems } } });
+  } else {
+    await prisma.quiz.create({ data: { ...mathQuizData, questions: { create: mathQuizItems } } });
+  }
+
+  console.log('Seeded US States, Animals, the Grand Canyon common question, the French vocabulary quiz, and the Math Sprint quiz.');
 }
 
 main()

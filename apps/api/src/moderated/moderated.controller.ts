@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, ParseIntPipe, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { FacilitatorActionDto, JoinModeratedSessionDto, SubmitModeratedAnswerDto, UpdateModeratedSettingsDto } from './dto/moderated-session.dto';
+import { FacilitatorActionDto, JoinModeratedSessionDto, ReportModeratedGameScoreDto, SubmitModeratedAnswerDto, UpdateModeratedSettingsDto } from './dto/moderated-session.dto';
 import { ModeratedService } from './moderated.service';
 
 @Controller('moderated-sessions')
@@ -25,6 +25,11 @@ export class ModeratedController {
     @Body() body: SubmitModeratedAnswerDto,
   ) {
     return this.moderatedService.submitAnswer(pin, body);
+  }
+
+  @Post('pin/:pin/games/scores')
+  reportGameScore(@Param('pin') pin: string, @Body() body: ReportModeratedGameScoreDto) {
+    return this.moderatedService.reportGameScore(pin, body);
   }
 
   @Get('pin/:pin')

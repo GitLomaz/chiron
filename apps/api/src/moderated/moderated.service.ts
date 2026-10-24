@@ -1,10 +1,10 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomInt, randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { SubmitModeratedAnswerDto } from './dto/moderated-session.dto';
+import { ReportModeratedGameScoreDto, SubmitModeratedAnswerDto } from './dto/moderated-session.dto';
 
-type SessionQuestion = { id: string; text: string; options: string[]; correctAnswer: string; timerSeconds: number | null };
-type Participant = { id: string; name: string; answers: Map<string, string>; joinedAt: Date };
+type SessionQuestion = { id: string; text: string; itemType: 'question' | 'game'; gameType: string | null; options: string[]; correctAnswer: string; timerSeconds: number | null };
+type Participant = { id: string; name: string; answers: Map<string, string>; gameScores: Map<string, number>; joinedAt: Date };
 type ModeratedSession = {
   id: string;
   pin: string;
@@ -29,7 +29,7 @@ export class ModeratedService {
   async create(quizId: number) {
     const quiz = await this.prisma.quiz.findUnique({
       where: { id: quizId },
-      include: { questions: { where: { isEnabled: true, itemType: 'question' }, orderBy: { position: 'asc' } } },
+      include: { questions: { where: { isEnabled: true, OR: [{ itemType: 'question' }, { itemType: 'game', gameType: 'coin_catch' }] }, orderBy: { position: 'asc' } } },
     });
     if (!quiz) throw new NotFoundException(`Quiz ${quizId} was not found`);
     if (!quiz.questions.length) throw new BadRequestException('Enable at least one question before creating a moderated test');
@@ -38,6 +38,7 @@ export class ModeratedService {
     const facilitatorToken = randomUUID();
     const pin = this.createPin();
     const questions = quiz.questions.map((question) => {
+      if (question.itemType === 'game') return { id: String(question.id), text: question.text, itemType: 'game' as const, gameType: question.gameType, correctAnswer: '', options: [], timerSeconds: question.gameDurationSeconds ?? 20 };
       const options = Array.isArray(question.options) ? question.options.filter((value): value is string => typeof value === 'string') : [];
       const wrongAnswers = [...new Set(options.filter((option) => option !== question.correctAnswer))];
       const count = Math.min(question.answerCount ?? wrongAnswers.length + 1, wrongAnswers.length + 1);
@@ -45,6 +46,7 @@ export class ModeratedService {
       // is always included even when a question draws only part of an answer pool.
       return {
         id: String(question.id), text: question.text,
+        itemType: 'question' as const, gameType: null,
         correctAnswer: question.correctAnswer,
         timerSeconds: this.effectiveTimer(question.timerSeconds, quiz.defaultTimerSeconds),
         options: this.shuffle([question.correctAnswer, ...this.shuffle(wrongAnswers, `${id}-${question.id}-wrong`).slice(0, count - 1)], `${id}-${question.id}`),
@@ -78,6 +80,7 @@ export class ModeratedService {
         number: session.currentQuestionIndex + 1,
         total: session.quiz.questions.length,
         answered: answer !== undefined,
+        gameScore: question.itemType === 'game' && participant ? participant.gameScores.get(question.id) ?? 0 : null,
         result: answer === undefined ? null : { answer, correctAnswer: question.correctAnswer, isCorrect: answer === question.correctAnswer },
         timedOut: this.hasTimedOut(session, question),
         timerEndsAt: this.timerEndsAt(session, question)?.toISOString() ?? null,
@@ -91,7 +94,7 @@ export class ModeratedService {
     const nextQuestion = session.phase === 'lobby'
       ? session.quiz.questions[0]
       : session.quiz.questions[session.currentQuestionIndex + 1] ?? null;
-    const answered = currentQuestion ? [...session.participants.values()].filter((participant) => participant.answers.has(currentQuestion.id)).length : 0;
+    const answered = currentQuestion && currentQuestion.itemType === 'question' ? [...session.participants.values()].filter((participant) => participant.answers.has(currentQuestion.id)).length : 0;
     return {
       sessionId: session.id, pin: session.pin, title: session.quiz.title, description: session.quiz.description, phase: session.phase, autoAdvanceOnTimeout: session.autoAdvanceOnTimeout,
       questionCount: session.quiz.questions.length, currentQuestion: currentQuestion ? { ...this.publicQuestion(currentQuestion), number: session.currentQuestionIndex + 1, timerEndsAt: this.timerEndsAt(session, currentQuestion)?.toISOString() ?? null } : null,
@@ -103,6 +106,7 @@ export class ModeratedService {
         score: this.score(session, participant),
       })),
       answeredCount: answered,
+      gameLeaderboard: currentQuestion?.itemType === 'game' ? [...session.participants.values()].map((participant) => ({ id: participant.id, name: participant.name, score: participant.gameScores.get(currentQuestion.id) ?? 0 })).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name)) : null,
     };
   }
 
@@ -135,7 +139,7 @@ export class ModeratedService {
     const cleanName = name.trim();
     if (!cleanName) throw new BadRequestException('Enter your name to join');
     if (session.phase === 'complete') throw new BadRequestException('This moderated test has ended');
-    const participant = { id: randomUUID(), name: cleanName, answers: new Map<string, string>(), joinedAt: new Date() };
+    const participant = { id: randomUUID(), name: cleanName, answers: new Map<string, string>(), gameScores: new Map<string, number>(), joinedAt: new Date() };
     session.participants.set(participant.id, participant);
     return { participantId: participant.id, name: participant.name };
   }
@@ -146,11 +150,24 @@ export class ModeratedService {
     if (!participant) throw new NotFoundException('Your participant session could not be found. Please join again.');
     if (session.phase !== 'question') throw new BadRequestException('Wait for the facilitator to open a question');
     const question = session.quiz.questions[session.currentQuestionIndex];
+    if (question.itemType !== 'question') throw new BadRequestException('This round is a game, not a question');
     if (body.questionId !== question.id) throw new BadRequestException('That question is no longer active');
     if (this.hasTimedOut(session, question)) throw new BadRequestException('Time has expired for this question');
     if (!question.options.includes(body.answer)) throw new BadRequestException('Choose one of the available answers');
     participant.answers.set(question.id, body.answer);
     return { answered: true };
+  }
+
+  reportGameScore(pin: string, body: ReportModeratedGameScoreDto) {
+    const session = this.getByPin(pin);
+    const participant = session.participants.get(body.participantId);
+    if (!participant) throw new NotFoundException('Your participant session could not be found. Please join again.');
+    if (session.phase !== 'question') throw new BadRequestException('Wait for the facilitator to open a game');
+    const question = session.quiz.questions[session.currentQuestionIndex];
+    if (question.itemType !== 'game' || question.gameType !== 'coin_catch' || body.questionId !== question.id) throw new BadRequestException('That game is no longer active');
+    if (this.hasTimedOut(session, question)) throw new BadRequestException('Time has expired for this game');
+    participant.gameScores.set(question.id, body.score);
+    return { score: body.score };
   }
 
   private get(sessionId: string) {
@@ -185,7 +202,7 @@ export class ModeratedService {
   }
 
   private publicQuestion(question: SessionQuestion) {
-    return { id: question.id, text: question.text, options: question.options, timerSeconds: question.timerSeconds };
+    return { id: question.id, text: question.text, itemType: question.itemType, gameType: question.gameType, options: question.options, timerSeconds: question.timerSeconds };
   }
 
   private score(session: ModeratedSession, participant: Participant) {
