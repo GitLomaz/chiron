@@ -43,7 +43,9 @@ A minimal quiz-management foundation built as an npm-workspaces monorepo.
 
 ## Student quiz player
 
-Share a quiz using its UUID at `http://localhost:5174/quiz/<quiz-guid>`. The student player also accepts the UUID in its join field. It only reads `GET /play/:guid`; scores and answers remain in the student's browser and are not submitted or stored.
+Teachers create a run for each quiz: a live test or a homework run. Homework runs are in-memory snapshots, shared at `http://localhost:5174/homework/<session-id>`, and have a private teacher results view. Student names, completion, and scores are retained for the life of that API process; restarting it clears active runs.
+
+Live runs offer Classic (self-paced), Facilitated (the teacher releases each round), and Matching. Matching skips the quiz's game breaks and gives students a matching break between questions. Students earn a credit on their first correct answer, their third, and every third correct answer thereafter; an incorrect pair costs one credit. Homework uses Classic mode.
 
 ## Commands
 

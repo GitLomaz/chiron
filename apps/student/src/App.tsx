@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { CSSProperties, FormEvent } from 'react';
+import type { CSSProperties, FormEvent, ReactNode } from 'react';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MODERATED_PIN_PATTERN = /^\d{6}$/;
 
 type QuizQuestion = {
-  id: number;
+  id: string | number;
   itemType: 'question' | 'game';
   gameType: 'coin_catch' | 'match_pairs' | 'tower_stack' | null;
   gameDurationSeconds: number | null;
@@ -137,7 +137,7 @@ function Welcome({ onModerated }: { onModerated: () => void }) {
       <h1>Let’s take a quiz.</h1>
       <p className="lede">Open your quiz link or paste its quiz ID below to get started.</p>
       <QuizCodeForm onSubmit={goToQuiz} />
-      <button className="text-button facilitator-entry" onClick={onModerated}>Join a moderated test</button>
+      <button className="text-button facilitator-entry" onClick={onModerated}>Join a live test</button>
     </section>
     <p className="footer-note">Your answers stay on this device for this quiz.</p>
   </main>;
@@ -145,9 +145,10 @@ function Welcome({ onModerated }: { onModerated: () => void }) {
 
 type ModeratedAnswerResult = { answer: string; correctAnswer: string; isCorrect: boolean };
 type ModeratedScore = { correct: number; answered: number };
-type ModeratedQuestion = TimedQuestion & { id: string; text: string; itemType: 'question' | 'game'; gameType: 'coin_catch' | null; options: string[]; number: number; total?: number; answered?: boolean; timedOut?: boolean; gameScore?: number | null; result?: ModeratedAnswerResult | null };
-type ModeratedStudentState = { pin: string; title: string; description: string | null; theme: 'standard' | 'kids'; phase: 'lobby' | 'question' | 'complete'; participant: { id: string; name: string } | null; score: ModeratedScore | null; currentQuestion: ModeratedQuestion | null };
-type FacilitatorState = { sessionId: string; pin: string; title: string; description: string | null; phase: 'lobby' | 'question' | 'complete'; autoAdvanceOnTimeout: boolean; questionCount: number; currentQuestion: ModeratedQuestion | null; nextQuestion: ModeratedQuestion | null; participants: { id: string; name: string; answeredCurrentQuestion: boolean; score: ModeratedScore }[]; answeredCount: number; gameLeaderboard: { id: string; name: string; score: number }[] | null };
+type ModeratedQuestion = TimedQuestion & { id: string; text: string; itemType: 'question' | 'game'; gameType: 'coin_catch' | 'match_pairs' | 'tower_stack' | null; options: string[]; number: number; total?: number; answered?: boolean; timedOut?: boolean; gameScore?: number | null; result?: ModeratedAnswerResult | null };
+type MatchingState = { credits: number; cards: { symbol: string | null; matched: boolean }[] };
+type ModeratedStudentState = { pin: string; title: string; description: string | null; theme: 'standard' | 'kids'; mode: 'classic' | 'facilitated' | 'matching'; matching: MatchingState | null; betweenQuestions: boolean; phase: 'lobby' | 'question' | 'complete'; removed: boolean; participant: { id: string; name: string } | null; score: ModeratedScore | null; currentQuestion: ModeratedQuestion | null };
+type FacilitatorState = { sessionId: string; pin: string; title: string; description: string | null; mode: 'classic' | 'facilitated' | 'matching'; currentRound: number; phase: 'lobby' | 'question' | 'complete'; lobbyLocked: boolean; questionCount: number; completedCount: number; participants: { id: string; name: string; completed: boolean; completedItems: number; currentItemType: 'question' | 'game' | null; currentAnswered: boolean; score: ModeratedScore }[]; gameLeaderboard: { id: string; name: string; score: number }[] };
 
 async function moderatedRequest<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}/moderated-sessions${path}`, { headers: { 'Content-Type': 'application/json', ...options?.headers }, ...options });
@@ -155,30 +156,56 @@ async function moderatedRequest<T>(path: string, options?: RequestInit): Promise
   return response.json() as Promise<T>;
 }
 
+async function homeworkRequest<T>(path: string, options?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_URL}/homework-sessions${path}`, { headers: { 'Content-Type': 'application/json', ...options?.headers }, ...options });
+  if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(Array.isArray(body?.message) ? body.message.join(', ') : body?.message || 'Something went wrong'); }
+  return response.json() as Promise<T>;
+}
+
 function moderatedPinFromLocation() { return window.location.pathname.match(/^\/moderated\/(\d{6})$/)?.[1] ?? ''; }
 function facilitatorFromLocation() { return window.location.pathname.match(/^\/facilitate\/([^/]+)$/)?.[1] ?? ''; }
 function projectorFromLocation() { return window.location.pathname.match(/^\/projector\/([^/]+)$/)?.[1] ?? ''; }
+function homeworkFromLocation() { return window.location.pathname.match(/^\/homework\/([^/]+)$/)?.[1] ?? ''; }
+function homeworkTeacherFromLocation() { return window.location.pathname.match(/^\/homework-teacher\/([^/]+)$/)?.[1] ?? ''; }
 function goToModeratedTest(pin = '') { window.history.pushState({}, '', pin ? `/moderated/${pin}` : '/moderated'); window.dispatchEvent(new PopStateEvent('popstate')); }
 function participantStorageKey(pin: string) { return `quizboard-moderated-${pin}`; }
+function participantClientStorageKey(pin: string) { return `quizboard-moderated-client-${pin}`; }
+function participantClientId(pin: string) {
+  const key = participantClientStorageKey(pin);
+  const existing = localStorage.getItem(key);
+  if (existing && UUID_PATTERN.test(existing)) return existing;
+  const clientId = crypto.randomUUID();
+  localStorage.setItem(key, clientId);
+  return clientId;
+}
 function moderatedStudentUrl(pin: string) { return `${window.location.origin}/moderated/${pin}`; }
 function projectorUrl(sessionId: string, token: string) { return `${window.location.origin}/projector/${sessionId}?token=${encodeURIComponent(token)}`; }
+function homeworkStorageKey(sessionId: string) { return `quizboard-homework-${sessionId}`; }
+function homeworkStudentUrl(sessionId: string) { return `${window.location.origin}/homework/${sessionId}`; }
 
-function ModeratedCoinCatch({ pin, participantId, question, theme }: { pin: string; participantId: string; question: ModeratedQuestion; theme: 'standard' | 'kids' }) {
+function ModeratedCoinCatch({ pin, participantId, question, theme, facilitated }: { pin: string; participantId: string; question: ModeratedQuestion; theme: 'standard' | 'kids'; facilitated: boolean }) {
   const [things, setThings] = useState<FallingThing[]>([]); const [score, setScore] = useState(question.gameScore ?? 0);
   useEffect(() => { const spawn = window.setInterval(() => { const kind: FallingThing['kind'] = Math.random() < .7 ? 'coin' : 'veggie'; const vegetables = ['🥕', '🥦', '🌽']; setThings((current) => [...current, { id: Date.now() + Math.random(), kind, left: 5 + Math.random() * 82, duration: 3 + Math.random() * 1.6, emoji: kind === 'coin' ? '🪙' : vegetables[Math.floor(Math.random() * vegetables.length)] }].slice(-14)); }, 610); return () => window.clearInterval(spawn); }, []);
   async function catchThing(thing: FallingThing) { setThings((current) => current.filter((item) => item.id !== thing.id)); const nextScore = thing.kind === 'coin' ? score + 1 : Math.max(0, score - 1); setScore(nextScore); try { await moderatedRequest(`/pin/${pin}/games/scores`, { method: 'POST', body: JSON.stringify({ participantId, questionId: question.id, score: nextScore }) }); } catch { /* The next state refresh will surface any session error. */ } }
-  return <main className={`page quiz-page moderated-quiz-page theme-${theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-header-meta"><span className="question-label">LIVE GAME</span></span></header><div className="progress"><span style={{ width: `${(question.number / (question.total ?? 1)) * 100}%` }} /></div><section className="game-card moderated-game-card"><div className="game-heading"><div><p className="eyebrow">LIVE COIN CATCH</p><h1>{question.text}</h1><p>Catch coins and avoid veggies. Your score is live on the leaderboard.</p></div><div className="game-stats"><span>Score <strong>{score}</strong></span></div></div><div className="coin-catch-board">{things.map((thing) => <button key={thing.id} className={`falling-thing ${thing.kind}`} style={{ left: `${thing.left}%`, animationDuration: `${thing.duration}s` }} onClick={() => void catchThing(thing)} aria-label={thing.kind === 'coin' ? 'Catch coin' : 'Avoid vegetable'}>{thing.emoji}</button>)}</div><p className="game-tip">The facilitator will move everyone on when the round ends.</p></section></main>;
+return <main className={`page quiz-page moderated-quiz-page theme-${theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-header-meta"><span className="question-label">LIVE GAME</span></span></header><div className="progress"><span style={{ width: `${(question.number / (question.total ?? 1)) * 100}%` }} /></div><section className="game-card moderated-game-card"><div className="game-heading"><div><p className="eyebrow">LIVE COIN CATCH</p><h1>{question.text}</h1><p>Catch coins and avoid veggies. Your score is live on the leaderboard.</p></div><div className="game-stats"><span>Score <strong>{score}</strong></span></div></div><div className="coin-catch-board">{things.map((thing) => <button key={thing.id} className={`falling-thing ${thing.kind}`} style={{ left: `${thing.left}%`, animationDuration: `${thing.duration}s` }} onClick={() => void catchThing(thing)} aria-label={thing.kind === 'coin' ? 'Catch coin' : 'Avoid vegetable'}>{thing.emoji}</button>)}</div><p className="game-tip">{facilitated ? 'Your facilitator will release the next round.' : 'The next round starts automatically when time is up.'}</p></section></main>;
+}
+
+function RemovedFromLiveTest({ theme, title }: { theme: 'standard' | 'kids'; title: string }) {
+  return <main className={`page quiz-page moderated-quiz-page theme-${theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="intro-card removal-card"><p className="eyebrow">LIVE TEST</p><h1>You’ve been removed.</h1><p className="lede">You no longer have access to <strong>{title}</strong>. Please speak with your facilitator if you think this was a mistake.</p></section></main>;
 }
 
 function ModeratedStudent({ pin }: { pin: string }) {
   const [participantId, setParticipantId] = useState(() => localStorage.getItem(participantStorageKey(pin)) ?? '');
+  const [clientId] = useState(() => participantClientId(pin));
   const [state, setState] = useState<ModeratedStudentState | null>(null);
   const [name, setName] = useState('');
   const [selected, setSelected] = useState('');
   const [error, setError] = useState('');
   const [joining, setJoining] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const load = useCallback(async () => { try { setState(await moderatedRequest<ModeratedStudentState>(`/pin/${pin}${participantId ? `?participantId=${participantId}` : ''}`)); setError(''); } catch (err) { setError(err instanceof Error ? err.message : 'Could not load this test'); } }, [pin, participantId]);
+  const [playingMatching, setPlayingMatching] = useState(false);
+  const [flipping, setFlipping] = useState(false);
+  const load = useCallback(async () => { try { const query = new URLSearchParams({ clientId }); if (participantId) query.set('participantId', participantId); setState(await moderatedRequest<ModeratedStudentState>(`/pin/${pin}?${query.toString()}`)); setError(''); } catch (err) { setError(err instanceof Error ? err.message : 'Could not load this test'); } }, [clientId, pin, participantId]);
   const remainingMilliseconds = useDeadlineMilliseconds(state?.currentQuestion?.timerEndsAt ?? null);
   const remainingSeconds = remainingMilliseconds === null ? null : Math.ceil(remainingMilliseconds / 1000);
   useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 2000); return () => window.clearInterval(timer); }, [load]);
@@ -189,22 +216,58 @@ function ModeratedStudent({ pin }: { pin: string }) {
     return () => window.clearTimeout(timeout);
   }, [load, state?.currentQuestion?.timerEndsAt]);
   useEffect(() => { setSelected(''); }, [state?.currentQuestion?.id]);
-  async function join(event: FormEvent) { event.preventDefault(); setJoining(true); try { const result = await moderatedRequest<{ participantId: string }>(`/pin/${pin}/participants`, { method: 'POST', body: JSON.stringify({ name }) }); localStorage.setItem(participantStorageKey(pin), result.participantId); setParticipantId(result.participantId); } catch (err) { setError(err instanceof Error ? err.message : 'Could not join'); } finally { setJoining(false); } }
+  async function join(event: FormEvent) { event.preventDefault(); setJoining(true); try { const result = await moderatedRequest<{ participantId: string }>(`/pin/${pin}/participants`, { method: 'POST', body: JSON.stringify({ name, clientId }) }); localStorage.setItem(participantStorageKey(pin), result.participantId); setParticipantId(result.participantId); } catch (err) { setError(err instanceof Error ? err.message : 'Could not join'); } finally { setJoining(false); } }
   async function submit() { if (!state?.currentQuestion || !selected) return; setSubmitting(true); try { await moderatedRequest(`/pin/${pin}/answers`, { method: 'POST', body: JSON.stringify({ participantId, questionId: state.currentQuestion.id, answer: selected }) }); await load(); } catch (err) { setError(err instanceof Error ? err.message : 'Could not submit your answer'); } finally { setSubmitting(false); } }
+  async function flip(card: number) { setFlipping(true); try { const matching = await moderatedRequest<MatchingState>(`/pin/${pin}/matching/flip`, { method: 'POST', body: JSON.stringify({ participantId, card }) }); setState((current) => current ? { ...current, matching } : current); setError(''); } catch (err) { setError(err instanceof Error ? err.message : 'Could not flip card'); } finally { setFlipping(false); } }
+  async function nextMatchingQuestion() { setSubmitting(true); try { await moderatedRequest(`/pin/${pin}/matching/next`, { method: 'POST', body: JSON.stringify({ participantId }) }); await load(); } catch (err) { setError(err instanceof Error ? err.message : 'Could not start the next question'); } finally { setSubmitting(false); } }
   if (error && !state) return <main className="page status-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><section className="error-card"><p className="eyebrow">TEST UNAVAILABLE</p><h1>We couldn’t open this test.</h1><p>{error}</p></section></main>;
   if (!state) return <main className="page status-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><div className="loader" /></main>;
-  if (!participantId || !state.participant) return <main className={`page quiz-page moderated-quiz-page theme-${state.theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="intro-card moderated-join-card"><p className="eyebrow">MODERATED TEST</p><h1>{state.title}</h1><p className="lede">Enter your name so your facilitator knows you’re here.</p><form className="join-form moderated-join-form" onSubmit={join}><label>Your name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Enter your name" maxLength={100} required /></label><button className="primary-button" disabled={joining}>{joining ? 'Joining…' : 'Join test'}</button></form>{error && <p className="form-error">{error}</p>}</section></main>;
+  if (state.removed) return <RemovedFromLiveTest theme={state.theme} title={state.title} />;
+  if (!participantId || !state.participant) return <main className={`page quiz-page moderated-quiz-page theme-${state.theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="intro-card moderated-join-card"><p className="eyebrow">LIVE TEST</p><h1>{state.title}</h1><p className="lede">Enter your name so your facilitator knows you’re here.</p><form className="join-form moderated-join-form" onSubmit={join}><label>Your name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Enter your name" maxLength={100} required /></label><button className="primary-button" disabled={joining}>{joining ? 'Joining…' : 'Join test'}</button></form>{error && <p className="form-error">{error}</p>}</section></main>;
   if (state.phase === 'lobby') return <WaitingScreen theme={state.theme} title={state.title} name={state.participant.name} copy="You’re checked in. Your facilitator will start the first question soon." />;
-  if (state.phase === 'complete') return <WaitingScreen theme={state.theme} title={state.title} name={state.participant.name} copy="The facilitator has ended this test. Thanks for taking part." score={state.score} scoreLabel="Final score" />;
+  if (playingMatching && state.matching) {
+    const matching = state.matching;
+    const revealedCount = matching.cards.filter((card) => card.symbol !== null && !card.matched).length;
+    const matchedPairs = matching.cards.filter((card) => card.matched).length / 2;
+    return <main className={`page quiz-page moderated-quiz-page theme-${state.theme}`}>
+      <header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">MATCHING BREAK</span></header>
+      <section className="game-card match-game-card matching-credit-game">
+        <div className="game-heading"><div><p className="eyebrow">MEMORY GAME</p><h1>Match Pairs</h1><p>Flip two cards to find a pair. A wrong match costs one credit.</p></div><div className="game-stats"><span className="matching-credit-stat">Credits <strong>{matching.credits}</strong></span><span>Pairs <strong>{matchedPairs} / {matching.cards.length / 2}</strong></span></div></div>
+        <MatchBoard cards={matching.cards.map((card, id) => ({ ...card, id, disabled: flipping || card.matched || (card.symbol !== null && revealedCount < 2) || matching.credits < 1 }))} onFlip={(id) => void flip(id)} />
+        <p className="game-tip" aria-live="polite">{matchedPairs * 2 === matching.cards.length ? 'You found all the pairs!' : matching.credits === 0 ? 'You are out of credits. Answer more questions to earn another.' : 'Remember where each fruit is, then match every pair.'}</p>
+        {error && <p className="form-error">{error}</p>}
+        <div className="matching-game-actions"><button className="matching-secondary-button" onClick={() => setPlayingMatching(false)}>← Back to Questions</button></div>
+      </section>
+    </main>;
+  }
+  if (state.phase === 'complete') return <WaitingScreen theme={state.theme} title={state.title} name={state.participant.name} copy="The test is complete. Thanks for taking part." score={state.score} scoreLabel="Final score" complete />;
   const question = state.currentQuestion;
   if (!question) return <WaitingScreen theme={state.theme} title={state.title} name={state.participant.name} copy="Waiting for the next question…" />;
-  if (question.itemType === 'game') return question.timedOut ? <WaitingScreen theme={state.theme} title={state.title} name={state.participant.name} copy="Time is up for the game. Check the leaderboard while you wait for the next round." /> : <ModeratedCoinCatch key={question.id} pin={pin} participantId={participantId} question={question} theme={state.theme} />;
-  if (question.answered || question.timedOut) return <WaitingScreen theme={state.theme} title={state.title} name={state.participant.name} copy={question.timedOut ? 'Time is up for this question. Wait for your facilitator to move everyone on.' : 'Your answer is recorded. Wait for the facilitator to move everyone on.'} result={question.result} score={state.score} />;
+  if (state.betweenQuestions && state.matching) {
+    const allMatched = state.matching.cards.every((card) => card.matched);
+    const canPlay = state.matching.credits > 0 && !allMatched;
+    return <main className={`page quiz-page moderated-quiz-page theme-${state.theme}`}>
+      <header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">MATCHING BREAK</span></header>
+      <section className="intro-card waiting-card matching-break-card">
+        <p className="eyebrow">QUESTION {question.number} OF {question.total}</p>
+        <h1>{question.result ? question.result.isCorrect ? 'Correct!' : 'Not quite.' : 'Time is up.'}</h1>
+        {question.result && !question.result.isCorrect && <p className="matching-answer">The correct answer was <strong>{question.result.correctAnswer}</strong>.</p>}
+        <div className="matching-credit-summary"><span>YOUR MATCHING CREDITS</span><strong>{state.matching.credits}</strong><small>{allMatched ? 'All pairs found!' : canPlay ? 'Ready for a matching break' : 'Answer more questions to earn credits'}</small></div>
+        <div className="matching-actions">
+          {canPlay && <button className="matching-secondary-button" onClick={() => setPlayingMatching(true)}>Play Match Pairs</button>}
+          <button className="primary-button" disabled={submitting} onClick={() => void nextMatchingQuestion()}>{submitting ? 'Loading…' : question.number === question.total ? 'Finish test' : 'Next question'} <span aria-hidden="true">→</span></button>
+        </div>
+        {error && <p className="form-error">{error}</p>}
+      </section>
+    </main>;
+  }
+if (question.itemType === 'game') return question.timedOut ? <WaitingScreen theme={state.theme} title={state.title} name={state.participant.name} copy="Time is up for the game. Wait for the next round." /> : question.gameType === 'match_pairs' ? <MatchPairsGame key={question.id} title={question.text} durationSeconds={question.timerSeconds ?? 20} onComplete={() => void load()} /> : question.gameType === 'tower_stack' ? <TowerStackGame key={question.id} title={question.text} durationSeconds={question.timerSeconds ?? 20} onComplete={() => void load()} /> : <ModeratedCoinCatch key={question.id} pin={pin} participantId={participantId} question={question} theme={state.theme} facilitated={state.mode === 'facilitated'} />;
+  if (question.answered || question.timedOut) return <WaitingScreen theme={state.theme} title={state.title} name={state.participant.name} copy={state.mode === 'facilitated' ? 'Wait for your facilitator to release the next round.' : question.timedOut ? 'Time is up. The next round will begin automatically.' : 'Your answer is recorded. Your next question is coming up.'} result={question.result} score={state.score} />;
   const timerStyle = timerBorderStyle(question.timerSeconds, remainingMilliseconds);
   return <main className={`page quiz-page moderated-quiz-page theme-${state.theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-header-meta"><span className="question-label">Question {question.number} of {question.total}</span>{remainingSeconds !== null && <TimerBadge seconds={remainingSeconds} expired={remainingSeconds === 0} />}</span></header><div className="progress"><span style={{ width: `${(question.number / (question.total ?? 1)) * 100}%` }} /></div><section className={`question-card${timerStyle ? ' timed-question' : ''}`} style={timerStyle}><p className="eyebrow">QUESTION {String(question.number).padStart(2, '0')}</p><h1>{question.text}</h1><div className="options" role="radiogroup">{question.options.map((option, index) => <button key={option} className={`option ${selected === option ? 'selected' : ''}`} role="radio" aria-checked={selected === option} onClick={() => setSelected(option)}><span className="option-key">{String.fromCharCode(65 + index)}</span><span>{option}</span></button>)}</div>{error && <p className="form-error">{error}</p>}<div className="question-actions"><span /><button className="primary-button" disabled={!selected || submitting} onClick={() => void submit()}>{submitting ? 'Submitting…' : 'Submit answer'}</button></div></section></main>;
 }
 
-function WaitingScreen({ theme, title, name, copy, result, score, scoreLabel = 'Score so far' }: { theme: 'standard' | 'kids'; title: string; name: string; copy: string; result?: ModeratedAnswerResult | null; score?: ModeratedScore | null; scoreLabel?: string }) { return <main className={`page quiz-page moderated-quiz-page theme-${theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="intro-card waiting-card"><p className="eyebrow">{title}</p><h1>{result ? result.isCorrect ? `Correct, ${name}!` : `Not quite, ${name}.` : `You’re in, ${name}.`}</h1>{result && <div className={`answer-summary ${result.isCorrect ? 'correct' : 'incorrect'}`}><strong>{result.isCorrect ? 'You got it right.' : 'Here’s the answer.'}</strong><span>Your answer: {result.answer}</span>{!result.isCorrect && <span>Correct answer: {result.correctAnswer}</span>}</div>}<p className="lede">{copy}</p>{score && score.answered > 0 && <div className="score-so-far"><span>{scoreLabel}</span><strong>{score.correct} / {score.answered}</strong><small>correct answer{score.answered === 1 ? '' : 's'}</small></div>}<div className="loader small-loader" aria-label="Waiting for facilitator" /></section></main>; }
+function WaitingScreen({ theme, title, name, copy, result, score, scoreLabel = 'Score so far', complete = false }: { theme: 'standard' | 'kids'; title: string; name: string; copy: string; result?: ModeratedAnswerResult | null; score?: ModeratedScore | null; scoreLabel?: string; complete?: boolean }) { return <main className={`page quiz-page moderated-quiz-page theme-${theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="intro-card waiting-card"><p className="eyebrow">{title}</p><h1>{complete ? `All done, ${name}!` : result ? result.isCorrect ? `Correct, ${name}!` : `Not quite, ${name}.` : `You’re in, ${name}.`}</h1>{result && <div className={`answer-summary ${result.isCorrect ? 'correct' : 'incorrect'}`}><strong>{result.isCorrect ? 'You got it right.' : 'Here’s the answer.'}</strong><span>Your answer: {result.answer}</span>{!result.isCorrect && <span>Correct answer: {result.correctAnswer}</span>}</div>}<p className="lede">{copy}</p>{score && (complete || score.answered > 0) && <div className="score-so-far"><span>{scoreLabel}</span><strong>{score.correct} / {score.answered}</strong><small>correct answer{score.answered === 1 ? '' : 's'}</small></div>}{!complete && <div className="loader small-loader" aria-label="Waiting" />}</section></main>; }
 
 function ModeratedPinEntry() {
   const [pin, setPin] = useState('');
@@ -215,29 +278,119 @@ function ModeratedPinEntry() {
     if (!MODERATED_PIN_PATTERN.test(value)) { setError('Enter the 6-digit PIN from your facilitator.'); return; }
     goToModeratedTest(value);
   }
-  return <main className="page welcome-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><section className="welcome-card"><p className="eyebrow">MODERATED TEST</p><h1>Join your live test.</h1><p className="lede">Enter the 6-digit PIN shared by your facilitator.</p><form className="join-form" onSubmit={submit} noValidate><label htmlFor="moderated-pin">Test PIN</label><div className="join-row"><input id="moderated-pin" value={pin} onChange={(event) => { setPin(event.target.value.replace(/\D/g, '').slice(0, 6)); setError(''); }} inputMode="numeric" autoComplete="one-time-code" placeholder="123456" maxLength={6} autoFocus aria-describedby={error ? 'moderated-pin-error' : undefined} /><button className="primary-button" type="submit">Join test</button></div>{error && <p className="form-error" id="moderated-pin-error">{error}</p>}</form></section></main>;
+  return <main className="page welcome-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><section className="welcome-card"><p className="eyebrow">LIVE TEST</p><h1>Join your live test.</h1><p className="lede">Enter the 6-digit PIN shared by your facilitator.</p><form className="join-form" onSubmit={submit} noValidate><label htmlFor="moderated-pin">Test PIN</label><div className="join-row"><input id="moderated-pin" value={pin} onChange={(event) => { setPin(event.target.value.replace(/\D/g, '').slice(0, 6)); setError(''); }} inputMode="numeric" autoComplete="one-time-code" placeholder="123456" maxLength={6} autoFocus aria-describedby={error ? 'moderated-pin-error' : undefined} /><button className="primary-button" type="submit">Join test</button></div>{error && <p className="form-error" id="moderated-pin-error">{error}</p>}</form></section></main>;
 }
 
 function Facilitator({ sessionId, token, projector = false }: { sessionId: string; token: string; projector?: boolean }) {
-  const [state, setState] = useState<FacilitatorState | null>(null); const [error, setError] = useState(''); const [acting, setActing] = useState(false); const [updatingAutoAdvance, setUpdatingAutoAdvance] = useState(false); const [studentLinkCopied, setStudentLinkCopied] = useState(false);
+  const [state, setState] = useState<FacilitatorState | null>(null);
+  const [error, setError] = useState('');
+  const [acting, setActing] = useState(false);
+  const [updatingLobby, setUpdatingLobby] = useState(false);
+  const [removingParticipantId, setRemovingParticipantId] = useState<string | null>(null);
   const load = useCallback(async () => { try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/facilitator?token=${encodeURIComponent(token)}`)); setError(''); } catch (err) { setError(err instanceof Error ? err.message : 'Could not load facilitator controls'); } }, [sessionId, token]);
-  const remainingMilliseconds = useDeadlineMilliseconds(state?.currentQuestion?.timerEndsAt ?? null);
-  const remainingSeconds = remainingMilliseconds === null ? null : Math.ceil(remainingMilliseconds / 1000);
   useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 2000); return () => window.clearInterval(timer); }, [load]);
-  async function act(action: 'start' | 'next') { setActing(true); try { await moderatedRequest(`/${sessionId}/${action}`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token }) }); await load(); } catch (err) { setError(err instanceof Error ? err.message : 'Could not update the test'); } finally { setActing(false); } }
-  async function updateAutoAdvance(autoAdvanceOnTimeout: boolean) { setUpdatingAutoAdvance(true); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/settings`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token, autoAdvanceOnTimeout }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not update automatic advance'); } finally { setUpdatingAutoAdvance(false); } }
-  async function copyStudentLink() { if (!state) return; try { await navigator.clipboard.writeText(moderatedStudentUrl(state.pin)); setStudentLinkCopied(true); window.setTimeout(() => setStudentLinkCopied(false), 2000); } catch { setError('Could not copy the student link.'); } }
+  async function start() { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/start`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not start the test'); } finally { setActing(false); } }
+  async function next() { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/next`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not release the next round'); } finally { setActing(false); } }
+  async function updateLobbyLock(lobbyLocked: boolean) { setUpdatingLobby(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/lobby`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token, lobbyLocked }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not update the lobby'); } finally { setUpdatingLobby(false); } }
+  async function removeParticipant(participantId: string) { setRemovingParticipantId(participantId); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/participants/${participantId}/remove`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not remove this participant'); } finally { setRemovingParticipantId(null); } }
   if (!state) return <main className="page status-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div>{error ? <section className="error-card"><h1>Facilitator access unavailable.</h1><p>{error}</p></section> : <div className="loader" />}</main>;
   if (projector) return <main className="projector-scoreboard" aria-live="polite"><ol>{(state.gameLeaderboard ?? []).map((player, index) => <li key={player.id} className={index === 0 && player.score > 0 ? 'leader' : ''}><span>{index + 1}</span><strong>{player.name}</strong><em>{player.score}</em></li>)}</ol></main>;
-  const buttonLabel = state.phase === 'lobby' ? 'Start test' : state.phase === 'complete' ? 'Test complete' : state.nextQuestion ? 'Move everyone to next question' : 'Finish test';
-  const studentUrl = moderatedStudentUrl(state.pin); const scoreDisplayUrl = projectorUrl(sessionId, token);
-  const timerStyle = timerBorderStyle(state.currentQuestion?.timerSeconds ?? null, remainingMilliseconds);
-  const currentIsGame = state.currentQuestion?.itemType === 'game';
-  const leaderboard = state.gameLeaderboard ?? [];
-  return <main className="page facilitator-page"><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">FACILITATOR CONTROLS</span></header><section className="facilitator-grid"><div className={`question-card control-card${timerStyle ? ' timed-question' : ''}`} style={timerStyle}><p className="eyebrow">{state.phase === 'lobby' ? 'READY TO START' : state.phase === 'complete' ? 'TEST COMPLETE' : currentIsGame ? `LIVE GAME ${state.currentQuestion?.number}` : `QUESTION ${state.currentQuestion?.number}`}</p><h1>{state.title}</h1>{state.currentQuestion ? <><p className="control-question">{state.currentQuestion.text}</p>{currentIsGame ? <div className="live-game-leaderboard"><div><span>LIVE HIGH SCORES</span>{remainingSeconds !== null && <TimerBadge seconds={remainingSeconds} expired={remainingSeconds === 0} />}</div>{leaderboard.length ? <ol>{leaderboard.slice(0, 5).map((player, index) => <li key={player.id} className={index === 0 && player.score > 0 ? 'leader' : ''}><b>{index + 1}</b><strong>{player.name}</strong><em>{player.score}</em></li>)}</ol> : <p>Waiting for players to score…</p>}</div> : <p className="control-count">{state.answeredCount} of {state.participants.length} have answered {remainingSeconds !== null && <TimerBadge seconds={remainingSeconds} expired={remainingSeconds === 0} />}</p>}</> : <p className="lede">{state.phase === 'lobby' ? 'Participants can join now. Start when you are ready.' : 'All questions have been released.'}</p>}<button className="primary-button" disabled={acting || state.phase === 'complete'} onClick={() => void act(state.phase === 'lobby' ? 'start' : 'next')}>{acting ? 'Updating...' : buttonLabel}</button><label className="auto-advance-control"><span><strong>Auto-send next question</strong><small>Move everyone on when a timed question expires.</small></span><input type="checkbox" role="switch" checked={state.autoAdvanceOnTimeout} disabled={updatingAutoAdvance || state.phase === 'complete'} onChange={(event) => void updateAutoAdvance(event.target.checked)} /><i aria-hidden="true" /></label>{state.nextQuestion && <div className="next-preview"><p className="eyebrow">UP NEXT - {state.nextQuestion.itemType === 'game' ? 'GAME' : 'QUESTION'} {state.nextQuestion.number}</p><strong>{state.nextQuestion.text}</strong></div>}{error && <p className="form-error">{error}</p>}</div><aside className="participant-panel"><div className="student-access"><p className="eyebrow">STUDENT ACCESS</p><strong className="join-pin">{state.pin}</strong><p>Share this PIN, or send the student link.</p><a href={studentUrl} target="_blank" rel="noreferrer">{studentUrl}</a><button className="text-button" onClick={() => void copyStudentLink()}>{studentLinkCopied ? 'Student link copied' : 'Copy student link'}</button><a className="projector-link" href={scoreDisplayUrl} target="_blank" rel="noreferrer">Open projector scores</a></div><div><p className="eyebrow">PARTICIPANTS</p><h2>{state.participants.length} joined</h2></div>{state.participants.length ? <ul>{state.participants.map((participant) => <li key={participant.id}><span>{participant.name}</span><span className="participant-score"><strong>{currentIsGame ? leaderboard.find((player) => player.id === participant.id)?.score ?? 0 : `${participant.score.correct} / ${participant.score.answered}`}</strong><small>{currentIsGame ? 'coins' : 'correct'}</small>{state.phase === 'question' && !currentIsGame && <small className={participant.answeredCurrentQuestion ? 'done' : ''}>{participant.answeredCurrentQuestion ? 'Answered' : 'Working'}</small>}</span></li>)}</ul> : <p>No one has joined yet.</p>}</aside></section></main>;
+  return <LiveFacilitatorView state={state} sessionId={sessionId} token={token} acting={acting} updatingLobby={updatingLobby} removingParticipantId={removingParticipantId} error={error} onStart={start} onNext={next} onLobbyLock={updateLobbyLock} onRemoveParticipant={removeParticipant} />;
 }
 
-function Results({ quiz, answers, onRestart, onLeave }: { quiz: Quiz; answers: Record<number, string>; onRestart: () => void; onLeave: () => void }) {
+function LiveFacilitatorView({ state, sessionId, token, acting, updatingLobby, removingParticipantId, error, onStart, onNext, onLobbyLock, onRemoveParticipant }: { state: FacilitatorState; sessionId: string; token: string; acting: boolean; updatingLobby: boolean; removingParticipantId: string | null; error: string; onStart: () => Promise<void>; onNext: () => Promise<void>; onLobbyLock: (locked: boolean) => Promise<void>; onRemoveParticipant: (participantId: string) => Promise<void> }) {
+  const [studentLinkCopied, setStudentLinkCopied] = useState(false);
+  const studentUrl = moderatedStudentUrl(state.pin);
+  const scoreDisplayUrl = projectorUrl(sessionId, token);
+  async function copyStudentLink() { try { await navigator.clipboard.writeText(studentUrl); setStudentLinkCopied(true); window.setTimeout(() => setStudentLinkCopied(false), 2000); } catch { /* Clipboard access is optional. */ } }
+  return <main className="page facilitator-page">
+    <header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">LIVE TEST CONTROLS</span></header>
+    <section className="facilitator-grid">
+      <div className="question-card control-card">
+        <p className="eyebrow">{state.phase === 'lobby' ? state.lobbyLocked ? 'LOBBY LOCKED' : 'READY TO START' : state.phase === 'complete' ? 'TEST COMPLETE' : 'TEST IN PROGRESS'}</p>
+        <h1>{state.title}</h1>
+        <p className="lede">{state.phase === 'lobby' ? state.lobbyLocked ? 'The lobby is locked. Current participants can stay, but no one new can join.' : 'Participants can join now. Start when you are ready.' : state.phase === 'complete' ? 'The test has finished.' : state.mode === 'facilitated' ? `Round ${state.currentRound} of ${state.questionCount}. Release the next round when you are ready.` : 'Students move through questions and games at their own pace.'}</p>
+        {state.phase === 'lobby' ? <button className="primary-button" disabled={acting} onClick={() => void onStart()}>{acting ? 'Starting…' : 'Start test'}</button> : <div className="score-so-far"><span>Completed</span><strong>{state.completedCount} / {state.participants.length}</strong><small>{state.questionCount} quiz items per participant</small></div>}
+        {state.mode === 'facilitated' && state.phase === 'question' && <button className="primary-button" disabled={acting} onClick={() => void onNext()}>{acting ? 'Releasing…' : state.currentRound >= state.questionCount ? 'Finish test' : 'Release next round'}</button>}
+        {state.gameLeaderboard.length > 0 && <div className="live-game-leaderboard"><div><span>TOTAL GAME COINS</span></div><ol>{state.gameLeaderboard.slice(0, 5).map((player, index) => <li key={player.id} className={index === 0 && player.score > 0 ? 'leader' : ''}><b>{index + 1}</b><strong>{player.name}</strong><em>{player.score}</em></li>)}</ol></div>}
+        <label className="auto-advance-control lobby-lock-control"><span><strong>Lock the lobby</strong><small>{state.lobbyLocked ? 'New participants cannot join.' : 'Allow participants to join with the PIN.'}</small></span><input type="checkbox" role="switch" checked={state.lobbyLocked} disabled={updatingLobby || state.phase === 'complete'} onChange={(event) => void onLobbyLock(event.target.checked)} /><i aria-hidden="true" /></label>
+        {error && <p className="form-error">{error}</p>}
+      </div>
+      <aside className="participant-panel homework-participant-panel">
+        <div className="student-access"><p className="eyebrow">STUDENT ACCESS</p><strong className="join-pin">{state.pin}</strong><p>{state.lobbyLocked ? 'Lobby locked. Existing participants remain connected.' : 'Share this PIN, or send the student link.'}</p><a href={studentUrl} target="_blank" rel="noreferrer">{studentUrl}</a><button className="text-button" onClick={() => void copyStudentLink()}>{studentLinkCopied ? 'Student link copied' : 'Copy student link'}</button><a className="projector-link" href={scoreDisplayUrl} target="_blank" rel="noreferrer">Open projector scores</a></div>
+        <div><p className="eyebrow">PARTICIPANTS</p><h2>{state.participants.length} joined <span>·</span> {state.completedCount} completed</h2></div>
+{state.participants.length ? <ul>{state.participants.map((participant) => <li className="live-participant" key={participant.id}><span className="homework-participant-progress"><strong>{participant.name}</strong><small>{participant.completed ? 'Completed' : state.phase === 'lobby' ? 'Waiting to start' : `${participant.completedItems} / ${state.questionCount} items · ${participant.currentItemType === 'game' ? 'Playing a game' : participant.currentAnswered ? 'Answered' : 'Working'}`}</small></span><span className="participant-actions"><span className="homework-participant-score"><strong>{participant.score.correct} / {participant.score.answered}</strong><small>correct</small></span><button className="boot-participant" disabled={removingParticipantId === participant.id} onClick={() => void onRemoveParticipant(participant.id)}>{removingParticipantId === participant.id ? 'Removing...' : 'Remove'}</button></span></li>)}</ul> : <p>No one has joined yet.</p>}
+      </aside>
+    </section>
+  </main>;
+}
+
+type HomeworkStudentState = {
+  sessionId: string;
+  title: string;
+  description: string | null;
+  theme: 'standard' | 'kids';
+  questions: QuizQuestion[];
+  participant: { id: string; name: string; completed: boolean; score: { correct: number; answered: number; total: number } } | null;
+};
+type HomeworkTeacherState = {
+  sessionId: string;
+  title: string;
+  description: string | null;
+  questionCount: number;
+  itemCount: number;
+  participants: { id: string; name: string; completed: boolean; completedAt: string | null; completedItems: number; score: { correct: number; answered: number; total: number } }[];
+};
+
+function HomeworkStudent({ sessionId }: { sessionId: string }) {
+  const [participantId, setParticipantId] = useState(() => localStorage.getItem(homeworkStorageKey(sessionId)) ?? '');
+  const [state, setState] = useState<HomeworkStudentState | null>(null);
+  const [name, setName] = useState('');
+  const [error, setError] = useState('');
+  const [joining, setJoining] = useState(false);
+  const load = useCallback(async () => {
+    try { setState(await homeworkRequest<HomeworkStudentState>(`/${sessionId}${participantId ? `?participantId=${participantId}` : ''}`)); setError(''); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Could not load this homework'); }
+  }, [participantId, sessionId]);
+  useEffect(() => { void load(); }, [load]);
+
+  async function join(event: FormEvent) {
+    event.preventDefault(); setJoining(true);
+    try {
+      const result = await homeworkRequest<{ participantId: string }>(`/${sessionId}/participants`, { method: 'POST', body: JSON.stringify({ name }) });
+      localStorage.setItem(homeworkStorageKey(sessionId), result.participantId);
+      setParticipantId(result.participantId);
+    } catch (err) { setError(err instanceof Error ? err.message : 'Could not begin homework'); }
+    finally { setJoining(false); }
+  }
+
+  if (error && !state) return <main className="page status-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><section className="error-card"><p className="eyebrow">HOMEWORK UNAVAILABLE</p><h1>We couldn’t open this homework.</h1><p>{error}</p></section></main>;
+  if (!state) return <main className="page status-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><div className="loader" /></main>;
+  if (!participantId || !state.participant) return <main className={`page quiz-page theme-${state.theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="intro-card moderated-join-card"><p className="eyebrow">HOMEWORK</p><h1>{state.title}</h1><p className="lede">Enter your name so your teacher can see your completed work and score.</p><form className="join-form moderated-join-form" onSubmit={join}><label>Your name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Enter your name" maxLength={100} required /></label><button className="primary-button" disabled={joining}>{joining ? 'Starting…' : 'Start homework'}</button></form>{error && <p className="form-error">{error}</p>}</section></main>;
+  if (state.participant.completed) return <main className={`page quiz-page theme-${state.theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="results-card"><p className="eyebrow">HOMEWORK COMPLETE</p><h1>Nice work, {state.participant.name}!</h1><p className="score-copy">Your teacher has your score: <strong>{state.participant.score.correct} of {state.participant.score.total}</strong>.</p></section></main>;
+  const quiz: Quiz = { guid: sessionId, title: state.title, description: state.description, theme: state.theme, defaultTimerSeconds: -1, questions: state.questions };
+  const submitAnswer = (questionId: string, answer: string) => homeworkRequest(`/${sessionId}/answers`, { method: 'POST', body: JSON.stringify({ participantId, questionId, answer }) });
+  const completeItem = (questionId: string) => homeworkRequest(`/${sessionId}/items/complete`, { method: 'POST', body: JSON.stringify({ participantId, questionId }) });
+  return <div className={`student-app theme-${state.theme}`}><Player key={participantId} quiz={quiz} onSubmitAnswer={submitAnswer} onCompleteItem={completeItem} allowRestart={false} /></div>;
+}
+
+function HomeworkTeacher({ sessionId, token }: { sessionId: string; token: string }) {
+  const [state, setState] = useState<HomeworkTeacherState | null>(null);
+  const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
+  const load = useCallback(async () => {
+    try { setState(await homeworkRequest<HomeworkTeacherState>(`/${sessionId}/teacher?token=${encodeURIComponent(token)}`)); setError(''); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Could not load homework results'); }
+  }, [sessionId, token]);
+  useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 2000); return () => window.clearInterval(timer); }, [load]);
+  async function copyStudentLink() { try { await navigator.clipboard.writeText(homeworkStudentUrl(sessionId)); setCopied(true); window.setTimeout(() => setCopied(false), 2000); } catch { setError('Could not copy the student link.'); } }
+  if (!state) return <main className="page status-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div>{error ? <section className="error-card"><h1>Teacher access unavailable.</h1><p>{error}</p></section> : <div className="loader" />}</main>;
+  const completed = state.participants.filter((participant) => participant.completed).length;
+  const studentUrl = homeworkStudentUrl(sessionId);
+  return <main className="page facilitator-page"><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">HOMEWORK RESULTS</span></header><section className="facilitator-grid"><div className="question-card control-card"><p className="eyebrow">HOMEWORK RUN</p><h1>{state.title}</h1><p className="lede">Students work independently. This page updates as they join and complete the assignment.</p><div className="score-so-far"><span>Completed</span><strong>{completed} / {state.participants.length}</strong><small>{state.questionCount} scored question{state.questionCount === 1 ? '' : 's'} per attempt</small></div>{error && <p className="form-error">{error}</p>}</div><aside className="participant-panel homework-participant-panel"><div className="student-access"><p className="eyebrow">STUDENT ACCESS</p><p>Share this homework link with students.</p><a href={studentUrl} target="_blank" rel="noreferrer">{studentUrl}</a><button className="text-button" onClick={() => void copyStudentLink()}>{copied ? 'Student link copied' : 'Copy student link'}</button></div><div><p className="eyebrow">PARTICIPANTS</p><h2>{state.participants.length} started <span>·</span> {completed} completed</h2></div>{state.participants.length ? <ul>{state.participants.map((participant) => <li className="homework-participant" key={participant.id}><span className="homework-participant-progress"><strong>{participant.name}</strong><small>{participant.completed ? 'Completed' : `${participant.completedItems} / ${state.itemCount} items`}</small></span><span className="homework-participant-score"><strong>{participant.score.correct} / {participant.score.total}</strong><small>{participant.completed ? 'Final score' : `${participant.score.answered} answered`}</small></span></li>)}</ul> : <p>No one has started yet.</p>}</aside></section></main>;
+}
+
+function Results({ quiz, answers, onRestart, onLeave }: { quiz: Quiz; answers: Record<string, string>; onRestart?: () => void; onLeave: () => void }) {
   const quizQuestions = quiz.questions.filter((question) => question.itemType === 'question');
   const score = quizQuestions.filter((question) => answers[question.id] === question.correctAnswer).length;
   const percent = quizQuestions.length ? Math.round((score / quizQuestions.length) * 100) : 0;
@@ -250,7 +403,7 @@ function Results({ quiz, answers, onRestart, onLeave }: { quiz: Quiz; answers: R
       <p className="eyebrow">QUIZ COMPLETE</p>
       <h1>{message}</h1>
       <p className="score-copy">You got <strong>{score} of {quizQuestions.length}</strong> questions right in <em>{quiz.title}</em>.</p>
-      <div className="results-actions"><button className="primary-button" onClick={onRestart}>Try again</button><button className="text-button" onClick={onLeave}>Use another quiz</button></div>
+      <div className="results-actions">{onRestart && <button className="primary-button" onClick={onRestart}>Try again</button>}<button className="text-button" onClick={onLeave}>Use another quiz</button></div>
     </section>
   </main>;
 }
@@ -305,6 +458,13 @@ function CoinCatchGame({ title, durationSeconds, onComplete }: { title: string; 
 
 const MATCH_PAIR_SYMBOLS = ['🍎', '🍌', '🍇', '🍓', '🍍', '🍉'];
 
+function MatchBoard({ cards, onFlip, children }: { cards: { id: number; symbol: string | null; matched: boolean; disabled: boolean }[]; onFlip: (id: number) => void; children?: ReactNode }) {
+  return <div className="match-board" aria-label="Match Pairs game area">
+    {cards.map((card) => <button key={card.id} className={`match-card${card.symbol !== null ? ' flipped' : ''}${card.matched ? ' matched' : ''}`} onClick={() => onFlip(card.id)} disabled={card.disabled} aria-label={card.symbol === null ? `Face-down card ${card.id + 1}` : `Card ${card.id + 1}: ${card.symbol}${card.matched ? ', matched' : ''}`}>{card.symbol !== null ? <span>{card.symbol}</span> : <b>?</b>}</button>)}
+    {children}
+  </div>;
+}
+
 function MatchPairsGame({ title, durationSeconds, onComplete }: { title: string; durationSeconds: number; onComplete: () => void }) {
   const [cards] = useState(() => shuffle([...MATCH_PAIR_SYMBOLS, ...MATCH_PAIR_SYMBOLS].map((symbol, index) => ({ id: index, symbol })), 'match-pairs'));
   const [flipped, setFlipped] = useState<number[]>([]);
@@ -345,7 +505,7 @@ function MatchPairsGame({ title, durationSeconds, onComplete }: { title: string;
 
   return <section className="game-card match-game-card" aria-live="polite">
     <div className="game-heading"><div><p className="eyebrow">MEMORY GAME · {durationSeconds} SECONDS</p><h1>{title}</h1><p>Flip two cards at a time to find all the matching pairs.</p></div><div className="game-stats"><span>Time <strong>{remaining}s</strong></span><span>Pairs <strong>{matched.size / 2} / 6</strong></span></div></div>
-    <div className="match-board" aria-label="Match Pairs game area">{cards.map((card) => { const visible = flipped.includes(card.id) || matched.has(card.id); return <button key={card.id} className={`match-card${visible ? ' flipped' : ''}${matched.has(card.id) ? ' matched' : ''}`} onClick={() => flipCard(card.id)} disabled={finished || matched.has(card.id)} aria-label={visible ? card.symbol : 'Face-down card'}>{visible ? <span>{card.symbol}</span> : <b>?</b>}</button>; })}{finished && <div className="game-finish"><strong>{matched.size === cards.length ? 'You found them all!' : 'Time is up!'}</strong><span>{matched.size / 2} of 6 pairs matched in {moves} move{moves === 1 ? '' : 's'}</span><button className="primary-button" onClick={onComplete}>Continue <span aria-hidden="true">→</span></button></div>}</div>
+    <MatchBoard cards={cards.map((card) => ({ id: card.id, symbol: flipped.includes(card.id) || matched.has(card.id) ? card.symbol : null, matched: matched.has(card.id), disabled: finished || matched.has(card.id) }))} onFlip={flipCard}>{finished && <div className="game-finish"><strong>{matched.size === cards.length ? 'You found them all!' : 'Time is up!'}</strong><span>{matched.size / 2} of 6 pairs matched in {moves} move{moves === 1 ? '' : 's'}</span><button className="primary-button" onClick={onComplete}>Continue <span aria-hidden="true">→</span></button></div>}</MatchBoard>
     <p className="game-tip">Remember where each fruit is, then match every pair.</p>
   </section>;
 }
@@ -439,12 +599,14 @@ function TowerStackGame({ title, durationSeconds, onComplete }: { title: string;
   </section>;
 }
 
-function Player({ quiz }: { quiz: Quiz }) {
+function Player({ quiz, onSubmitAnswer, onCompleteItem, allowRestart = true }: { quiz: Quiz; onSubmitAnswer?: (questionId: string, answer: string) => Promise<unknown>; onCompleteItem?: (questionId: string) => Promise<unknown>; allowRestart?: boolean }) {
   const [screen, setScreen] = useState<Screen>(quiz.questions.length ? 'intro' : 'results');
   const [current, setCurrent] = useState(0);
-  const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [revealedQuestionIds, setRevealedQuestionIds] = useState<Set<number>>(() => new Set());
-  const [timedOutQuestionIds, setTimedOutQuestionIds] = useState<Set<number>>(() => new Set());
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [revealedQuestionIds, setRevealedQuestionIds] = useState<Set<string | number>>(() => new Set());
+  const [timedOutQuestionIds, setTimedOutQuestionIds] = useState<Set<string | number>>(() => new Set());
+  const [submitting, setSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState('');
   const [remainingMilliseconds, setRemainingMilliseconds] = useState<number | null>(null);
   const question = quiz.questions[current];
   const options = useMemo(() => question ? questionOptions(question, quiz.guid) : [], [question, quiz.guid]);
@@ -479,7 +641,30 @@ function Player({ quiz }: { quiz: Quiz }) {
     setScreen(quiz.questions.length ? 'intro' : 'results');
   }
 
-  if (screen === 'results') return <Results quiz={quiz} answers={answers} onRestart={restart} onLeave={() => goToQuiz('')} />;
+  async function finishGame() {
+    setSubmissionError(''); setSubmitting(true);
+    try {
+      await onCompleteItem?.(String(question.id));
+      if (isFinalQuestion) setScreen('results'); else setCurrent((value) => value + 1);
+    } catch (error) { setSubmissionError(error instanceof Error ? error.message : 'Could not save your progress'); }
+    finally { setSubmitting(false); }
+  }
+
+  async function checkOrAdvance() {
+    setSubmissionError(''); setSubmitting(true);
+    try {
+      if (!revealed) {
+        if (selected) await onSubmitAnswer?.(String(question.id), selected);
+        setRevealedQuestionIds((ids) => new Set(ids).add(question.id));
+      } else {
+        if (!selected) await onCompleteItem?.(String(question.id));
+        if (isFinalQuestion) setScreen('results'); else setCurrent((value) => value + 1);
+      }
+    } catch (error) { setSubmissionError(error instanceof Error ? error.message : 'Could not save your answer'); }
+    finally { setSubmitting(false); }
+  }
+
+  if (screen === 'results') return <Results quiz={quiz} answers={answers} onRestart={allowRestart ? restart : undefined} onLeave={() => goToQuiz('')} />;
 
   if (screen === 'intro') return <main className="page quiz-page">
     <header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header>
@@ -501,7 +686,7 @@ function Player({ quiz }: { quiz: Quiz }) {
   if (question.itemType === 'game') return <main className="page quiz-page">
     <header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">Game {current + 1} of {quiz.questions.length}</span></header>
     <div className="progress" aria-hidden="true"><span style={{ width: `${((current + 1) / quiz.questions.length) * 100}%` }} /></div>
-    {question.gameType === 'tower_stack' ? <TowerStackGame key={question.id} title={question.text} durationSeconds={question.gameDurationSeconds ?? 20} onComplete={() => isFinalQuestion ? setScreen('results') : setCurrent((value) => value + 1)} /> : question.gameType === 'match_pairs' ? <MatchPairsGame key={question.id} title={question.text} durationSeconds={question.gameDurationSeconds ?? 20} onComplete={() => isFinalQuestion ? setScreen('results') : setCurrent((value) => value + 1)} /> : <CoinCatchGame key={question.id} title={question.text} durationSeconds={question.gameDurationSeconds ?? 20} onComplete={() => isFinalQuestion ? setScreen('results') : setCurrent((value) => value + 1)} />}
+    {question.gameType === 'tower_stack' ? <TowerStackGame key={question.id} title={question.text} durationSeconds={question.gameDurationSeconds ?? 20} onComplete={() => void finishGame()} /> : question.gameType === 'match_pairs' ? <MatchPairsGame key={question.id} title={question.text} durationSeconds={question.gameDurationSeconds ?? 20} onComplete={() => void finishGame()} /> : <CoinCatchGame key={question.id} title={question.text} durationSeconds={question.gameDurationSeconds ?? 20} onComplete={() => void finishGame()} />}
   </main>;
   return <main className="page quiz-page">
     <header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-header-meta"><span className="question-label">Question {current + 1} of {quiz.questions.length}</span>{remainingSeconds !== null && <TimerBadge seconds={remainingSeconds} expired={remainingSeconds === 0} />}</span></header>
@@ -516,15 +701,7 @@ function Player({ quiz }: { quiz: Quiz }) {
         })}
       </div>
       {revealed && <p className={selected === question.correctAnswer && !timedOut ? 'answer-feedback correct-feedback' : 'answer-feedback incorrect-feedback'} role="status">{timedOut ? selected ? `Time's up. Your answer was ${selected === question.correctAnswer ? 'correct' : 'not correct'}. The correct answer is ${question.correctAnswer}.` : `Time's up. The correct answer is ${question.correctAnswer}.` : selected === question.correctAnswer ? 'Correct — nice work!' : `Not quite. The correct answer is ${question.correctAnswer}.`}</p>}
-      <div className="question-actions"><button className="back-button" disabled={current === 0} onClick={() => setCurrent((value) => value - 1)}>Back</button><button className="primary-button" disabled={!selected && !revealed} onClick={() => {
-        if (!revealed) {
-          setRevealedQuestionIds((ids) => new Set(ids).add(question.id));
-        } else if (isFinalQuestion) {
-          setScreen('results');
-        } else {
-          setCurrent((value) => value + 1);
-        }
-      }}>{revealed ? isFinalQuestion ? 'See my score' : 'Next question' : 'Check answer'} <span aria-hidden="true">→</span></button></div>
+      {submissionError && <p className="form-error">{submissionError}</p>}<div className="question-actions"><button className="back-button" disabled={current === 0 || submitting} onClick={() => setCurrent((value) => value - 1)}>Back</button><button className="primary-button" disabled={(!selected && !revealed) || submitting} onClick={() => void checkOrAdvance()}>{submitting ? 'Saving…' : revealed ? isFinalQuestion ? 'See my score' : 'Next question' : 'Check answer'} <span aria-hidden="true">→</span></button></div>
     </section>
   </main>;
 }
@@ -543,21 +720,9 @@ export default function App() {
   }, []);
 
   const loadQuiz = useCallback(async () => {
-    if (!guid || !UUID_PATTERN.test(guid)) {
-      setQuiz(null);
-      setError(guid ? 'That quiz ID does not look right.' : '');
-      return;
-    }
-    setLoading(true);
-    setError('');
-    try {
-      setQuiz(await getQuiz(guid));
-    } catch (requestError) {
-      setQuiz(null);
-      setError(requestError instanceof Error ? requestError.message : 'We could not load that quiz.');
-    } finally {
-      setLoading(false);
-    }
+    setLoading(false);
+    setQuiz(null);
+    setError(guid ? 'This direct quiz link is no longer active. Ask your teacher for a homework or live-test link.' : '');
   }, [guid]);
 
   useEffect(() => { void loadQuiz(); }, [loadQuiz]);
@@ -565,8 +730,12 @@ export default function App() {
   const moderatedPin = moderatedPinFromLocation();
   const facilitatorId = facilitatorFromLocation();
   const projectorId = projectorFromLocation();
+  const homeworkSessionId = homeworkFromLocation();
+  const homeworkTeacherId = homeworkTeacherFromLocation();
   const facilitatorToken = new URLSearchParams(window.location.search).get('token') ?? '';
   if (moderatedPin) return <ModeratedStudent key={moderatedPin} pin={moderatedPin} />;
+  if (homeworkSessionId) return <HomeworkStudent key={homeworkSessionId} sessionId={homeworkSessionId} />;
+  if (homeworkTeacherId) return <HomeworkTeacher key={`${homeworkTeacherId}-${facilitatorToken}`} sessionId={homeworkTeacherId} token={facilitatorToken} />;
   if (projectorId) return <Facilitator key={`projector-${projectorId}-${facilitatorToken}`} sessionId={projectorId} token={facilitatorToken} projector />;
   if (facilitatorId) return <Facilitator key={`${facilitatorId}-${facilitatorToken}`} sessionId={facilitatorId} token={facilitatorToken} />;
   if (path === '/moderated') return <ModeratedPinEntry />;

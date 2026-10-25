@@ -12,6 +12,34 @@
 }
 
 .page-actions { display: flex; gap: 9px; align-items: center; }
+.launch-mode-tabs { display: flex; gap: 3px; padding: 3px; border: 1px solid #e0e7f0; border-radius: 8px; background: #f2f5f9; }
+.launch-mode-tabs legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.launch-mode-tabs label { display: block; position: relative; cursor: pointer; }
+.launch-mode-tabs input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.launch-mode-tabs label span { display: block; padding: 8px 13px; border-radius: 5px; color: #77849a; font-size: .7rem; font-weight: 800; white-space: nowrap; }
+.launch-mode-tabs input:checked + span { background: #fff; color: #2c62ae; box-shadow: 0 1px 4px #273a5a1c; }
+.launch-mode-tabs input:focus-visible + span { outline: 2px solid #70a1e4; outline-offset: 2px; }
+.launch-mode-tabs:disabled { opacity: .65; }
+.launch-configuration { margin-bottom: 20px; padding: 24px; }
+.launch-configuration-heading h2 { margin: 5px 0; }
+.launch-configuration-heading > p:last-child { color: #77849a; margin: 0 0 18px; }
+.launch-mode-tabs { gap: 10px; padding: 0; border: 0; background: transparent; }
+.launch-mode-tabs label { flex: 1; }
+.launch-mode-tabs label span { min-height: 88px; padding: 17px 20px; border: 2px solid #e0e7f0; border-radius: 10px; background: #f8fafc; white-space: normal; }
+.launch-mode-tabs label strong, .launch-mode-tabs label small { display: block; }
+.launch-mode-tabs label strong { font-size: 1rem; }
+.launch-mode-tabs label small { margin-top: 6px; font-size: .76rem; line-height: 1.4; font-weight: 500; }
+.launch-mode-tabs input:checked + span { border-color: #3975cc; background: #edf4ff; box-shadow: 0 0 0 2px #3975cc20; }
+.launch-mode-details { display: flex; align-items: end; gap: 24px; margin-top: 20px; }
+.launch-mode-details label { display: grid; gap: 7px; min-width: 220px; font-size: .8rem; }
+.launch-mode-details select { width: 100%; padding: 10px; border: 1px solid #d5e3f0; border-radius: 7px; background: white; color: #263b60; }
+.launch-mode-details p { margin: 0 0 8px; color: #66758d; font-size: .8rem; line-height: 1.5; }
+@media (max-width: 600px) {
+  .page-actions { width: 100%; }
+  .launch-mode-tabs { flex: 1; }
+  .launch-mode-tabs label { flex: 1; text-align: center; }
+  .launch-mode-details { align-items: stretch; flex-direction: column; gap: 8px; }
+}
 .library-card { display: flex; flex-direction: column; align-items: flex-start; }
 .library-card small { display: block; line-height: 1.5; }
 .library-card .card-edit { margin-top: 14px; }

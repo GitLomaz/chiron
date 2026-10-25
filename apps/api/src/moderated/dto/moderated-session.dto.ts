@@ -1,10 +1,19 @@
-import { IsBoolean, IsInt, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
+
+export class CreateModeratedSessionDto {
+  @IsOptional()
+  @IsIn(['classic', 'facilitated', 'matching'])
+  mode?: 'classic' | 'facilitated' | 'matching';
+}
 
 export class JoinModeratedSessionDto {
   @IsString()
   @MinLength(1)
   @MaxLength(100)
   name!: string;
+
+  @IsUUID('4')
+  clientId!: string;
 }
 
 export class SubmitModeratedAnswerDto {
@@ -27,9 +36,9 @@ export class FacilitatorActionDto {
   facilitatorToken!: string;
 }
 
-export class UpdateModeratedSettingsDto extends FacilitatorActionDto {
+export class UpdateLobbyLockDto extends FacilitatorActionDto {
   @IsBoolean()
-  autoAdvanceOnTimeout!: boolean;
+  lobbyLocked!: boolean;
 }
 
 export class ReportModeratedGameScoreDto {
@@ -44,4 +53,19 @@ export class ReportModeratedGameScoreDto {
   @Min(0)
   @Max(10000)
   score!: number;
+}
+
+export class FlipMatchingCardDto {
+  @IsUUID('4')
+  participantId!: string;
+
+  @IsInt()
+  @Min(0)
+  @Max(11)
+  card!: number;
+}
+
+export class MatchingNextDto {
+  @IsUUID('4')
+  participantId!: string;
 }

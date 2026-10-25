@@ -14,6 +14,7 @@ type QuestionData = { text: string; correctAnswer: string; wrongAnswers?: string
 type QuestionPreviewData = { text: string; options: string[] };
 type PoolData = { name: string; answers: string[] };
 type ModeratedSession = { sessionId: string; facilitatorToken: string; pin: string; phase: 'lobby' };
+type HomeworkSession = { sessionId: string; facilitatorToken: string };
 
 const TIMER_SECONDS = [-1, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180] as const;
 const GAME_DURATION_SECONDS = [10, 15, 20, 30, 45, 60, 90, 120] as const;
@@ -30,10 +31,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(Array.isArray(body?.message) ? body.message.join(', ') : body?.message || 'Something went wrong'); }
   return response.json() as Promise<T>;
 }
-function studentQuizUrl(guid: string) {
-  return `${(import.meta.env.VITE_STUDENT_APP_URL ?? 'http://localhost:5174').replace(/\/$/, '')}/quiz/${guid}`;
-}
 function facilitatorSessionUrl(session: ModeratedSession) { return `${(import.meta.env.VITE_STUDENT_APP_URL ?? 'http://localhost:5174').replace(/\/$/, '')}/facilitate/${session.sessionId}?token=${session.facilitatorToken}`; }
+function homeworkTeacherUrl(session: HomeworkSession) { return `${(import.meta.env.VITE_STUDENT_APP_URL ?? 'http://localhost:5174').replace(/\/$/, '')}/homework-teacher/${session.sessionId}?token=${session.facilitatorToken}`; }
 function useRoute() { const [path, setPath] = useState(window.location.pathname); useEffect(() => { const update = () => setPath(window.location.pathname); window.addEventListener('popstate', update); return () => window.removeEventListener('popstate', update); }, []); const go = (nextPath: string) => { window.history.pushState({}, '', nextPath); setPath(nextPath); }; return { path, go }; }
 
 function AdminShell({ path, go, children }: { path: string; go: (value: string) => void; children: ReactNode }) {
@@ -127,9 +126,10 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
   const [togglingQuestionId, setTogglingQuestionId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [shareCopied, setShareCopied] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
-  const [creatingSession, setCreatingSession] = useState(false);
+  const [launchMode, setLaunchMode] = useState<'live' | 'homework'>('live');
+  const [runMode, setRunMode] = useState<'classic' | 'facilitated' | 'matching'>('classic');
+  const [launching, setLaunching] = useState(false);
   const [showGamePicker, setShowGamePicker] = useState(false);
 
   const load = useCallback(async () => {
@@ -303,26 +303,19 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
     }
   }
 
-  async function copyStudentLink() {
-    if (!quiz) return;
+  async function launchQuiz() {
+    setLaunching(true); setError('');
     try {
-      await navigator.clipboard.writeText(studentQuizUrl(quiz.guid));
-      setShareCopied(true);
-      window.setTimeout(() => setShareCopied(false), 2000);
-    } catch {
-      setError('Could not copy the student link.');
-    }
-  }
-
-  async function createModeratedSession() {
-    setCreatingSession(true); setError('');
-    try {
-      const session = await request<ModeratedSession>(`/moderated-sessions/quiz/${id}`, { method: 'POST' });
-      window.location.assign(facilitatorSessionUrl(session));
-    }
-    catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create the moderated test');
-      setCreatingSession(false);
+      if (launchMode === 'live') {
+        const session = await request<ModeratedSession>(`/moderated-sessions/quiz/${id}`, { method: 'POST', body: JSON.stringify({ mode: runMode }) });
+        window.location.assign(facilitatorSessionUrl(session));
+      } else {
+        const session = await request<HomeworkSession>(`/homework-sessions/quiz/${id}`, { method: 'POST' });
+        window.location.assign(homeworkTeacherUrl(session));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Could not launch the ${launchMode} run`);
+      setLaunching(false);
     }
   }
 
@@ -331,12 +324,20 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
 
   return <>
     <button className="back-link" onClick={() => go('/quizzes')}>Back to quizzes</button>
-    <PageHeading eyebrow="QUIZ EDITOR" title={quiz.title} description={quiz.description || 'No description has been added to this quiz.'} action={<div className="page-actions"><button className="subtle-button" onClick={() => void copyStudentLink()}>{shareCopied ? 'Student link copied' : 'Copy student link'}</button><button className="primary" disabled={creatingSession} onClick={() => void createModeratedSession()}>{creatingSession ? 'Creating…' : 'Create moderated test'}</button></div>} />
+    <PageHeading eyebrow="QUIZ EDITOR" title={quiz.title} description={quiz.description || 'No description has been added to this quiz.'} action={<button className="primary" disabled={launching} onClick={() => void launchQuiz()}>{launching ? 'Launching…' : 'Launch'}</button>} />
+    <section className="surface launch-configuration">
+      <div className="launch-configuration-heading"><p className="eyebrow">RUN THIS QUIZ</p><h2>Choose how students will play</h2><p>Choose a type and mode before launching.</p></div>
+      <fieldset className="launch-mode-tabs" disabled={launching}><legend>Quiz type</legend>
+        <label><input type="radio" name={`quiz-launch-mode-${id}`} checked={launchMode === 'live'} onChange={() => setLaunchMode('live')} /><span><strong>Live</strong><small>Run together with live teacher controls</small></span></label>
+        <label><input type="radio" name={`quiz-launch-mode-${id}`} checked={launchMode === 'homework'} onChange={() => { setLaunchMode('homework'); setRunMode('classic'); }} /><span><strong>Homework</strong><small>Students work independently on their own time</small></span></label>
+      </fieldset>
+      <div className="launch-mode-details"><label htmlFor="run-mode"><strong>{launchMode === 'live' ? 'Live' : 'Homework'} mode</strong><select id="run-mode" value={runMode} disabled={launching} onChange={(event) => setRunMode(event.target.value as typeof runMode)}>{launchMode === 'live' && <option value="facilitated">Facilitated</option>}<option value="classic">Classic</option>{launchMode === 'live' && <option value="matching">Matching</option>}</select></label><p>{runMode === 'facilitated' ? 'Release one question at a time and follow student progress. Games can appear between rounds.' : runMode === 'matching' ? 'Students answer at their own pace and earn credits to play a matching game. Timeline games are skipped.' : launchMode === 'live' ? 'Students answer at their own pace while you follow their progress. Games can appear between rounds.' : 'Students answer at their own pace. Games can appear between rounds.'}</p></div>
+    </section>
     <section className="surface quiz-settings">
       <div className="quiz-settings-grid">
         <label className="checkbox-label">
           <input type="checkbox" checked={quiz.randomizeQuestionOrder} disabled={savingSettings} onChange={(event) => void updateQuestionOrder(event.target.checked)} />
-          <span><strong>Randomize question order</strong><small>Students receive the quiz questions in a different order each time it is opened.</small></span>
+          <span><strong>Randomize question order</strong><small>Live students receive individual question orders as they progress. Game breaks stay in place; homework questions are shuffled for each run.</small></span>
         </label>
         <label className="theme-select"><span><strong>Student theme</strong><small>Choose the visual style students see while taking this quiz.</small></span><select value={quiz.theme} disabled={savingSettings} onChange={(event) => void updateTheme(event.target.value as QuizTheme)}><option value="standard">Standard</option><option value="kids">Kid-friendly</option></select></label>
         <label className="theme-select"><span><strong>Default question timer</strong><small>Used unless a question overrides it.</small></span><select value={quiz.defaultTimerSeconds} disabled={savingSettings} onChange={(event) => void updateDefaultTimer(Number(event.target.value))}>{TIMER_SECONDS.map((seconds) => <option key={seconds} value={seconds}>{timerSettingLabel(seconds)}</option>)}</select></label>

@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, ParseIntPipe, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { FacilitatorActionDto, JoinModeratedSessionDto, ReportModeratedGameScoreDto, SubmitModeratedAnswerDto, UpdateModeratedSettingsDto } from './dto/moderated-session.dto';
+import { CreateModeratedSessionDto, FacilitatorActionDto, FlipMatchingCardDto, JoinModeratedSessionDto, MatchingNextDto, ReportModeratedGameScoreDto, SubmitModeratedAnswerDto, UpdateLobbyLockDto } from './dto/moderated-session.dto';
 import { ModeratedService } from './moderated.service';
 
 @Controller('moderated-sessions')
@@ -7,8 +7,8 @@ export class ModeratedController {
   constructor(private readonly moderatedService: ModeratedService) {}
 
   @Post('quiz/:quizId')
-  create(@Param('quizId', ParseIntPipe) quizId: number) {
-    return this.moderatedService.create(quizId);
+  create(@Param('quizId', ParseIntPipe) quizId: number, @Body() body: CreateModeratedSessionDto) {
+    return this.moderatedService.create(quizId, body?.mode);
   }
 
   @Post('pin/:pin/participants')
@@ -16,7 +16,7 @@ export class ModeratedController {
     @Param('pin') pin: string,
     @Body() body: JoinModeratedSessionDto,
   ) {
-    return this.moderatedService.join(pin, body.name);
+    return this.moderatedService.join(pin, body.name, body.clientId);
   }
 
   @Post('pin/:pin/answers')
@@ -32,12 +32,23 @@ export class ModeratedController {
     return this.moderatedService.reportGameScore(pin, body);
   }
 
+  @Post('pin/:pin/matching/flip')
+  flipMatchingCard(@Param('pin') pin: string, @Body() body: FlipMatchingCardDto) {
+    return this.moderatedService.flipMatchingCard(pin, body.participantId, body.card);
+  }
+
+  @Post('pin/:pin/matching/next')
+  nextMatchingQuestion(@Param('pin') pin: string, @Body() body: MatchingNextDto) {
+    return this.moderatedService.nextMatchingQuestion(pin, body.participantId);
+  }
+
   @Get('pin/:pin')
   studentState(
     @Param('pin') pin: string,
     @Query('participantId') participantId?: string,
+    @Query('clientId') clientId?: string,
   ) {
-    return this.moderatedService.studentState(pin, participantId);
+    return this.moderatedService.studentState(pin, participantId, clientId);
   }
 
   @Get(':sessionId/facilitator')
@@ -56,20 +67,26 @@ export class ModeratedController {
     return this.moderatedService.start(sessionId, body.facilitatorToken);
   }
 
-  @Post(':sessionId/settings')
-  updateSettings(
-    @Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string,
-    @Body() body: UpdateModeratedSettingsDto,
-  ) {
-    return this.moderatedService.updateSettings(sessionId, body.facilitatorToken, body.autoAdvanceOnTimeout);
+  @Post(':sessionId/next')
+  next(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: FacilitatorActionDto) {
+    return this.moderatedService.next(sessionId, body.facilitatorToken);
   }
 
-  @Post(':sessionId/next')
-  next(
+  @Post(':sessionId/lobby')
+  updateLobbyLock(
     @Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string,
+    @Body() body: UpdateLobbyLockDto,
+  ) {
+    return this.moderatedService.updateLobbyLock(sessionId, body.facilitatorToken, body.lobbyLocked);
+  }
+
+  @Post(':sessionId/participants/:participantId/remove')
+  removeParticipant(
+    @Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string,
+    @Param('participantId', new ParseUUIDPipe({ version: '4' })) participantId: string,
     @Body() body: FacilitatorActionDto,
   ) {
-    return this.moderatedService.next(sessionId, body.facilitatorToken);
+    return this.moderatedService.removeParticipant(sessionId, body.facilitatorToken, participantId);
   }
 
 }
