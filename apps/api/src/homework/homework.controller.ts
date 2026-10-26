@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, ParseIntPipe, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { CompleteHomeworkItemDto, JoinHomeworkSessionDto, SubmitHomeworkAnswerDto } from './dto/homework-session.dto';
+import { CompleteHomeworkItemDto, EndHomeworkSessionDto, JoinHomeworkSessionDto, SubmitHomeworkAnswerDto } from './dto/homework-session.dto';
 import { HomeworkService } from './homework.service';
 
 @Controller('homework-sessions')
@@ -23,4 +23,7 @@ export class HomeworkController {
 
   @Get(':sessionId/teacher')
   teacherState(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Query('token') token: string) { return this.homeworkService.teacherState(sessionId, token); }
+
+  @Post(':sessionId/end')
+  end(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: EndHomeworkSessionDto) { return this.homeworkService.end(sessionId, body.facilitatorToken); }
 }

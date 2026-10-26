@@ -67,6 +67,11 @@ export class ModeratedController {
     return this.moderatedService.start(sessionId, body.facilitatorToken);
   }
 
+  @Post(':sessionId/end')
+  end(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: FacilitatorActionDto) {
+    return this.moderatedService.end(sessionId, body.facilitatorToken);
+  }
+
   @Post(':sessionId/next')
   next(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: FacilitatorActionDto) {
     return this.moderatedService.next(sessionId, body.facilitatorToken);

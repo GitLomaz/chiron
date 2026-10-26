@@ -25,6 +25,7 @@ type HomeworkSession = {
   facilitatorToken: string;
   quiz: { title: string; description: string | null; theme: string; questions: HomeworkQuestion[] };
   participants: Map<string, HomeworkParticipant>;
+  ended: boolean;
   createdAt: Date;
 };
 
@@ -70,6 +71,7 @@ export class HomeworkService {
       facilitatorToken: randomUUID(),
       quiz: { title: quiz.title, description: quiz.description, theme: quiz.theme, questions },
       participants: new Map(),
+      ended: false,
       createdAt: new Date(),
     };
     this.sessions.set(id, session);
@@ -78,6 +80,7 @@ export class HomeworkService {
 
   join(sessionId: string, name: string) {
     const session = this.get(sessionId);
+    if (session.ended) throw new BadRequestException('This homework has ended');
     const cleanName = name.trim();
     if (!cleanName) throw new BadRequestException('Enter your name to begin');
     const participant: HomeworkParticipant = { id: randomUUID(), name: cleanName, answers: new Map(), completedItems: new Set(), joinedAt: new Date(), completedAt: null };
@@ -93,6 +96,7 @@ export class HomeworkService {
       title: session.quiz.title,
       description: session.quiz.description,
       theme: session.quiz.theme,
+      ended: session.ended,
       questions: session.quiz.questions,
       participant: participant ? { id: participant.id, name: participant.name, score: this.score(session, participant), completed: participant.completedAt !== null } : null,
     };
@@ -100,6 +104,7 @@ export class HomeworkService {
 
   submitAnswer(sessionId: string, participantId: string, questionId: string, answer: string) {
     const { session, participant } = this.participant(sessionId, participantId);
+    if (session.ended) throw new BadRequestException('This homework has ended');
     if (participant.completedAt) throw new BadRequestException('This homework attempt is already complete');
     const question = session.quiz.questions.find((item) => item.id === questionId);
     if (!question || question.itemType !== 'question') throw new BadRequestException('That is not a homework question');
@@ -113,6 +118,7 @@ export class HomeworkService {
 
   completeItem(sessionId: string, participantId: string, questionId: string) {
     const { session, participant } = this.participant(sessionId, participantId);
+    if (session.ended) throw new BadRequestException('This homework has ended');
     if (participant.completedAt) throw new BadRequestException('This homework attempt is already complete');
     const item = session.quiz.questions.find((question) => question.id === questionId);
     if (!item) throw new BadRequestException('That homework item could not be found');
@@ -129,6 +135,7 @@ export class HomeworkService {
       sessionId: session.id,
       title: session.quiz.title,
       description: session.quiz.description,
+      ended: session.ended,
       questionCount,
       itemCount: session.quiz.questions.length,
       createdAt: session.createdAt.toISOString(),
@@ -142,6 +149,13 @@ export class HomeworkService {
         score: this.score(session, participant),
       })),
     };
+  }
+
+  end(sessionId: string, token: string) {
+    const session = this.get(sessionId);
+    if (!token || session.facilitatorToken !== token) throw new ForbiddenException('That teacher code is not valid');
+    session.ended = true;
+    return this.teacherState(sessionId, token);
   }
 
   private get(sessionId: string) {

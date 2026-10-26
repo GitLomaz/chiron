@@ -1,5 +1,10 @@
 import { IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 
+export class EndHomeworkSessionDto {
+  @IsUUID('4')
+  facilitatorToken!: string;
+}
+
 export class JoinHomeworkSessionDto {
   @IsString()
   @MinLength(1)

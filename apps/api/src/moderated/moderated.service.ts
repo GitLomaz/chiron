@@ -15,6 +15,7 @@ type ModeratedSession = {
   randomizeQuestionOrder: boolean;
   quiz: { title: string; description: string | null; theme: string; questions: SessionQuestion[] };
   phase: 'lobby' | 'question' | 'complete';
+  endedByTeacher: boolean;
   lobbyLocked: boolean;
   participants: Map<string, Participant>;
   bannedClientIds: Set<string>;
@@ -58,7 +59,7 @@ export class ModeratedService {
     const session = {
       id, pin, facilitatorToken, mode, currentRoundIndex: -1, randomizeQuestionOrder: quiz.randomizeQuestionOrder,
       quiz: { title: quiz.title, description: quiz.description, theme: quiz.theme, questions: authoredQuestions },
-      phase: 'lobby', lobbyLocked: false, participants: new Map(), bannedClientIds: new Set(), createdAt: new Date(),
+      phase: 'lobby', endedByTeacher: false, lobbyLocked: false, participants: new Map(), bannedClientIds: new Set(), createdAt: new Date(),
     } satisfies ModeratedSession;
     this.sessions.set(id, session);
     this.sessionsByPin.set(pin, session);
@@ -68,7 +69,7 @@ export class ModeratedService {
   studentState(pin: string, participantId?: string, clientId?: string) {
     const session = this.getByPin(pin);
     const participant = participantId ? session.participants.get(participantId) : undefined;
-    const question = session.phase !== 'lobby' && participant && !participant.completedAt ? participant.questions[participant.currentQuestionIndex] : undefined;
+    const question = session.phase === 'question' && participant && !participant.completedAt ? participant.questions[participant.currentQuestionIndex] : undefined;
     const answer = question && participant ? participant.answers.get(question.id) : undefined;
     return {
       pin: session.pin,
@@ -77,6 +78,7 @@ export class ModeratedService {
       description: session.quiz.description,
       theme: session.quiz.theme,
       phase: participant?.completedAt ? 'complete' : session.phase,
+      endedByTeacher: session.endedByTeacher,
       removed: Boolean(clientId && session.bannedClientIds.has(clientId)),
       participant: participant ? { id: participant.id, name: participant.name } : null,
       score: participant ? this.score(session, participant) : null,
@@ -89,8 +91,8 @@ export class ModeratedService {
         answered: answer !== undefined,
         gameScore: question.itemType === 'game' && participant ? participant.gameScores.get(question.id) ?? 0 : null,
         result: answer === undefined ? null : { answer, correctAnswer: question.correctAnswer, isCorrect: answer === question.correctAnswer },
-        timedOut: this.hasTimedOut(participant!, question),
-        timerEndsAt: this.timerEndsAt(participant!, question)?.toISOString() ?? null,
+        timedOut: answer === undefined && this.hasTimedOut(participant!, question),
+        timerEndsAt: answer === undefined ? this.timerEndsAt(participant!, question)?.toISOString() ?? null : null,
       } : null,
     };
   }
@@ -99,7 +101,7 @@ export class ModeratedService {
     const session = this.authorize(sessionId, token);
     const participants = [...session.participants.values()];
     return {
-      sessionId: session.id, pin: session.pin, title: session.quiz.title, description: session.quiz.description, phase: session.phase, lobbyLocked: session.lobbyLocked, mode: session.mode, currentRound: session.currentRoundIndex + 1,
+      sessionId: session.id, pin: session.pin, title: session.quiz.title, description: session.quiz.description, phase: session.phase, endedByTeacher: session.endedByTeacher, lobbyLocked: session.lobbyLocked, mode: session.mode, currentRound: session.currentRoundIndex + 1,
       questionCount: session.quiz.questions.length,
       completedCount: participants.filter((participant) => participant.completedAt !== null).length,
       participants: participants.map((participant) => ({
@@ -124,6 +126,16 @@ export class ModeratedService {
     session.phase = 'question';
     session.currentRoundIndex = 0;
     for (const participant of session.participants.values()) this.openParticipantQuestion(session, participant);
+    return this.facilitatorState(sessionId, token);
+  }
+
+  end(sessionId: string, token: string) {
+    const session = this.authorize(sessionId, token);
+    if (session.phase !== 'complete') {
+      session.phase = 'complete';
+      session.endedByTeacher = true;
+      for (const participant of session.participants.values()) this.clearParticipantTimer(participant);
+    }
     return this.facilitatorState(sessionId, token);
   }
 
@@ -186,14 +198,22 @@ export class ModeratedService {
       if (body.answer === question.correctAnswer && (correct === 1 || correct % 3 === 0)) participant.matching.credits += 1;
       participant.betweenQuestions = true;
       this.clearParticipantTimer(participant);
-    } else if (session.mode !== 'facilitated') this.openParticipantQuestion(session, participant);
+    } else if (session.mode !== 'facilitated') {
+      this.clearParticipantTimer(participant);
+      const questionIndex = participant.currentQuestionIndex;
+      participant.autoAdvanceTimer = setTimeout(() => {
+        if (session.phase === 'question' && session.participants.get(participant.id) === participant && participant.currentQuestionIndex === questionIndex) {
+          this.openParticipantQuestion(session, participant);
+        }
+      }, 5000);
+    }
     return { answered: true };
   }
 
   flipMatchingCard(pin: string, participantId: string, card: number) {
     const session = this.getByPin(pin);
     const participant = session.participants.get(participantId);
-    if (!participant?.matching || !participant.betweenQuestions) throw new BadRequestException('Matching is available between questions');
+    if (session.phase !== 'question' || !participant?.matching || !participant.betweenQuestions) throw new BadRequestException('Matching is available between questions');
     const matching = participant.matching;
     if (matching.credits < 1) throw new BadRequestException('Earn a credit by answering a question correctly');
     if (matching.openCards.length === 2) matching.openCards = [];
@@ -211,7 +231,7 @@ export class ModeratedService {
   nextMatchingQuestion(pin: string, participantId: string) {
     const session = this.getByPin(pin);
     const participant = session.participants.get(participantId);
-    if (session.mode !== 'matching' || !participant || !participant.betweenQuestions) throw new BadRequestException('There is no next question to start');
+    if (session.phase !== 'question' || session.mode !== 'matching' || !participant || !participant.betweenQuestions) throw new BadRequestException('There is no next question to start');
     participant.betweenQuestions = false;
     this.openParticipantQuestion(session, participant);
     return { advanced: true };

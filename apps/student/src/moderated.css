@@ -75,6 +75,11 @@
 .lobby-lock-control { border-top: 1px solid #e7e5f4; margin-top: 14px; padding-top: 18px; }
 .lobby-lock-control input:checked + i { background: #be5770; }
 .lobby-lock-control input:checked + i::after { transform: translateX(19px); }
+.end-quiz-control { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; margin-top: 22px; }
+.end-quiz-control small { color: #7b7695; font-size: .75rem; }
+.end-quiz-button { padding: 10px 14px; border: 1px solid #e5c7d0; border-radius: 9px; background: #fff7f8; color: #a13f57; font-size: .85rem; font-weight: 700; }
+.end-quiz-button:hover:not(:disabled) { background: #ffecef; border-color: #dca4b2; }
+.end-quiz-button:disabled { cursor: wait; opacity: .6; }
 .homework-participant-panel h2 span { color: #aaa4c0; font-weight: 400; padding: 0 3px; }
 .participant-panel li.homework-participant { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 18px; padding: 15px 0; }
 .homework-participant-progress, .homework-participant-score { display: grid; gap: 4px; }
