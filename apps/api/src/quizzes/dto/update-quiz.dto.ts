@@ -1,5 +1,5 @@
 import { IsBoolean, IsIn, IsInt, IsOptional } from 'class-validator';
-import { TIMER_SECONDS } from './create-quiz.dto';
+import { QUIZ_THEMES, QuizTheme, TIMER_SECONDS } from './create-quiz.dto';
 
 export class UpdateQuizDto {
   @IsOptional()
@@ -7,8 +7,8 @@ export class UpdateQuizDto {
   randomizeQuestionOrder?: boolean;
 
   @IsOptional()
-  @IsIn(['standard', 'kids'])
-  theme?: 'standard' | 'kids';
+  @IsIn(QUIZ_THEMES)
+  theme?: QuizTheme;
 
   @IsOptional()
   @IsInt()

@@ -26,7 +26,7 @@ type Quiz = {
   guid: string;
   title: string;
   description: string | null;
-  theme: 'standard' | 'kids';
+  theme: 'standard' | 'kids' | 'christmas' | 'halloween';
   defaultTimerSeconds: number;
   questions: QuizQuestion[];
 };
@@ -168,7 +168,7 @@ type ModeratedAnswerResult = { answer: string; correctAnswer: string; isCorrect:
 type ModeratedScore = { correct: number; answered: number };
 type ModeratedQuestion = TimedQuestion & { special?: SpecialQuestion | null; matchProgress?: MatchProgress | null; id: string; text: string; itemType: 'question' | 'game'; gameType: 'coin_catch' | 'match_pairs' | 'tower_stack' | null; options: string[]; number: number; total?: number; answered?: boolean; timedOut?: boolean; gameScore?: number | null; result?: ModeratedAnswerResult | null };
 type MatchingState = { credits: number; cards: { symbol: string | null; matched: boolean }[] };
-type ModeratedStudentState = { endless: boolean; pin: string; title: string; description: string | null; theme: 'standard' | 'kids'; mode: 'classic' | 'facilitated' | 'matching'; matching: MatchingState | null; betweenQuestions: boolean; phase: 'lobby' | 'question' | 'complete'; endedByTeacher: boolean; expired: boolean; endsAt: string | null; removed: boolean; participant: { id: string; name: string } | null; score: ModeratedScore | null; currentQuestion: ModeratedQuestion | null };
+type ModeratedStudentState = { endless: boolean; pin: string; title: string; description: string | null; theme: 'standard' | 'kids' | 'christmas' | 'halloween'; mode: 'classic' | 'facilitated' | 'matching'; matching: MatchingState | null; betweenQuestions: boolean; phase: 'lobby' | 'question' | 'complete'; endedByTeacher: boolean; expired: boolean; endsAt: string | null; removed: boolean; participant: { id: string; name: string } | null; score: ModeratedScore | null; currentQuestion: ModeratedQuestion | null };
 type FacilitatorState = { endless: boolean; sessionId: string; pin: string; title: string; description: string | null; mode: 'classic' | 'facilitated' | 'matching'; currentRound: number; phase: 'lobby' | 'question' | 'complete'; endedByTeacher: boolean; expired: boolean; endsAt: string | null; durationSeconds: number; lobbyLocked: boolean; questionCount: number; completedCount: number; participants: { id: string; name: string; completed: boolean; completedItems: number; currentItemType: 'question' | 'game' | null; currentAnswered: boolean; score: ModeratedScore }[]; gameLeaderboard: { id: string; name: string; score: number }[] };
 
 async function moderatedRequest<T>(path: string, options?: RequestInit): Promise<T> {
@@ -204,14 +204,14 @@ function projectorUrl(sessionId: string, token: string) { return `${window.locat
 function homeworkStorageKey(sessionId: string) { return `quizboard-homework-${sessionId}`; }
 function homeworkStudentUrl(sessionId: string) { return `${window.location.origin}/homework/${sessionId}`; }
 
-function ModeratedCoinCatch({ pin, participantId, question, theme, facilitated }: { pin: string; participantId: string; question: ModeratedQuestion; theme: 'standard' | 'kids'; facilitated: boolean }) {
+function ModeratedCoinCatch({ pin, participantId, question, theme, facilitated }: { pin: string; participantId: string; question: ModeratedQuestion; theme: 'standard' | 'kids' | 'christmas' | 'halloween'; facilitated: boolean }) {
   const [things, setThings] = useState<FallingThing[]>([]); const [score, setScore] = useState(question.gameScore ?? 0);
   useEffect(() => { const spawn = window.setInterval(() => { const kind: FallingThing['kind'] = Math.random() < .7 ? 'coin' : 'veggie'; const vegetables = ['🥕', '🥦', '🌽']; setThings((current) => [...current, { id: Date.now() + Math.random(), kind, left: 5 + Math.random() * 82, duration: 3 + Math.random() * 1.6, emoji: kind === 'coin' ? '🪙' : vegetables[Math.floor(Math.random() * vegetables.length)] }].slice(-14)); }, 610); return () => window.clearInterval(spawn); }, []);
   async function catchThing(thing: FallingThing) { setThings((current) => current.filter((item) => item.id !== thing.id)); const nextScore = thing.kind === 'coin' ? score + 1 : Math.max(0, score - 1); setScore(nextScore); try { await moderatedRequest(`/pin/${pin}/games/scores`, { method: 'POST', body: JSON.stringify({ participantId, questionId: question.id, score: nextScore }) }); } catch { /* The next state refresh will surface any session error. */ } }
 return <main className={`page quiz-page moderated-quiz-page theme-${theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-header-meta"><span className="question-label">LIVE GAME</span></span></header><div className="progress"><span style={{ width: `${(question.number / (question.total ?? 1)) * 100}%` }} /></div><section className="game-card moderated-game-card"><div className="game-heading"><div><p className="eyebrow">LIVE COIN CATCH</p><h1>{question.text}</h1><p>Catch coins and avoid veggies. Your score is live on the leaderboard.</p></div><div className="game-stats"><span>Score <strong>{score}</strong></span></div></div><div className="coin-catch-board">{things.map((thing) => <button key={thing.id} className={`falling-thing ${thing.kind}`} style={{ left: `${thing.left}%`, animationDuration: `${thing.duration}s` }} onClick={() => void catchThing(thing)} aria-label={thing.kind === 'coin' ? 'Catch coin' : 'Avoid vegetable'}>{thing.emoji}</button>)}</div><p className="game-tip">{facilitated ? 'Your facilitator will release the next round.' : 'The next round starts automatically when time is up.'}</p></section></main>;
 }
 
-function RemovedFromLiveTest({ theme, title }: { theme: 'standard' | 'kids'; title: string }) {
+function RemovedFromLiveTest({ theme, title }: { theme: 'standard' | 'kids' | 'christmas' | 'halloween'; title: string }) {
   return <main className={`page quiz-page moderated-quiz-page theme-${theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="intro-card removal-card"><p className="eyebrow">LIVE TEST</p><h1>You’ve been removed.</h1><p className="lede">You no longer have access to <strong>{title}</strong>. Please speak with your facilitator if you think this was a mistake.</p></section></main>;
 }
 
@@ -298,11 +298,11 @@ if (question.itemType === 'game') return question.timedOut ? <WaitingScreen them
   return <>{state?.phase === 'question' && !state.removed && !state.endedByTeacher && state.endsAt && <RunDeadline endsAt={state.endsAt} />}{render()}</>;
 }
 
-function QuizEnded({ theme, title, score, expired = false }: { theme: 'standard' | 'kids'; title: string; score?: ModeratedScore | null; expired?: boolean }) {
+function QuizEnded({ theme, title, score, expired = false }: { theme: 'standard' | 'kids' | 'christmas' | 'halloween'; title: string; score?: ModeratedScore | null; expired?: boolean }) {
   return <main className={`page quiz-page moderated-quiz-page theme-${theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="intro-card waiting-card"><p className="eyebrow">{title}</p><h1>The quiz has ended.</h1><p className="lede">{expired ? 'Time is up for this quiz.' : 'Your teacher has ended this quiz.'}</p>{score && <div className="score-so-far"><span>Your score</span><strong>{score.correct} / {score.answered}</strong><small>correct answers recorded</small></div>}</section></main>;
 }
 
-function WaitingScreen({ theme, title, name, copy, result, score, scoreLabel = 'Score so far', complete = false }: { theme: 'standard' | 'kids'; title: string; name: string; copy: string; result?: ModeratedAnswerResult | null; score?: ModeratedScore | null; scoreLabel?: string; complete?: boolean }) { return <main className={`page quiz-page moderated-quiz-page theme-${theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="intro-card waiting-card"><p className="eyebrow">{title}</p><h1>{complete ? `All done, ${name}!` : result ? result.isCorrect ? `Correct, ${name}!` : `Not quite, ${name}.` : `You’re in, ${name}.`}</h1>{result && <div className={`answer-summary ${result.isCorrect ? 'correct' : 'incorrect'}`}><strong>{result.isCorrect ? 'You got it right.' : 'Here’s the answer.'}</strong><span>Your answer: {result.answer}</span>{!result.isCorrect && <span>Correct answer: {result.correctAnswer}</span>}</div>}<p className="lede">{copy}</p>{score && (complete || score.answered > 0) && <div className="score-so-far"><span>{scoreLabel}</span><strong>{score.correct} / {score.answered}</strong><small>correct answer{score.answered === 1 ? '' : 's'}</small></div>}{!complete && <div className="loader small-loader" aria-label="Waiting" />}</section></main>; }
+function WaitingScreen({ theme, title, name, copy, result, score, scoreLabel = 'Score so far', complete = false }: { theme: 'standard' | 'kids' | 'christmas' | 'halloween'; title: string; name: string; copy: string; result?: ModeratedAnswerResult | null; score?: ModeratedScore | null; scoreLabel?: string; complete?: boolean }) { return <main className={`page quiz-page moderated-quiz-page theme-${theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="intro-card waiting-card"><p className="eyebrow">{title}</p><h1>{complete ? `All done, ${name}!` : result ? result.isCorrect ? `Correct, ${name}!` : `Not quite, ${name}.` : `You’re in, ${name}.`}</h1>{result && <div className={`answer-summary ${result.isCorrect ? 'correct' : 'incorrect'}`}><strong>{result.isCorrect ? 'You got it right.' : 'Here’s the answer.'}</strong><span>Your answer: {result.answer}</span>{!result.isCorrect && <span>Correct answer: {result.correctAnswer}</span>}</div>}<p className="lede">{copy}</p>{score && (complete || score.answered > 0) && <div className="score-so-far"><span>{scoreLabel}</span><strong>{score.correct} / {score.answered}</strong><small>correct answer{score.answered === 1 ? '' : 's'}</small></div>}{!complete && <div className="loader small-loader" aria-label="Waiting" />}</section></main>; }
 
 function ModeratedPinEntry() {
   const [pin, setPin] = useState('');
@@ -367,7 +367,7 @@ type HomeworkStudentState = {
   sessionId: string;
   title: string;
   description: string | null;
-  theme: 'standard' | 'kids';
+  theme: 'standard' | 'kids' | 'christmas' | 'halloween';
   ended: boolean;
   expired: boolean;
   endsAt: string;

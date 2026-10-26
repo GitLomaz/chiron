@@ -1,73 +1,87 @@
-# Trivia
+# Quizboard project overview
 
-A minimal quiz-management foundation built as an npm-workspaces monorepo.
+Quizboard is a teacher-led quiz and learning-game platform. Teachers use an admin application to build quizzes, organize reusable content, and run activities. Students use a separate, focused player to join live sessions or complete homework through a shareable link.
 
-## Requirements
+## What the project supports
 
-- Node.js 20 or newer
-- npm 10 or newer
-- PostgreSQL 14 or newer
+### Quiz creation and content management
 
-## Quick start
+- Create quizzes with a title, description, question order setting, student theme, and default timer.
+- Add, edit, reorder, enable, and remove questions.
+- Build standard multiple-choice questions, including true/false and matching question types.
+- Add game breaks such as Coin Catch, Match Pairs, and Tower Stack.
+- Reuse questions from a common-question library.
+- Create answer pools and have questions draw a configured number of answers from them.
+- Manage data sets made of question-and-answer pairs, then generate quiz content from them.
+- Preview the student question view while editing.
 
-1. Create a PostgreSQL database named `trivia`:
+### Student experiences
 
-   ```sql
-   CREATE DATABASE trivia;
-   ```
+- Take a standard quiz at a shareable quiz URL.
+- Join a live activity with a session PIN and a displayed name.
+- Complete homework through a private link before its deadline.
+- Receive per-question feedback, score updates, timers, progress indicators, and end-of-quiz results.
+- Use matching interactions and the available game activities when they are part of the quiz.
+- View the selected quiz theme: Standard, Kid-friendly, Christmas, or Halloween.
 
-2. Copy the environment examples for each application:
+### Teacher-led activities
 
-   ```sh
-   cp apps/api/.env.example apps/api/.env
-   cp apps/web/.env.example apps/web/.env
-   ```
+- Start live tests in Classic, Facilitated, or Matching mode.
+- Use Classic mode for self-paced participation.
+- Use Facilitated mode to control when each question is released.
+- Use Matching mode to include matching breaks between questions.
+- Monitor participant progress and scores during a live activity.
+- End a session or remove a participant when needed.
+- Create homework runs with a closing time and review the results while the API process is running.
 
-   On Windows PowerShell, use `Copy-Item apps/api/.env.example apps/api/.env` and `Copy-Item apps/web/.env.example apps/web/.env` instead. Update `DATABASE_URL` if your PostgreSQL credentials or port differ.
+## Architecture
 
-3. Install packages, create the Prisma client, and apply the included initial migration:
+| Area | Technology | Responsibility |
+| --- | --- | --- |
+| `apps/api` | NestJS, Prisma, PostgreSQL | API, validation, quiz storage, content libraries, live sessions, and homework state |
+| `apps/web` | React, Vite | Teacher/admin interface for quiz authoring and activity management |
+| `apps/student` | React, Vite | Student quiz player, live-session join flow, homework player, and themes |
+| `data` | JSON files | Source data used for generated quiz content and seed-like workflows |
 
-   ```sh
-   npm install
-   npm run db:generate
-   npm run db:migrate
-   ```
+The repository is an npm-workspaces monorepo. `npm run dev` starts the API, teacher app, and student app together. By default, the teacher app runs on port 5173, the student app on 5174, and the API on 3000.
 
-4. Start the admin app, API, and student player:
+## Core data model
 
-   ```sh
-   npm run dev
-   ```
+- **Quiz** owns its ordered questions and contains presentation settings such as theme, question randomization, and default timer.
+- **Question** can be a standard question or a game item. It stores options, the correct answer, optional timer override, and optional answer-pool configuration.
+- **CommonQuestion** is reusable content that can be added to quizzes.
+- **AnswerPool** contains reusable answer values for dynamically composed questions.
+- **DataSet** contains ordered question-and-answer pairs used to generate quiz content.
 
-   The admin app is served at `http://localhost:5173`, the student player at `http://localhost:5174`, and the API is at `http://localhost:3000` (`GET /health` returns its status).
+Quiz and content data are stored in PostgreSQL. Live moderated sessions and homework runs are kept in memory, so they are reset if the API process restarts.
 
-## Student quiz player
+## API areas
 
-Teachers create a run for each quiz: a live test or a homework run. Homework runs are in-memory snapshots, shared at `http://localhost:5174/homework/<session-id>`, and have a private teacher results view. Student names, completion, and scores are retained for the life of that API process; restarting it clears active runs.
+The API is organized around these functional areas:
 
-Live runs offer Classic (self-paced), Facilitated (the teacher releases each round), and Matching. Matching skips the quiz's game breaks and gives students a matching break between questions. Students earn a credit on their first correct answer, their third, and every third correct answer thereafter; an incorrect pair costs one credit. Homework uses Classic mode.
+- `quizzes`: quiz, question, common-question, and answer-pool management
+- `data-sets`: data-set management and quiz generation
+- `play`: standard student quiz delivery and answer submission
+- `moderated`: live-session creation, joining, progression, and scoring
+- `homework`: homework-run creation, completion, deadlines, and results
+- `health`: service status endpoint
 
-## Commands
+## Current limitations and likely next steps
 
-- `npm run dev` — run React and NestJS together
-- `npm run build` — type-check and build both applications
-- `npm run db:generate` — regenerate Prisma Client after schema changes
-- `npm run db:migrate` — apply pending development migrations
+- Live and homework session state is not persistent across API restarts.
+- There is no authentication or role management yet; teacher-facing routes rely on the current local deployment model.
+- The database schema is intentionally compact and focuses on quiz authoring rather than schools, classes, rosters, or long-term analytics.
+- Future work could add persistent session storage, accounts and permissions, class management, richer reporting, and more question or game types.
 
-## PostgreSQL notes
+## Running locally
 
-The connection string follows the normal PostgreSQL URL format:
-
-```text
-postgresql://USER:PASSWORD@HOST:PORT/DATABASE?schema=public
-```
-
-For Docker-based local PostgreSQL, one possible command is:
+The project requires Node.js 20+, npm 10+, and PostgreSQL 14+. Configure `DATABASE_URL` in `apps/api/.env`, then run:
 
 ```sh
-docker run --name trivia-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=trivia -p 5433:5432 -d postgres:16
+npm install
+npm run db:generate
+npm run db:migrate
+npm run dev
 ```
 
-The Docker command maps PostgreSQL to host port `5433`; the included `.env.example` files match it. If you use an existing PostgreSQL installation, set its host and port in `DATABASE_URL` instead.
-
-The schema intentionally contains only `Quiz` and `Question`. A quiz owns its questions; deleting it cascades to those questions.
+For the full setup detail and available commands, see [README.md](README.md).
