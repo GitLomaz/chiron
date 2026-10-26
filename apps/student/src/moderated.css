@@ -116,3 +116,4 @@
 .matching-secondary-button:hover { border-color: #a788d3; background: #f0e8fa; }
 .matching-secondary-button:focus-visible { outline: 3px solid #8b6bc1; outline-offset: 2px; }
 @media (max-width: 600px) { .matching-actions { flex-direction: column-reverse; } .matching-actions button { width: 100%; } }
+.matching-columns{display:grid;grid-template-columns:1fr 1fr;gap:14px}.matching-columns>div{display:grid;gap:8px;align-content:start}.matching-columns .option{width:100%;min-width:0;overflow-wrap:anywhere}.matching-question p{font-size:.85rem;color:#65748b}.matching-columns .option:disabled{opacity:.65}@media(max-width:500px){.matching-columns{gap:7px}.matching-columns .option{padding:10px;font-size:.78rem}}

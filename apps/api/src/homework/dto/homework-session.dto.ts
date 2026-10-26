@@ -1,4 +1,11 @@
-import { IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import { IsInt, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
+
+export class CreateHomeworkSessionDto {
+  @IsInt()
+  @Min(300)
+  @Max(604800)
+  durationSeconds!: number;
+}
 
 export class EndHomeworkSessionDto {
   @IsUUID('4')

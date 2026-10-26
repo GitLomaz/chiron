@@ -212,3 +212,36 @@
     border-radius: 24px;
   }
 }
+/* Matching questions use their own compact cards, independent of multiple-choice sizing. */
+.matching-question-card .matching-question { flex: 0 0 auto; min-width: 0; margin: 24px 0 0; }
+.matching-question-card h1 { font-size: clamp(1.8rem, 3.3vw, 3rem); line-height: 1.12; }
+.student-app .matching-question-card h1 { font-size: clamp(2rem, 3.3vw, 3.25rem); }
+.matching-intro { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 20px; margin-bottom: 20px; }
+.matching-question .matching-intro p { color: #696884; font-size: .92rem; line-height: 1.5; margin: 0; }
+.matching-stats { display: flex; flex-wrap: wrap; gap: 8px; color: #625e80; font-size: .75rem; font-weight: 600; }
+.matching-stats > span { display: inline-flex; align-items: baseline; gap: 4px; padding: 7px 10px; border: 1px solid #e8e6f3; border-radius: 999px; background: #f8f7fc; white-space: nowrap; }
+.matching-stats strong { color: #353056; font-weight: 700; }
+.matching-stats .is-low { border-color: #f3dbb1; background: #fff8e9; color: #8e5b16; }
+.matching-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(12px, 2vw, 24px); align-items: start; }
+.matching-column { min-width: 0; }
+.matching-column h2 { margin: 0 0 9px 2px; color: #8b86a1; font: 500 .65rem 'DM Mono', monospace; letter-spacing: .1em; text-transform: uppercase; }
+.matching-options { display: grid; gap: 8px; }
+.matching-option { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 58px; padding: 13px 16px; border: 1px solid #e3e1f0; border-radius: 12px; background: #fff; color: #302c50; text-align: left; font-size: clamp(.88rem, 1.3vw, 1rem); font-weight: 600; line-height: 1.4; transition: border-color .15s, background .15s, box-shadow .15s; }
+.matching-option-text { min-width: 0; overflow-wrap: anywhere; }
+.matching-option:hover:not(:disabled) { border-color: #a8a0ed; background: #faf9ff; }
+.matching-option:focus-visible { outline: 3px solid #7770e8; outline-offset: 2px; }
+.matching-option.is-selected { border-color: #6158dc; background: #f1efff; box-shadow: inset 0 0 0 1px #6158dc; }
+.matching-option.is-matched { border-color: #addfc5; background: #f0faf4; color: #276849; opacity: 1; }
+.matching-option:disabled { cursor: default; }
+.matching-option-check { flex: 0 0 auto; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #d8f2e3; color: #248459; font-size: .8rem; font-weight: 700; }
+.student-app .matching-question-card .answer-feedback, .matching-question-card .answer-feedback { flex: 0 0 auto; margin: 24px 0 16px; }
+.theme-kids .matching-option { border-width: 2px; background: #fff; color: #253560; }
+.theme-kids .matching-option.is-selected { border-color: #635bdf; background: #f1efff; }
+.theme-kids .matching-option.is-matched { border-color: #7fcf6b; background: #eaf9e4; color: #225d39; }
+@media (max-width: 600px) {
+  .student-app .matching-question-card h1 { font-size: clamp(1.7rem, 7vw, 2.3rem); }
+  .matching-question-card .matching-question { margin-top: 18px; }
+  .matching-intro { margin-bottom: 16px; }
+  .matching-columns { gap: 10px; }
+  .matching-option { min-height: 52px; padding: 10px; font-size: .85rem; }
+}

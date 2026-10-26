@@ -6,9 +6,12 @@ import { ModeratedService } from './moderated.service';
 export class ModeratedController {
   constructor(private readonly moderatedService: ModeratedService) {}
 
+  @Get()
+  listActive() { return this.moderatedService.listActive(); }
+
   @Post('quiz/:quizId')
   create(@Param('quizId', ParseIntPipe) quizId: number, @Body() body: CreateModeratedSessionDto) {
-    return this.moderatedService.create(quizId, body?.mode);
+    return this.moderatedService.create(quizId, body?.mode, body.durationSeconds, body.endless);
   }
 
   @Post('pin/:pin/participants')

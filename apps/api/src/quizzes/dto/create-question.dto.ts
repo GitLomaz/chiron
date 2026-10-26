@@ -1,7 +1,16 @@
-import { IsArray, IsIn, IsInt, IsOptional, IsPositive, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ValidateNested, ArrayMinSize, ArrayMaxSize, IsArray, IsIn, IsInt, IsOptional, IsPositive, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { TIMER_SECONDS } from './create-quiz.dto';
 
+export class QuestionPairDto {
+  @IsString() @MinLength(1) @MaxLength(500) question!: string;
+  @IsString() @MinLength(1) @MaxLength(500) answer!: string;
+}
 export class CreateQuestionDto {
+  @IsOptional() @IsIn(['multiple_choice', 'true_false', 'matching']) questionType?: 'multiple_choice' | 'true_false' | 'matching';
+  @IsOptional() @IsString() @MaxLength(500) statement?: string;
+  @IsOptional() @IsArray() @ArrayMinSize(2) @ArrayMaxSize(12) @ValidateNested({ each: true }) @Type(() => QuestionPairDto) pairs?: QuestionPairDto[];
+
   @IsString()
   @MinLength(1)
   @MaxLength(2000)

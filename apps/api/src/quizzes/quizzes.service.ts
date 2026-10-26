@@ -231,6 +231,18 @@ export class QuizzesService {
     const correctAnswer = question.correctAnswer.trim();
     if (!text || !correctAnswer) throw new BadRequestException('Question text and the correct answer cannot be blank');
 
+    if (question.questionType === 'true_false') {
+      const statement = question.statement?.trim();
+      if (!statement || !['True', 'False'].includes(correctAnswer)) throw new BadRequestException('Enter an answer and select True or False');
+      return { text, correctAnswer, options: { kind: 'true_false', statement }, answerPoolId: null, answerCount: null };
+    }
+    if (question.questionType === 'matching') {
+      const pairs = question.pairs?.map((pair) => ({ question: pair.question.trim(), answer: pair.answer.trim() })) ?? [];
+      if (pairs.length < 2 || pairs.some((pair) => !pair.question || !pair.answer)) throw new BadRequestException('Provide at least two complete pairs');
+      if (new Set(pairs.map((pair) => pair.question)).size !== pairs.length || new Set(pairs.map((pair) => pair.answer)).size !== pairs.length) throw new BadRequestException('Questions and answers must be unique within a matching question');
+      return { text, correctAnswer: 'Matched', options: { kind: 'matching', pairs }, answerPoolId: null, answerCount: null };
+    }
+
     let wrongAnswers = this.cleanUnique(question.wrongAnswers ?? []).filter((answer) => answer !== correctAnswer);
     let answerCount: number | null = null;
     if (question.answerPoolId) {

@@ -1,13 +1,16 @@
 import { Body, Controller, Get, Param, ParseIntPipe, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { CompleteHomeworkItemDto, EndHomeworkSessionDto, JoinHomeworkSessionDto, SubmitHomeworkAnswerDto } from './dto/homework-session.dto';
+import { CompleteHomeworkItemDto, CreateHomeworkSessionDto, EndHomeworkSessionDto, JoinHomeworkSessionDto, SubmitHomeworkAnswerDto } from './dto/homework-session.dto';
 import { HomeworkService } from './homework.service';
 
 @Controller('homework-sessions')
 export class HomeworkController {
   constructor(private readonly homeworkService: HomeworkService) {}
 
+  @Get()
+  listActive() { return this.homeworkService.listActive(); }
+
   @Post('quiz/:quizId')
-  create(@Param('quizId', ParseIntPipe) quizId: number) { return this.homeworkService.create(quizId); }
+  create(@Param('quizId', ParseIntPipe) quizId: number, @Body() body: CreateHomeworkSessionDto) { return this.homeworkService.create(quizId, body.durationSeconds); }
 
   @Post(':sessionId/participants')
   join(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: JoinHomeworkSessionDto) { return this.homeworkService.join(sessionId, body.name); }

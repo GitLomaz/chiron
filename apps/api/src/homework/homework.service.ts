@@ -1,3 +1,5 @@
+import { specialQuestion, matchAttempt, SpecialQuestion } from '../question-types/special';
+import { MatchProgress } from '../question-types/matching';
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -11,11 +13,13 @@ type HomeworkQuestion = {
   options: string[];
   correctAnswer: string;
   timerSeconds: number | null;
+  special?: SpecialQuestion | null;
 };
 type HomeworkParticipant = {
   id: string;
   name: string;
   answers: Map<string, string>;
+  matchProgress: Map<string, MatchProgress>;
   completedItems: Set<string>;
   joinedAt: Date;
   completedAt: Date | null;
@@ -26,6 +30,8 @@ type HomeworkSession = {
   quiz: { title: string; description: string | null; theme: string; questions: HomeworkQuestion[] };
   participants: Map<string, HomeworkParticipant>;
   ended: boolean;
+  expired: boolean;
+  endsAt: Date;
   createdAt: Date;
 };
 
@@ -40,7 +46,14 @@ export class HomeworkService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(quizId: number) {
+  listActive() {
+    return [...this.sessions.values()].filter((session) => !this.get(session.id).ended).map((session) => ({
+      sessionId: session.id, title: session.quiz.title, participantCount: session.participants.size,
+      createdAt: session.createdAt.toISOString(), endsAt: session.endsAt.toISOString(),
+    }));
+  }
+
+  async create(quizId: number, durationSeconds: number) {
     const quiz = await this.prisma.quiz.findUnique({
       where: { id: quizId },
       include: { questions: { where: { isEnabled: true }, orderBy: { position: 'asc' } } },
@@ -50,6 +63,7 @@ export class HomeworkService {
 
     const id = randomUUID();
     const authoredQuestions = quiz.questions.map((question): HomeworkQuestion => {
+      const special = specialQuestion(question.options);
       const itemType = question.itemType === 'game' ? 'game' as const : 'question' as const;
       const storedOptions = Array.isArray(question.options) ? question.options.filter((value): value is string => typeof value === 'string') : [];
       const wrongAnswers = [...new Set(storedOptions.filter((option) => option !== question.correctAnswer))];
@@ -57,22 +71,25 @@ export class HomeworkService {
       return {
         id: String(question.id),
         text: question.text,
-        itemType,
+        itemType, special,
         gameType: question.gameType === 'coin_catch' || question.gameType === 'match_pairs' || question.gameType === 'tower_stack' ? question.gameType : null,
         gameDurationSeconds: question.gameDurationSeconds,
-        options: itemType === 'game' ? [] : this.shuffle([question.correctAnswer, ...this.shuffle(wrongAnswers).slice(0, optionCount - 1)]),
+        options: itemType === 'game' || special?.kind === 'matching' ? [] : special?.kind === 'true_false' ? ['True', 'False'] : this.shuffle([question.correctAnswer, ...this.shuffle(wrongAnswers).slice(0, optionCount - 1)]),
         correctAnswer: question.correctAnswer,
         timerSeconds: this.effectiveTimer(question.timerSeconds, quiz.defaultTimerSeconds),
       };
     });
     const questions = quiz.randomizeQuestionOrder ? this.shuffleQuestionsInPlace(authoredQuestions) : authoredQuestions;
+    const createdAt = new Date();
     const session: HomeworkSession = {
       id,
       facilitatorToken: randomUUID(),
       quiz: { title: quiz.title, description: quiz.description, theme: quiz.theme, questions },
       participants: new Map(),
       ended: false,
-      createdAt: new Date(),
+      expired: false,
+      createdAt,
+      endsAt: new Date(createdAt.getTime() + durationSeconds * 1000),
     };
     this.sessions.set(id, session);
     return { sessionId: id, facilitatorToken: session.facilitatorToken };
@@ -83,7 +100,7 @@ export class HomeworkService {
     if (session.ended) throw new BadRequestException('This homework has ended');
     const cleanName = name.trim();
     if (!cleanName) throw new BadRequestException('Enter your name to begin');
-    const participant: HomeworkParticipant = { id: randomUUID(), name: cleanName, answers: new Map(), completedItems: new Set(), joinedAt: new Date(), completedAt: null };
+    const participant: HomeworkParticipant = { id: randomUUID(), name: cleanName, answers: new Map(), matchProgress: new Map(), completedItems: new Set(), joinedAt: new Date(), completedAt: null };
     session.participants.set(participant.id, participant);
     return { participantId: participant.id, name: participant.name };
   }
@@ -97,7 +114,9 @@ export class HomeworkService {
       description: session.quiz.description,
       theme: session.quiz.theme,
       ended: session.ended,
-      questions: session.quiz.questions,
+      expired: session.expired,
+      endsAt: session.endsAt.toISOString(),
+      questions: session.quiz.questions.map((question) => ({ ...question, matchProgress: participant?.matchProgress.get(question.id) ?? null })),
       participant: participant ? { id: participant.id, name: participant.name, score: this.score(session, participant), completed: participant.completedAt !== null } : null,
     };
   }
@@ -108,12 +127,19 @@ export class HomeworkService {
     if (participant.completedAt) throw new BadRequestException('This homework attempt is already complete');
     const question = session.quiz.questions.find((item) => item.id === questionId);
     if (!question || question.itemType !== 'question') throw new BadRequestException('That is not a homework question');
-    if (!question.options.includes(answer)) throw new BadRequestException('Choose one of the available answers');
+    if (question.special?.kind === 'matching') {
+      if (participant.answers.has(questionId)) throw new BadRequestException('That answer has already been submitted');
+      const progress = matchAttempt(question.special.pairs, participant.matchProgress.get(questionId), answer);
+      if (!progress) throw new BadRequestException('Choose one item from each column');
+      participant.matchProgress.set(questionId, progress);
+      if (progress.mistakes < 3 && progress.matched.length < question.special.pairs.length) return { answered: false, matchProgress: progress };
+      answer = progress.matched.length === question.special.pairs.length ? 'Matched' : 'Not matched';
+    } else if (!question.options.includes(answer)) throw new BadRequestException('Choose one of the available answers');
     if (participant.answers.has(questionId)) throw new BadRequestException('That answer has already been submitted');
     participant.answers.set(questionId, answer);
     participant.completedItems.add(questionId);
     this.completeIfFinished(session, participant);
-    return { isCorrect: answer === question.correctAnswer, correctAnswer: question.correctAnswer, score: this.score(session, participant), completed: participant.completedAt !== null };
+    return { answered: true, matchProgress: question.special?.kind === 'matching' ? participant.matchProgress.get(questionId) : undefined, isCorrect: answer === question.correctAnswer, correctAnswer: question.correctAnswer, score: this.score(session, participant), completed: participant.completedAt !== null };
   }
 
   completeItem(sessionId: string, participantId: string, questionId: string) {
@@ -136,6 +162,8 @@ export class HomeworkService {
       title: session.quiz.title,
       description: session.quiz.description,
       ended: session.ended,
+      expired: session.expired,
+      endsAt: session.endsAt.toISOString(),
       questionCount,
       itemCount: session.quiz.questions.length,
       createdAt: session.createdAt.toISOString(),
@@ -161,6 +189,10 @@ export class HomeworkService {
   private get(sessionId: string) {
     const session = this.sessions.get(sessionId);
     if (!session) throw new NotFoundException('That homework run is no longer available');
+    if (!session.ended && Date.now() >= session.endsAt.getTime()) {
+      session.ended = true;
+      session.expired = true;
+    }
     return session;
   }
 

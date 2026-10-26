@@ -1,9 +1,18 @@
 import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 export class CreateModeratedSessionDto {
+  @IsInt()
+  @Min(300)
+  @Max(604800)
+  durationSeconds!: number;
+
   @IsOptional()
   @IsIn(['classic', 'facilitated', 'matching'])
   mode?: 'classic' | 'facilitated' | 'matching';
+
+  @IsOptional()
+  @IsBoolean()
+  endless?: boolean;
 }
 
 export class JoinModeratedSessionDto {
