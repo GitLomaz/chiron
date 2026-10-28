@@ -29,7 +29,8 @@ Quizboard is a teacher-led quiz and learning-game platform. Teachers use an admi
 - Start live tests in Classic, Facilitated, or Matching mode.
 - Use Classic mode for self-paced participation.
 - Use Facilitated mode to control when each question is released.
-- Use Matching mode to include matching breaks between questions.
+- Use Matching mode for a shared Match Pairs board: teachers choose grids from 2×2 through 10×10; students earn credits, choose cards, and completed attempts animate on the projector.
+- Optionally enable live points scoring: correct answers earn base, streak, and speed bonuses.
 - Monitor participant progress and scores during a live activity.
 - End a session or remove a participant when needed.
 - Create homework runs with a closing time and review the results while the API process is running.

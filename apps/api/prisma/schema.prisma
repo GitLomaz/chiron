@@ -14,6 +14,8 @@ model Quiz {
   description String?
   randomizeQuestionOrder Boolean @default(false)
   theme       String     @default("standard")
+  // Number of pairs on the shared Matching-mode board, from a 2×2 board through 10×10.
+  matchingPairCount Int @default(6)
   // -1 is unlimited; otherwise values are 15 through 180 in 15-second steps.
   defaultTimerSeconds Int @default(-1)
   startedAt   DateTime   @default(now())

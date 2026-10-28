@@ -45,7 +45,7 @@ A minimal quiz-management foundation built as an npm-workspaces monorepo.
 
 Teachers create a run for each quiz: a live test or a homework run. Homework runs are in-memory snapshots, shared at `http://localhost:5174/homework/<session-id>`, and have a private teacher results view. Student names, completion, and scores are retained for the life of that API process; restarting it clears active runs.
 
-Live runs offer Classic (self-paced), Facilitated (the teacher releases each round), and Matching. Matching skips the quiz's game breaks and gives students a matching break between questions. Students earn a credit on their first correct answer, their third, and every third correct answer thereafter; an incorrect pair costs one credit. Homework uses Classic mode.
+Live runs offer Classic (self-paced), Facilitated (the teacher releases each round), and Matching. Matching skips the quiz's game breaks and gives students turns on one shared matching board between questions. Teachers choose a board from 2×2 through 10×10 in Quiz settings. Students earn a credit on their first correct answer, their third, and every third correct answer thereafter; the first card stays private, while the completed two-card attempt animates on the projector. An incorrect pair costs one credit and a correct pair stays matched for everyone. Teachers can optionally enable points scoring for any live mode: each correct answer earns 100 base points, up to 100 speed points, and a streak bonus of up to 100 points. Homework uses Classic mode.
 
 ## Commands
 

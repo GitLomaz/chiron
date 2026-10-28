@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, ParseIntPipe, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { CreateModeratedSessionDto, FacilitatorActionDto, FlipMatchingCardDto, JoinModeratedSessionDto, MatchingNextDto, ReportModeratedGameScoreDto, SubmitModeratedAnswerDto, UpdateLobbyLockDto } from './dto/moderated-session.dto';
+import { AdvanceModeratedQuestionDto, CreateModeratedSessionDto, FacilitatorActionDto, FlipMatchingCardDto, JoinModeratedSessionDto, MatchingNextDto, ReportModeratedGameScoreDto, RestartModeratedSessionDto, SubmitModeratedAnswerDto, UpdateLobbyLockDto, UpdatePresentationModeDto } from './dto/moderated-session.dto';
 import { ModeratedService } from './moderated.service';
 
 @Controller('moderated-sessions')
@@ -11,7 +11,7 @@ export class ModeratedController {
 
   @Post('quiz/:quizId')
   create(@Param('quizId', ParseIntPipe) quizId: number, @Body() body: CreateModeratedSessionDto) {
-    return this.moderatedService.create(quizId, body?.mode, body.durationSeconds, body.endless);
+    return this.moderatedService.create(quizId, body?.mode, body.durationSeconds, body.endless, body.scoringEnabled);
   }
 
   @Post('pin/:pin/participants')
@@ -45,6 +45,11 @@ export class ModeratedController {
     return this.moderatedService.nextMatchingQuestion(pin, body.participantId);
   }
 
+  @Post('pin/:pin/next')
+  nextQuestion(@Param('pin') pin: string, @Body() body: AdvanceModeratedQuestionDto) {
+    return this.moderatedService.nextQuestion(pin, body.participantId);
+  }
+
   @Get('pin/:pin')
   studentState(
     @Param('pin') pin: string,
@@ -75,6 +80,11 @@ export class ModeratedController {
     return this.moderatedService.end(sessionId, body.facilitatorToken);
   }
 
+  @Post(':sessionId/restart')
+  restart(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: RestartModeratedSessionDto) {
+    return this.moderatedService.restart(sessionId, body.facilitatorToken, body.mode);
+  }
+
   @Post(':sessionId/next')
   next(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: FacilitatorActionDto) {
     return this.moderatedService.next(sessionId, body.facilitatorToken);
@@ -86,6 +96,14 @@ export class ModeratedController {
     @Body() body: UpdateLobbyLockDto,
   ) {
     return this.moderatedService.updateLobbyLock(sessionId, body.facilitatorToken, body.lobbyLocked);
+  }
+
+  @Post(':sessionId/presentation')
+  updatePresentationMode(
+    @Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string,
+    @Body() body: UpdatePresentationModeDto,
+  ) {
+    return this.moderatedService.updatePresentationMode(sessionId, body.facilitatorToken, body.presentationMode);
   }
 
   @Post(':sessionId/participants/:participantId/remove')

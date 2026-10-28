@@ -1,5 +1,5 @@
 import { IsBoolean, IsIn, IsInt, IsOptional } from 'class-validator';
-import { QUIZ_THEMES, QuizTheme, TIMER_SECONDS } from './create-quiz.dto';
+import { MATCHING_PAIR_COUNTS, QUIZ_THEMES, QuizTheme, TIMER_SECONDS } from './create-quiz.dto';
 
 export class UpdateQuizDto {
   @IsOptional()
@@ -14,4 +14,9 @@ export class UpdateQuizDto {
   @IsInt()
   @IsIn(TIMER_SECONDS)
   defaultTimerSeconds?: number;
+
+  @IsOptional()
+  @IsInt()
+  @IsIn(MATCHING_PAIR_COUNTS)
+  matchingPairCount?: number;
 }

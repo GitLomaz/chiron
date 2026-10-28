@@ -13,6 +13,10 @@ export class CreateModeratedSessionDto {
   @IsOptional()
   @IsBoolean()
   endless?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  scoringEnabled?: boolean;
 }
 
 export class JoinModeratedSessionDto {
@@ -50,6 +54,16 @@ export class UpdateLobbyLockDto extends FacilitatorActionDto {
   lobbyLocked!: boolean;
 }
 
+export class UpdatePresentationModeDto extends FacilitatorActionDto {
+  @IsIn(['scores', 'matching'])
+  presentationMode!: 'scores' | 'matching';
+}
+
+export class RestartModeratedSessionDto extends FacilitatorActionDto {
+  @IsIn(['classic', 'facilitated', 'matching'])
+  mode!: 'classic' | 'facilitated' | 'matching';
+}
+
 export class ReportModeratedGameScoreDto {
   @IsUUID('4')
   participantId!: string;
@@ -75,6 +89,11 @@ export class FlipMatchingCardDto {
 }
 
 export class MatchingNextDto {
+  @IsUUID('4')
+  participantId!: string;
+}
+
+export class AdvanceModeratedQuestionDto {
   @IsUUID('4')
   participantId!: string;
 }

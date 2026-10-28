@@ -6,7 +6,7 @@ import type { FormEvent, ReactNode } from 'react';
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 type QuizTheme = 'standard' | 'kids' | 'christmas' | 'halloween';
 const themeLabels: Record<QuizTheme, string> = { standard: 'Standard', kids: 'Kid-friendly', christmas: 'Christmas', halloween: 'Halloween' };
-type Quiz = { id: number; guid: string; title: string; description: string | null; randomizeQuestionOrder: boolean; theme: QuizTheme; defaultTimerSeconds: number; _count?: { questions: number } };
+type Quiz = { id: number; guid: string; title: string; description: string | null; randomizeQuestionOrder: boolean; theme: QuizTheme; defaultTimerSeconds: number; matchingPairCount: number; _count?: { questions: number } };
 type QuizItemType = 'question' | 'game';
 type GameType = 'coin_catch' | 'match_pairs' | 'tower_stack';
 type SpecialOptions = { kind: 'true_false'; statement: string } | { kind: 'matching'; pairs: { question: string; answer: string }[] };
@@ -22,6 +22,7 @@ type HomeworkSession = { sessionId: string; facilitatorToken: string };
 
 const TIMER_SECONDS = [-1, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180] as const;
 const GAME_DURATION_SECONDS = [10, 15, 20, 30, 45, 60, 90, 120] as const;
+const MATCHING_BOARD_SIZES = [{ pairs: 2, label: '2 × 2 · 2 pairs' }, { pairs: 4, label: '4 × 2 · 4 pairs' }, { pairs: 6, label: '4 × 3 · 6 pairs' }, { pairs: 8, label: '4 × 4 · 8 pairs' }, { pairs: 18, label: '6 × 6 · 18 pairs' }, { pairs: 32, label: '8 × 8 · 32 pairs' }, { pairs: 50, label: '10 × 10 · 50 pairs' }] as const;
 function timerSettingLabel(seconds: number | null) {
   if (seconds === null) return 'Use quiz default';
   if (seconds === -1) return 'Unlimited';
@@ -168,11 +169,24 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
   const [launchMode, setLaunchMode] = useState<'live' | 'homework'>('live');
   const [runMode, setRunMode] = useState<'classic' | 'facilitated' | 'matching'>('classic');
   const [endless, setEndless] = useState(false);
+  const [scoringEnabled, setScoringEnabled] = useState(true);
   const [durationValue, setDurationValue] = useState(60);
   const [durationUnit, setDurationUnit] = useState<'minutes' | 'hours' | 'days'>('minutes');
   const durationMinutes = durationValue * (durationUnit === 'days' ? 1440 : durationUnit === 'hours' ? 60 : 1);
   const [launching, setLaunching] = useState(false);
   const [showGamePicker, setShowGamePicker] = useState(false);
+
+  useEffect(() => {
+    const resetLaunchState = () => setLaunching(false);
+    // Returning from the facilitator page can restore this editor from the
+    // browser's back/forward cache, which preserves the prior loading state.
+    window.addEventListener('pageshow', resetLaunchState);
+    window.addEventListener('popstate', resetLaunchState);
+    return () => {
+      window.removeEventListener('pageshow', resetLaunchState);
+      window.removeEventListener('popstate', resetLaunchState);
+    };
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -345,12 +359,28 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
     }
   }
 
+  async function updateMatchingPairCount(matchingPairCount: number) {
+    setSavingSettings(true);
+    setError('');
+    try {
+      const updatedQuiz = await request<Quiz>(`/quizzes/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ matchingPairCount }),
+      });
+      setQuiz((current) => current ? { ...current, matchingPairCount: updatedQuiz.matchingPairCount } : current);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update quiz settings');
+    } finally {
+      setSavingSettings(false);
+    }
+  }
+
   async function launchQuiz() {
     if (!Number.isInteger(durationMinutes) || durationMinutes < 5 || durationMinutes > 10080) { setError('Choose a duration between 5 minutes and 7 days.'); return; }
     setLaunching(true); setError('');
     try {
       if (launchMode === 'live') {
-        const session = await request<ModeratedSession>(`/moderated-sessions/quiz/${id}`, { method: 'POST', body: JSON.stringify({ mode: runMode, endless: runMode !== 'facilitated' && endless, durationSeconds: durationMinutes * 60 }) });
+        const session = await request<ModeratedSession>(`/moderated-sessions/quiz/${id}`, { method: 'POST', body: JSON.stringify({ mode: runMode, endless: runMode !== 'facilitated' && endless, scoringEnabled, durationSeconds: durationMinutes * 60 }) });
         saveSessionToken(session);
         window.location.assign(facilitatorSessionUrl(session));
       } else {
@@ -379,6 +409,7 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
       <div className="launch-options"><div className="launch-section launch-option"><h3>Play settings</h3>
       <div className="launch-mode-details"><label htmlFor="run-mode"><strong>{launchMode === 'live' ? 'Live' : 'Homework'} mode</strong><select id="run-mode" value={runMode} disabled={launching} onChange={(event) => setRunMode(event.target.value as typeof runMode)}>{launchMode === 'live' && <option value="facilitated">Facilitated</option>}<option value="classic">Classic</option>{launchMode === 'live' && <option value="matching">Matching</option>}</select></label><p>{runMode === 'facilitated' ? 'Release one question at a time and follow student progress. Games can appear between rounds.' : runMode === 'matching' ? 'Students answer at their own pace and earn credits to play a matching game. Timeline games are skipped.' : launchMode === 'live' ? 'Students answer at their own pace while you follow their progress. Games can appear between rounds.' : 'Students answer at their own pace. Games can appear between rounds.'}</p></div>
       {launchMode === 'live' && runMode !== 'facilitated' && <label className="checkbox-label launch-endless"><input type="checkbox" checked={endless} disabled={launching} onChange={(event) => setEndless(event.target.checked)} /><span><strong>Endless questions</strong><small>After the last quiz item, repeat questions in random order until the session ends.</small></span></label>}
+      {launchMode === 'live' && <label className="checkbox-label launch-endless"><input type="checkbox" checked={scoringEnabled} disabled={launching} onChange={(event) => setScoringEnabled(event.target.checked)} /><span><strong>Enable points scoring</strong><small>Correct answers earn 100 points, a streak bonus, and up to 100 speed points in the first 30 seconds (or the question timer).</small></span></label>}
       </div><div className="launch-section launch-option"><h3>Session duration</h3>
       <div className="launch-mode-details launch-duration"><label htmlFor="run-duration"><strong>Overall duration</strong><input id="run-duration" type="number" min="1" step="1" value={durationValue || ''} disabled={launching} onChange={(event) => setDurationValue(Number(event.target.value))} /></label><label htmlFor="duration-unit"><strong>Unit</strong><select id="duration-unit" value={durationUnit} disabled={launching} onChange={(event) => setDurationUnit(event.target.value as typeof durationUnit)}><option value="minutes">Minutes</option><option value="hours">Hours</option><option value="days">Days</option></select></label><p>5 minutes to 7 days. {launchMode === 'live' ? 'The clock starts when you start the test.' : 'The clock starts when you launch the homework.'} The run closes for everyone when time is up.</p></div>
       </div></div>
@@ -391,6 +422,7 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
         </label>
         <label className="theme-select"><span><strong>Student theme</strong><small>Choose the visual style students see while taking this quiz.</small></span><select value={quiz.theme} disabled={savingSettings} onChange={(event) => void updateTheme(event.target.value as QuizTheme)}><option value="standard">Standard</option><option value="kids">Kid-friendly</option><option value="christmas">Christmas</option><option value="halloween">Halloween</option></select></label>
         <label className="theme-select"><span><strong>Default question timer</strong><small>Used unless a question overrides it.</small></span><select value={quiz.defaultTimerSeconds} disabled={savingSettings} onChange={(event) => void updateDefaultTimer(Number(event.target.value))}>{TIMER_SECONDS.map((seconds) => <option key={seconds} value={seconds}>{timerSettingLabel(seconds)}</option>)}</select></label>
+        <label className="theme-select"><span><strong>Shared matching board</strong><small>Choose the grid for Matching-mode sessions, up to 10 × 10.</small></span><select value={quiz.matchingPairCount} disabled={savingSettings} onChange={(event) => void updateMatchingPairCount(Number(event.target.value))}>{MATCHING_BOARD_SIZES.map((size) => <option key={size.pairs} value={size.pairs}>{size.label}</option>)}</select></label>
       </div>
     </section>
     {error && <p className="error">{error}</p>}
