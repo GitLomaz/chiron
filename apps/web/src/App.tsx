@@ -117,8 +117,6 @@ function QuestionEditor({ draft, theme, editing, pools, mode, onModeChange, comm
   const [activeTab, setActiveTab] = useState<'editor' | 'preview'>('editor');
   const [questionType, setQuestionType] = useState<'multiple_choice' | 'true_false' | 'matching'>('multiple_choice');
 
-  useEffect(() => { setActiveTab('editor'); }, [editing?.id]);
-
   return <aside className={`surface question-preview-panel${editing ? ' is-editing' : ''}`}>
     <div className="surface-head"><div><h2>{editing ? 'Edit question' : mode === 'new' ? 'Add a question' : 'Common questions'}</h2><p>Student view · {themeLabels[theme]} theme</p></div></div>
     <div className="source-tabs editor-tabs question-editor-tabs"><button type="button" className={activeTab === 'editor' ? 'selected' : ''} onClick={() => setActiveTab('editor')}>{editing ? 'Edit' : 'Add'}</button><button type="button" className={activeTab === 'preview' ? 'selected' : ''} onClick={() => setActiveTab('preview')}>Preview</button></div>
@@ -416,19 +414,23 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
     </section>
     <section className="surface quiz-settings">
       <div className="quiz-settings-grid">
-        <label className="checkbox-label">
-          <input type="checkbox" checked={quiz.randomizeQuestionOrder} disabled={savingSettings} onChange={(event) => void updateQuestionOrder(event.target.checked)} />
-          <span><strong>Randomize question order</strong><small>Live students receive individual question orders as they progress. Game breaks stay in place; homework questions are shuffled for each run.</small></span>
-        </label>
         <label className="theme-select"><span><strong>Student theme</strong><small>Choose the visual style students see while taking this quiz.</small></span><select value={quiz.theme} disabled={savingSettings} onChange={(event) => void updateTheme(event.target.value as QuizTheme)}><option value="standard">Standard</option><option value="kids">Kid-friendly</option><option value="christmas">Christmas</option><option value="halloween">Halloween</option></select></label>
-        <label className="theme-select"><span><strong>Default question timer</strong><small>Used unless a question overrides it.</small></span><select value={quiz.defaultTimerSeconds} disabled={savingSettings} onChange={(event) => void updateDefaultTimer(Number(event.target.value))}>{TIMER_SECONDS.map((seconds) => <option key={seconds} value={seconds}>{timerSettingLabel(seconds)}</option>)}</select></label>
+        {launchMode === 'live' && runMode === 'matching' && <>
         <label className="theme-select"><span><strong>Shared matching board</strong><small>Choose the grid for Matching-mode sessions, up to 10 × 10.</small></span><select value={quiz.matchingPairCount} disabled={savingSettings} onChange={(event) => void updateMatchingPairCount(Number(event.target.value))}>{MATCHING_BOARD_SIZES.map((size) => <option key={size.pairs} value={size.pairs}>{size.label}</option>)}</select></label>
+        </>}
       </div>
     </section>
     {error && <p className="error">{error}</p>}
     <div className="editor-grid editor-grid-two">
       <section className="surface questions-surface">
         <div className="surface-head"><div><h2>Quiz items</h2><p>{quiz.questions.length} questions and games in this quiz</p></div></div>
+        <div className="quiz-settings-grid quiz-item-settings">
+          <label className="checkbox-label">
+            <input type="checkbox" checked={quiz.randomizeQuestionOrder} disabled={savingSettings} onChange={(event) => void updateQuestionOrder(event.target.checked)} />
+            <span><strong>Randomize question order</strong><small>Live students receive individual question orders as they progress. Game breaks stay in place; homework questions are shuffled for each run.</small></span>
+          </label>
+          <label className="theme-select"><span><strong>Default question timer</strong><small>Used unless a question overrides it.</small></span><select value={quiz.defaultTimerSeconds} disabled={savingSettings} onChange={(event) => void updateDefaultTimer(Number(event.target.value))}>{TIMER_SECONDS.map((seconds) => <option key={seconds} value={seconds}>{timerSettingLabel(seconds)}</option>)}</select></label>
+        </div>
         <ol className="question-list">
           {quiz.questions.map((question, index) => <li key={question.id} className={`quiz-item-${question.itemType}${editing?.id === question.id ? ' selected-question' : ''}${draggingQuestionId === question.id ? ' dragging-question' : ''}${question.isEnabled ? '' : ' disabled-question'}`} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); void moveQuestion(question.id); }}>
             <button className="question-select" type="button" aria-pressed={editing?.id === question.id} onClick={() => { setEditing(question); setQuestionPreview(question.itemType === 'question' ? { text: question.text, options: Array.isArray(question.options) ? question.options : [] } : null); }}>

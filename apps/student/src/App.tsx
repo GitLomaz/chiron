@@ -1,5 +1,5 @@
 import { MatchingQuestion } from './MatchingQuestion';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, FormEvent, ReactNode } from 'react';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
@@ -34,6 +34,65 @@ type Quiz = {
 type TimedQuestion = { timerSeconds: number | null; timerEndsAt: string | null };
 
 type Screen = 'welcome' | 'intro' | 'question' | 'results';
+
+const CONFETTI_COLORS = ['#ff5a8a', '#ffcf3f', '#5ac7f2', '#8edb70', '#a981f7', '#ff9e42'];
+const KIDS_SUCCESS_SOUND = `${import.meta.env.BASE_URL}sounds/kids-success.mp3`;
+
+function KidsConfetti({ active }: { active: boolean }) {
+  const [origin, setOrigin] = useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+  const successSound = useRef<HTMLAudioElement | null>(null);
+  const hasPlayed = useRef(false);
+  const shower = useMemo(() => Array.from({ length: 48 }, () => ({
+    x: Math.random() * 100,
+    delay: Math.random() * 850,
+    drift: (Math.random() - .5) * 26,
+    tilt: (Math.random() - .5) * 80,
+    size: 7 + Math.random() * 10,
+    color: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
+  })), [active]);
+  const burst = useMemo(() => Array.from({ length: 24 }, (_, index) => {
+    const angle = (Math.PI * 2 * index / 24) + ((Math.random() - .5) * .28);
+    const distance = 100 + Math.random() * 185;
+    return {
+      x: Math.cos(angle) * distance,
+      y: Math.sin(angle) * distance + 65,
+      delay: Math.random() * 230,
+      tilt: (Math.random() - .5) * 140,
+      size: 7 + Math.random() * 11,
+      color: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
+    };
+  }), [active]);
+
+  useLayoutEffect(() => {
+    const answer = document.querySelector<HTMLElement>('[data-confetti-origin]');
+    if (!answer) return;
+    const bounds = answer.getBoundingClientRect();
+    setOrigin({ x: bounds.left + (bounds.width / 2), y: bounds.top + (bounds.height / 2) });
+  }, [active]);
+
+  useEffect(() => {
+    const audio = new Audio(KIDS_SUCCESS_SOUND);
+    audio.preload = 'auto';
+    successSound.current = audio;
+    return () => { audio.pause(); audio.removeAttribute('src'); audio.load(); successSound.current = null; };
+  }, []);
+
+  useEffect(() => {
+    if (!active) { hasPlayed.current = false; return; }
+    if (hasPlayed.current) return;
+    hasPlayed.current = true;
+    const audio = successSound.current;
+    if (!audio) return;
+    audio.currentTime = 0;
+    void audio.play().catch(() => { /* Sound is optional if audio playback is unavailable. */ });
+  }, [active]);
+
+  if (!active) return null;
+  return <div className="kids-confetti" aria-hidden="true">
+    {shower.map(({ x, delay, drift, tilt, size, color }, index) => <i key={`shower-${index}`} style={{ '--confetti-x': `${x}%`, '--confetti-delay': `${delay}ms`, '--confetti-drift': `${drift}vw`, '--confetti-color': color, '--confetti-tilt': `${tilt}deg`, '--confetti-size': `${size}px` } as CSSProperties} />)}
+    <div className="kids-confetti-burst" style={{ left: origin.x, top: origin.y }}>{burst.map(({ x, y, delay, tilt, size, color }, index) => <i key={index} style={{ '--burst-x': `${x}px`, '--burst-y': `${y}px`, '--confetti-delay': `${delay}ms`, '--confetti-color': color, '--confetti-tilt': `${tilt}deg`, '--confetti-size': `${size}px` } as CSSProperties} />)}</div>
+  </div>;
+}
 
 async function getQuiz(guid: string) {
   const response = await fetch(`${API_URL}/play/${guid}`);
@@ -278,10 +337,11 @@ function ModeratedStudent({ pin }: { pin: string }) {
     const allMatched = state.matching.cards.every((card) => card.matched);
     const canPlay = (state.matching.credits ?? 0) > 0 && !allMatched;
     return <main className={`page quiz-page moderated-quiz-page theme-${state.theme}`}>
+      <KidsConfetti active={state.theme === 'kids' && question.result?.isCorrect === true} />
       <header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">MATCHING BREAK</span></header>
       <section className="intro-card waiting-card matching-break-card">
         <p className="eyebrow">QUESTION {question.number}{!state.endless && <> OF {question.total}</>}</p>
-        <h1>{question.result ? question.result.isCorrect ? 'Correct!' : 'Not quite.' : 'Time is up.'}</h1>
+        <h1 data-confetti-origin={question.result?.isCorrect ? '' : undefined}>{question.result ? question.result.isCorrect ? 'Correct!' : 'Not quite.' : 'Time is up.'}</h1>
         {question.result && !question.result.isCorrect && <p className="matching-answer">The correct answer was <strong>{question.result.correctAnswer}</strong>.</p>}
         <div className="matching-credit-summary"><span>YOUR MATCHING CREDITS</span><strong>{state.matching.credits}</strong><small>{allMatched ? 'All pairs found!' : canPlay ? 'Ready for a matching break' : 'Answer more questions to earn credits'}</small></div>
         <div className="matching-actions">
@@ -312,7 +372,7 @@ function QuizEnded({ theme, title, score, expired = false }: { theme: 'standard'
   return <main className={`page quiz-page moderated-quiz-page theme-${theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="intro-card waiting-card"><p className="eyebrow">{title}</p><h1>The quiz has ended.</h1><p className="lede">{expired ? 'Time is up for this quiz.' : 'Your teacher has ended this quiz.'}</p>{score && <div className="score-so-far"><span>Your score</span><strong>{score.points === undefined ? `${score.correct} / ${score.answered}` : `${score.points} pts`}</strong><small>{score.points === undefined ? 'correct answers recorded' : `${score.correct} correct answers recorded`}</small></div>}</section></main>;
 }
 
-function WaitingScreen({ theme, title, name, copy, result, score, scoreLabel = 'Score so far', complete = false, action, heading }: { theme: 'standard' | 'kids' | 'christmas' | 'halloween'; title: string; name: string; copy: string; result?: ModeratedAnswerResult | null; score?: ModeratedScore | null; scoreLabel?: string; complete?: boolean; action?: ReactNode; heading?: ReactNode }) { return <main className={`page quiz-page moderated-quiz-page theme-${theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="intro-card waiting-card"><p className="eyebrow">{title}</p><h1>{heading ?? (complete ? `All done, ${name}!` : result ? result.isCorrect ? `Correct, ${name}!` : `Not quite, ${name}.` : `You’re in, ${name}.`)}</h1>{result && <div className={`answer-summary ${result.isCorrect ? 'correct' : 'incorrect'}`}><strong>{result.isCorrect ? 'You got it right.' : 'Here’s the answer.'}</strong><span>Your answer: {result.answer}</span>{!result.isCorrect && <span>Correct answer: {result.correctAnswer}</span>}</div>}<p className="lede">{copy}</p>{score && (complete || score.answered > 0) && <div className="score-so-far"><span>{scoreLabel}</span><strong>{score.points === undefined ? `${score.correct} / ${score.answered}` : `${score.points} pts`}</strong><small>{score.points === undefined ? `correct answer${score.answered === 1 ? '' : 's'}` : `${score.correct} correct${score.streak ? ` · ${score.streak} streak` : ''}`}</small>{score.lastAward && <small>+{score.lastAward.total}: {score.lastAward.base} correct, {score.lastAward.streak} streak, {score.lastAward.speed} speed</small>}</div>}{action ?? (!complete && <div className="loader small-loader" aria-label="Waiting" />)}</section></main>; }
+function WaitingScreen({ theme, title, name, copy, result, score, scoreLabel = 'Score so far', complete = false, action, heading }: { theme: 'standard' | 'kids' | 'christmas' | 'halloween'; title: string; name: string; copy: string; result?: ModeratedAnswerResult | null; score?: ModeratedScore | null; scoreLabel?: string; complete?: boolean; action?: ReactNode; heading?: ReactNode }) { return <main className={`page quiz-page moderated-quiz-page theme-${theme}`}><KidsConfetti active={theme === 'kids' && result?.isCorrect === true} /><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="intro-card waiting-card"><p className="eyebrow">{title}</p><h1 data-confetti-origin={result?.isCorrect ? '' : undefined}>{heading ?? (complete ? `All done, ${name}!` : result ? result.isCorrect ? `Correct, ${name}!` : `Not quite, ${name}.` : `You’re in, ${name}.`)}</h1>{result && <div className={`answer-summary ${result.isCorrect ? 'correct' : 'incorrect'}`}><strong>{result.isCorrect ? 'You got it right.' : 'Here’s the answer.'}</strong><span>Your answer: {result.answer}</span>{!result.isCorrect && <span>Correct answer: {result.correctAnswer}</span>}</div>}<p className="lede">{copy}</p>{score && (complete || score.answered > 0) && <div className="score-so-far"><span>{scoreLabel}</span><strong>{score.points === undefined ? `${score.correct} / ${score.answered}` : `${score.points} pts`}</strong><small>{score.points === undefined ? `correct answer${score.answered === 1 ? '' : 's'}` : `${score.correct} correct${score.streak ? ` · ${score.streak} streak` : ''}`}</small>{score.lastAward && <small>+{score.lastAward.total}: {score.lastAward.base} correct, {score.lastAward.streak} streak, {score.lastAward.speed} speed</small>}</div>}{action ?? (!complete && <div className="loader small-loader" aria-label="Waiting" />)}</section></main>; }
 
 function ModeratedPinEntry() {
   const [pin, setPin] = useState('');
@@ -508,7 +568,27 @@ function HomeworkTeacher({ sessionId, token }: { sessionId: string; token: strin
   if (!state) return <main className="page status-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div>{error ? <section className="error-card"><h1>Teacher access unavailable.</h1><p>{error}</p></section> : <div className="loader" />}</main>;
   const completed = state.participants.filter((participant) => participant.completed).length;
   const studentUrl = homeworkStudentUrl(sessionId);
-  return <main className="page facilitator-page"><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">HOMEWORK RESULTS</span></header><section className="facilitator-grid"><div className="question-card control-card"><p className="eyebrow">{state.ended ? 'HOMEWORK ENDED' : 'HOMEWORK RUN'}</p><h1>{state.title}</h1><p>{state.expired ? 'Time expired' : 'Closes'}: {new Date(state.endsAt).toLocaleString()}</p><p className="lede">{state.ended ? 'This homework has ended. Recorded work remains available below.' : 'Students work independently. This page updates as they join and complete the assignment.'}</p><div className="score-so-far"><span>Completed</span><strong>{completed} / {state.participants.length}</strong><small>{state.questionCount} scored question{state.questionCount === 1 ? '' : 's'} per attempt</small></div>{!state.ended && <div className="end-quiz-control"><button className="end-quiz-button" disabled={ending} onClick={() => void end()}>{ending ? 'Ending…' : 'End quiz'}</button><small>Stop homework for all participants.</small></div>}{error && <p className="form-error">{error}</p>}</div><aside className="participant-panel homework-participant-panel"><div className="student-access"><p className="eyebrow">STUDENT ACCESS</p><p>{state.ended ? 'This homework is closed to students.' : 'Share this homework link with students.'}</p><a href={studentUrl} target="_blank" rel="noreferrer">{studentUrl}</a><button className="text-button" onClick={() => void copyStudentLink()}>{copied ? 'Student link copied' : 'Copy student link'}</button></div><div><p className="eyebrow">PARTICIPANTS</p><h2>{state.participants.length} started <span>·</span> {completed} completed</h2></div>{state.participants.length ? <ul>{state.participants.map((participant) => <li className="homework-participant" key={participant.id}><span className="homework-participant-progress"><strong>{participant.name}</strong><small>{participant.completed ? 'Completed' : `${participant.completedItems} / ${state.itemCount} items`}</small></span><span className="homework-participant-score"><strong>{participant.score.correct} / {participant.score.total}</strong><small>{participant.completed ? 'Final score' : `${participant.score.answered} answered`}</small></span></li>)}</ul> : <p>No one has started yet.</p>}</aside></section></main>;
+  return <main className="page facilitator-page">
+    <header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">HOMEWORK RESULTS</span></header>
+    <section className="facilitator-grid">
+      <div className="question-card control-card">
+        <p className="eyebrow">{state.ended ? 'HOMEWORK ENDED' : 'HOMEWORK RUN'}</p><h1>{state.title}</h1><p>{state.expired ? 'Time expired' : 'Closes'}: {new Date(state.endsAt).toLocaleString()}</p>
+        <p className="lede">{state.ended ? 'This homework has ended. Recorded work remains available below.' : 'Students work independently. This page updates as they join and complete the assignment.'}</p>
+        <div className="score-so-far"><span>Completed</span><strong>{completed} / {state.participants.length}</strong><small>{state.questionCount} scored question{state.questionCount === 1 ? '' : 's'} per attempt</small></div>
+        {!state.ended && <div className="end-quiz-control"><button className="end-quiz-button" disabled={ending} onClick={() => void end()}>{ending ? 'Ending…' : 'End quiz'}</button><small>Stop homework for all participants.</small></div>}
+        {error && <p className="form-error">{error}</p>}
+      </div>
+      <aside className="participant-panel homework-participant-panel">
+        <div className="student-access">
+          <p className="eyebrow">STUDENT ACCESS</p><p>{state.ended ? 'This homework is closed to students.' : 'Share this homework link with students.'}</p>
+          <a className="student-link" href={studentUrl} target="_blank" rel="noreferrer">{studentUrl}</a>
+          <div className="student-access-actions"><button className="text-button" onClick={() => void copyStudentLink()}>{copied ? 'Student link copied' : 'Copy student link'}</button></div>
+        </div>
+        <div><p className="eyebrow">PARTICIPANTS</p><h2>{state.participants.length} started <span>·</span> {completed} completed</h2></div>
+        {state.participants.length ? <ul>{state.participants.map((participant) => <li className="homework-participant" key={participant.id}><span className="homework-participant-progress"><strong>{participant.name}</strong><small>{participant.completed ? 'Completed' : `${participant.completedItems} / ${state.itemCount} items`}</small></span><span className="homework-participant-score"><strong>{participant.score.correct} / {participant.score.total}</strong><small>{participant.completed ? 'Final score' : `${participant.score.answered} answered`}</small></span></li>)}</ul> : <p>No one has started yet.</p>}
+      </aside>
+    </section>
+  </main>;
 }
 
 function Results({ quiz, answers, onRestart, onLeave }: { quiz: Quiz; answers: Record<string, string>; onRestart?: () => void; onLeave: () => void }) {
@@ -869,6 +949,7 @@ function Player({ quiz, onSubmitAnswer, onCompleteItem, onFinished, allowRestart
     {question.gameType === 'tower_stack' ? <TowerStackGame key={question.id} title={question.text} durationSeconds={question.gameDurationSeconds ?? 20} onComplete={() => void finishGame()} /> : question.gameType === 'match_pairs' ? <MatchPairsGame key={question.id} title={question.text} durationSeconds={question.gameDurationSeconds ?? 20} onComplete={() => void finishGame()} /> : <CoinCatchGame key={question.id} title={question.text} durationSeconds={question.gameDurationSeconds ?? 20} onComplete={() => void finishGame()} />}
   </main>;
   return <main className="page quiz-page">
+    <KidsConfetti active={quiz.theme === 'kids' && revealed && !timedOut && selected === question.correctAnswer} />
     <header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-header-meta"><span className="question-label">Question {current + 1} of {quiz.questions.length}</span>{remainingSeconds !== null && <TimerBadge seconds={remainingSeconds} expired={remainingSeconds === 0} />}</span></header>
     <div className="progress" aria-hidden="true"><span style={{ width: `${((current + 1) / quiz.questions.length) * 100}%` }} /></div>
     <section className={`question-card${question.special?.kind === 'matching' ? ' matching-question-card' : ''}${timerStyle ? ' timed-question' : ''}`} style={timerStyle}>
@@ -878,7 +959,7 @@ function Player({ quiz, onSubmitAnswer, onCompleteItem, onFinished, allowRestart
       {question.special?.kind === 'matching' ? <MatchingQuestion key={question.id} pairs={question.special.pairs} progress={matchingProgress[question.id] ?? question.matchProgress ?? null} disabled={revealed || submitting} onMatch={(left, right) => void lockAnswer(`match:${left}:${right}`)} /> : <div className="options" role="radiogroup" aria-label="Answer choices">
         {options.map((option, index) => {
           const status = revealed ? option === question.correctAnswer ? 'correct' : selected === option ? 'incorrect' : '' : selected === option ? 'selected' : '';
-          return <button key={option} className={`option ${status}`} role="radio" aria-checked={selected === option} disabled={revealed || submitting} onClick={() => void lockAnswer(option)}><span className="option-key">{String.fromCharCode(65 + index)}</span><span>{option}</span>{revealed && option === question.correctAnswer && <strong className="answer-status">Correct answer</strong>}{revealed && option === selected && option !== question.correctAnswer && <strong className="answer-status">Your answer</strong>}</button>;
+          return <button key={option} className={`option ${status}`} data-confetti-origin={revealed && option === question.correctAnswer ? '' : undefined} role="radio" aria-checked={selected === option} disabled={revealed || submitting} onClick={() => void lockAnswer(option)}><span className="option-key">{String.fromCharCode(65 + index)}</span><span>{option}</span>{revealed && option === question.correctAnswer && <strong className="answer-status">Correct answer</strong>}{revealed && option === selected && option !== question.correctAnswer && <strong className="answer-status">Your answer</strong>}</button>;
         })}
       </div>}
       {revealed && <p className={selected === question.correctAnswer && !timedOut ? 'answer-feedback correct-feedback' : 'answer-feedback incorrect-feedback'} role="status">{question.special?.kind === 'matching' ? timedOut ? "Time's up." : selected === question.correctAnswer ? 'All pairs matched ? nice work!' : 'No tries left. Better luck next time.' : timedOut ? selected ? `Time's up. Your answer was ${selected === question.correctAnswer ? 'correct' : 'not correct'}. The correct answer is ${question.correctAnswer}.` : `Time's up. The correct answer is ${question.correctAnswer}.` : selected === question.correctAnswer ? 'Correct — nice work!' : `Not quite. The correct answer is ${question.correctAnswer}.`}</p>}

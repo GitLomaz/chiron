@@ -179,6 +179,19 @@
   padding: 6px;
 }
 
+.kids-confetti { position: fixed; z-index: 20; inset: 0; overflow: hidden; pointer-events: none; }
+.kids-confetti i { position: absolute; top: -5vh; left: var(--confetti-x); width: var(--confetti-size); height: calc(var(--confetti-size) * 1.45); border-radius: 3px; background: var(--confetti-color); opacity: 0; transform: rotate(var(--confetti-tilt)); animation: kids-confetti-fall 3.6s cubic-bezier(.2,.7,.3,1) var(--confetti-delay) both; }
+.kids-confetti > i:nth-child(3n) { height: calc(var(--confetti-size) * .58); border-radius: 999px; }
+.kids-confetti > i:nth-child(4n) { height: var(--confetti-size); border-radius: 50%; }
+.kids-confetti-burst { position: absolute; width: 0; height: 0; }
+.kids-confetti-burst i { top: 0; left: 0; animation-name: kids-confetti-burst; animation-duration: 2.35s; }
+@keyframes kids-confetti-fall { 0% { opacity: 0; transform: translate3d(0, -6vh, 0) rotate(var(--confetti-tilt)); } 8% { opacity: 1; } 100% { opacity: 0; transform: translate3d(var(--confetti-drift), 112vh, 0) rotate(calc(var(--confetti-tilt) + 720deg)); } }
+@keyframes kids-confetti-burst { 0% { opacity: 0; transform: translate3d(0, 0, 0) rotate(var(--confetti-tilt)); } 10% { opacity: 1; } 78% { opacity: 1; } 100% { opacity: 0; transform: translate3d(var(--burst-x), var(--burst-y), 0) rotate(calc(var(--confetti-tilt) + 630deg)); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .kids-confetti { display: none; }
+}
+
 @media (max-width: 760px) {
   .student-app .quiz-page {
     padding: 20px 16px 32px;

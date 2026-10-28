@@ -106,7 +106,9 @@
 .student-access p:not(.eyebrow) { color: #77718f; font-size: .9rem; margin: 0 0 10px; }
 .student-access .student-link { display: block; color: #6055b8; font: 500 .72rem 'DM Mono', monospace; overflow-wrap: anywhere; }
 .student-access-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; margin-top: 18px; }
-.student-access-actions .text-button { min-height: 38px; margin: 0; padding: 8px 0; }
+.student-access-actions .text-button { min-height: 38px; margin: 0; padding: 8px 12px; border: 1px solid #cfc9ee; border-radius: 9px; background: #faf9ff; color: #51469a; font-size: .76rem; transition: background-color .15s, border-color .15s, transform .15s; }
+.student-access-actions .text-button:hover { border-color: #9e93d0; background: #f1effd; transform: translateY(-1px); }
+.student-access-actions .text-button:focus-visible { outline: 3px solid #8e83ca55; outline-offset: 2px; }
 .student-access .projector-link { display: inline-flex; min-height: 38px; align-items: center; margin: 0; padding: 9px 12px; border-radius: 9px; background: #eef8e9; color: #39743c; font: 700 .72rem 'DM Mono', monospace; text-decoration: none; }
 .empty-participant-roster { margin: 18px 0 4px; color: #77718f; font-size: .9rem; }
 .projector-scoreboard { display: grid; width: 100vw; min-height: 100vh; padding: clamp(24px, 4vw, 72px); background: radial-gradient(circle at 50% 0, #39426c 0, transparent 52%), #111527; color: #fff; }
