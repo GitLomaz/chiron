@@ -9,20 +9,96 @@ datasource db {
 
 model Quiz {
   id          Int        @id @default(autoincrement())
+  guid        String     @unique @default(uuid()) @db.Uuid
   title       String
   description String?
+  randomizeQuestionOrder Boolean @default(false)
+  theme       String     @default("standard")
+  // Number of pairs on the shared Matching-mode board, from a 2×2 board through 10×10.
+  matchingPairCount Int @default(6)
+  // -1 is unlimited; otherwise values are 15 through 180 in 15-second steps.
+  defaultTimerSeconds Int @default(-1)
+  startedAt   DateTime   @default(now())
+  endedAt     DateTime?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
   questions   Question[]
 }
 
 model Question {
-  id            Int      @id @default(autoincrement())
-  quizId        Int
-  text          String
-  options       Json
+  id           Int         @id @default(autoincrement())
+  quizId       Int
+  position     Int
+  itemType     String      @default("question")
+  gameType     String?
+  gameDurationSeconds Int?
+  isEnabled    Boolean     @default(true)
+  // null inherits Quiz.defaultTimerSeconds. See the quiz field for values.
+  timerSeconds Int?
+  answerPoolId Int?
+  answerCount  Int?
+  text         String
+  options      Json
   correctAnswer String
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  quiz          Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  quiz         Quiz        @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  answerPool   AnswerPool? @relation(fields: [answerPoolId], references: [id], onDelete: SetNull)
+
+  @@index([answerPoolId])
+  @@index([quizId, position])
+}
+
+model CommonQuestion {
+  id           Int         @id @default(autoincrement())
+  answerPoolId Int?
+  answerCount  Int?
+  text         String
+  options      Json
+  correctAnswer String
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  answerPool   AnswerPool? @relation(fields: [answerPoolId], references: [id], onDelete: SetNull)
+
+  @@index([answerPoolId])
+}
+
+model AnswerPool {
+  id              Int                 @id @default(autoincrement())
+  name            String              @unique
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  answers         AnswerPoolAnswer[]
+  questions       Question[]
+  commonQuestions CommonQuestion[]
+}
+
+model AnswerPoolAnswer {
+  id           Int        @id @default(autoincrement())
+  answerPoolId Int
+  value        String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  answerPool   AnswerPool @relation(fields: [answerPoolId], references: [id], onDelete: Cascade)
+
+  @@unique([answerPoolId, value])
+}
+
+model DataSet {
+  id        Int           @id @default(autoincrement())
+  name      String
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  pairs     DataSetPair[]
+}
+
+model DataSetPair {
+  id        Int     @id @default(autoincrement())
+  dataSetId Int
+  position  Int
+  question  String
+  answer    String
+  dataSet   DataSet @relation(fields: [dataSetId], references: [id], onDelete: Cascade)
+
+  @@index([dataSetId, position])
 }

@@ -2,6 +2,9 @@
   "name": "@trivia/api",
   "private": true,
   "version": "0.1.0",
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
+  },
   "scripts": {
     "dev": "nest start --watch",
     "prebuild": "prisma generate",
@@ -9,7 +12,8 @@
     "start": "node dist/main.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:deploy": "prisma migrate deploy"
+    "prisma:deploy": "prisma migrate deploy",
+    "db:seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
