@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, ParseIntPipe, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { AdvanceModeratedQuestionDto, CreateModeratedSessionDto, FacilitatorActionDto, FlipMatchingCardDto, JoinModeratedSessionDto, MatchingNextDto, ReportModeratedGameScoreDto, RestartModeratedSessionDto, SubmitModeratedAnswerDto, UpdateLobbyLockDto, UpdatePresentationModeDto } from './dto/moderated-session.dto';
+import { AdvanceModeratedQuestionDto, BattleshipAttackDto, BattleshipNextDto, CreateModeratedSessionDto, FacilitatorActionDto, FlipMatchingCardDto, JoinModeratedSessionDto, MatchingNextDto, ReportModeratedGameScoreDto, RestartModeratedSessionDto, SubmitModeratedAnswerDto, UpdateLobbyLockDto, UpdatePresentationModeDto } from './dto/moderated-session.dto';
 import { ModeratedService } from './moderated.service';
 
 @Controller('moderated-sessions')
@@ -43,6 +43,16 @@ export class ModeratedController {
   @Post('pin/:pin/matching/next')
   nextMatchingQuestion(@Param('pin') pin: string, @Body() body: MatchingNextDto) {
     return this.moderatedService.nextMatchingQuestion(pin, body.participantId);
+  }
+
+  @Post('pin/:pin/battleship/attack')
+  attackBattleship(@Param('pin') pin: string, @Body() body: BattleshipAttackDto) {
+    return this.moderatedService.attackBattleship(pin, body.participantId, body.cell);
+  }
+
+  @Post('pin/:pin/battleship/next')
+  nextBattleshipQuestion(@Param('pin') pin: string, @Body() body: BattleshipNextDto) {
+    return this.moderatedService.nextBattleshipQuestion(pin, body.participantId);
   }
 
   @Post('pin/:pin/next')

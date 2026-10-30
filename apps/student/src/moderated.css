@@ -186,3 +186,18 @@
 .matching-secondary-button:focus-visible { outline: 3px solid #8b6bc1; outline-offset: 2px; }
 @media (max-width: 600px) { .matching-actions { flex-direction: column-reverse; } .matching-actions button { width: 100%; } }
 .matching-columns{display:grid;grid-template-columns:1fr 1fr;gap:14px}.matching-columns>div{display:grid;gap:8px;align-content:start}.matching-columns .option{width:100%;min-width:0;overflow-wrap:anywhere}.matching-question p{font-size:.85rem;color:#65748b}.matching-columns .option:disabled{opacity:.65}@media(max-width:500px){.matching-columns{gap:7px}.matching-columns .option{padding:10px;font-size:.78rem}}
+.battleship-game-card { max-width: 760px; }
+.shared-battleship { display: grid; gap: 3px; width: min(100%, 650px); margin: 22px auto; padding: 14px; border: 1px solid #a9cbe1; border-radius: 16px; background: #eaf6fc; box-shadow: inset 0 0 0 1px #fff; }
+.battleship-row { display: contents; }
+.battleship-label { display: grid; place-items: center; min-height: 0; color: #52748b; font: 700 .72rem 'DM Mono', monospace; }
+.battleship-column-label { min-height: 26px; }
+.battleship-cell { display: grid; place-items: center; aspect-ratio: 1; min-width: 0; border: 1px solid #b8d9e9; border-radius: 4px; background: #d9f0fa; color: #fff; font-size: clamp(.7rem, 2vw, 1.15rem); transition: transform .14s, background-color .14s; }
+button.battleship-cell:not(:disabled):hover { transform: scale(1.07); background: #addceb; border-color: #4d9fc1; cursor: crosshair; }
+.battleship-cell:disabled { cursor: default; }
+.battleship-cell.hit { background: #e65151; border-color: #c33c3c; color: #fff9d5; box-shadow: inset 0 0 0 1px rgb(255 255 255 / .35); }
+.battleship-cell.miss { background: #8cc5dd; border-color: #70afca; color: #27687f; }
+.projector-battleship-screen .projector-match-content { max-width: min(94vw, 1000px); }
+.projector-battleship { width: min(78vh, 760px); max-width: 100%; margin: 20px auto; padding: 18px; gap: 4px; }
+.projector-battleship .battleship-label { font-size: clamp(.7rem, 1.8vw, 1.05rem); }
+.projector-battleship .battleship-cell { border-radius: 5px; }
+@media (max-width: 600px) { .shared-battleship { padding: 8px; gap: 2px; grid-template-columns: 20px repeat(10, minmax(0, 1fr)) !important; } .battleship-label { font-size: .55rem; } .battleship-column-label { min-height: 18px; } }

@@ -35,9 +35,24 @@ function parseCsv(text: string): Pair[] {
   return rows.map(([question, answer]) => ({ question, answer }));
 }
 function validate(name: string, pairs: Pair[]) {
-  if (!name.trim()) throw new Error('Enter a data set name.');
+  if (!name.trim() || name.length > 200) throw new Error('Enter a data set name of at most 200 characters.');
   if (!pairs.length || pairs.length > 5000) throw new Error('Add between 1 and 5,000 pairs.');
   if (pairs.some((p) => typeof p.question !== 'string' || typeof p.answer !== 'string' || !p.question.trim() || !p.answer.trim() || p.question.length > 2000 || p.answer.length > 2000)) throw new Error('Every pair needs a question and answer of at most 2,000 characters.');
+}
+function parseJsonDataSet(text: string): { name: string; pairs: Pair[] } {
+  const data: unknown = JSON.parse(text);
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('JSON must be an object with a name and pairs array.');
+  const value = data as Record<string, unknown>;
+  if (Object.keys(value).some((key) => key !== 'name' && key !== 'pairs')) throw new Error('JSON may contain only name and pairs.');
+  if (typeof value.name !== 'string' || !Array.isArray(value.pairs)) throw new Error('JSON must contain a string name and an array of pairs.');
+  const pairs = value.pairs.map((pair, index) => {
+    if (!pair || typeof pair !== 'object' || Array.isArray(pair)) throw new Error(`Pair ${index + 1} must be an object.`);
+    const entry = pair as Record<string, unknown>;
+    if (Object.keys(entry).some((key) => key !== 'question' && key !== 'answer') || typeof entry.question !== 'string' || typeof entry.answer !== 'string') throw new Error(`Pair ${index + 1} must contain only string question and answer fields.`);
+    return { question: entry.question, answer: entry.answer };
+  });
+  validate(value.name, pairs);
+  return { name: value.name, pairs };
 }
 
 export function DataSetsPage({ go }: { go: (path: string) => void }) {
@@ -52,6 +67,63 @@ export function DataSetsPage({ go }: { go: (path: string) => void }) {
 }
 
 export function ImportPage({ go }: { go: (path: string) => void }) {
+  const [name, setName] = useState('');
+  const [pairs, setPairs] = useState<Pair[]>([]);
+  const [sourceName, setSourceName] = useState('');
+  const [jsonText, setJsonText] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  function clearVerification() { setName(''); setPairs([]); setSourceName(''); }
+  function verifyPastedJson() {
+    clearVerification();
+    setError('');
+    try {
+      const parsed = parseJsonDataSet(jsonText);
+      setName(parsed.name);
+      setPairs(parsed.pairs);
+      setSourceName('Pasted JSON');
+    } catch (err) {
+      setError(err instanceof SyntaxError ? 'Invalid JSON. Check commas, quotes, and brackets.' : err instanceof Error ? err.message : 'Could not verify JSON.');
+    }
+  }
+  async function readFile(file?: File) {
+    clearVerification();
+    setJsonText('');
+    setError('');
+    if (!file) return;
+    try {
+      const text = await file.text();
+      let importedName = file.name.replace(/\.(csv|json)$/i, '');
+      let parsed: Pair[];
+      if (/\.csv$/i.test(file.name)) parsed = parseCsv(text);
+      else if (/\.json$/i.test(file.name)) { const json = parseJsonDataSet(text); importedName = json.name; parsed = json.pairs; }
+      else throw new Error('Choose a CSV or JSON file.');
+      validate(importedName, parsed);
+      setName(importedName);
+      setPairs(parsed);
+      setSourceName(file.name);
+    } catch (err) {
+      setError(err instanceof SyntaxError ? 'Invalid JSON file.' : err instanceof Error ? err.message : 'Could not read file');
+    }
+  }
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setError('');
+    try {
+      validate(name, pairs);
+      setSaving(true);
+      await request('/data-sets', { method: 'POST', body: JSON.stringify({ name, pairs }) });
+      go('/data-sets');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not import data set');
+    } finally { setSaving(false); }
+  }
+
+  return <><div className="page-heading"><div><p className="eyebrow">DATA SETS</p><h1>Import</h1><p>Paste a JSON data set or upload a CSV or JSON file to create reusable question and answer pairs.</p></div></div><section className="surface dataset-import"><h2>Import a data set</h2><p>JSON must include <strong>name</strong> and <strong>pairs</strong>. Each pair must include a string <strong>question</strong> and <strong>answer</strong>. Verify pasted JSON before importing.</p><div className="dataset-actions"><button type="button" className="subtle-button" onClick={() => download('data-set-template.csv', 'question,answer\r\n"What is the capital of France?",Paris\r\n', 'text/csv;charset=utf-8')}>Download CSV template</button><button type="button" className="subtle-button" onClick={() => download('data-set-template.json', JSON.stringify({ name: 'Geography', pairs: [{ question: 'What is the capital of France?', answer: 'Paris' }] }, null, 2), 'application/json')}>Download JSON template</button></div><form onSubmit={submit}><label>Paste JSON<textarea rows={12} value={jsonText} onChange={(event) => { setJsonText(event.target.value); clearVerification(); setError(''); }} placeholder={'{\n  "name": "Geography",\n  "pairs": [{ "question": "What is the capital of France?", "answer": "Paris" }]\n}'} spellCheck={false} /></label><button type="button" className="secondary" onClick={verifyPastedJson} disabled={!jsonText.trim()}>Verify pasted JSON</button><label>Or choose a file<input type="file" accept=".csv,.json,text/csv,application/json" onChange={(event) => void readFile(event.target.files?.[0])} /></label>{sourceName && <><label>Data set name<input value={name} onChange={(event) => setName(event.target.value)} maxLength={200} required /></label><p className="import-verified" role="status"><strong>Verified:</strong> {sourceName} · {pairs.length} pair{pairs.length === 1 ? '' : 's'} ready to import. You can edit pairs on the Data Sets page after importing.</p><div className="dataset-preview">{pairs.slice(0, 5).map((pair, index) => <p key={index}><strong>{pair.question}</strong><br />{pair.answer}</p>)}</div></>}{error && <p className="error" role="alert">{error}</p>}<button className="primary" disabled={!sourceName || saving}>{saving ? 'Importing...' : 'Import data set'}</button></form></section></>;
+}
+
+function LegacyImportPage({ go }: { go: (path: string) => void }) {
   const [name, setName] = useState(''), [pairs, setPairs] = useState<Pair[]>([]), [fileName, setFileName] = useState(''), [error, setError] = useState(''), [saving, setSaving] = useState(false);
   async function readFile(file?: File) { setPairs([]); setFileName(''); setName(''); setError(''); if (!file) return; try { const text = await file.text(); let parsed: Pair[]; let importedName = file.name.replace(/\.(csv|json)$/i, ''); if (/\.csv$/i.test(file.name)) parsed = parseCsv(text); else if (/\.json$/i.test(file.name)) { const data: unknown = JSON.parse(text); if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('JSON must be an object with a name and pairs array.'); const obj = data as { name?: unknown; pairs?: unknown }; if (typeof obj.name !== 'string' || !Array.isArray(obj.pairs) || obj.pairs.some((pair: unknown) => !pair || typeof pair !== 'object' || Array.isArray(pair))) throw new Error('JSON must contain a name and an array of question and answer pairs.'); importedName = obj.name; parsed = obj.pairs as Pair[]; } else throw new Error('Choose a CSV or JSON file.'); validate(importedName, parsed); setName(importedName); setPairs(parsed); setFileName(file.name); } catch (err) { setError(err instanceof SyntaxError ? 'Invalid JSON file.' : err instanceof Error ? err.message : 'Could not read file'); } }
   async function submit(event: FormEvent) { event.preventDefault(); setError(''); try { validate(name, pairs); setSaving(true); await request('/data-sets', { method: 'POST', body: JSON.stringify({ name, pairs: pairs.map(({ question, answer }) => ({ question, answer })) }) }); go('/data-sets'); } catch (err) { setError(err instanceof Error ? err.message : 'Could not import data set'); } finally { setSaving(false); } }

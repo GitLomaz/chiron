@@ -7,8 +7,8 @@ export class CreateModeratedSessionDto {
   durationSeconds!: number;
 
   @IsOptional()
-  @IsIn(['classic', 'facilitated', 'matching'])
-  mode?: 'classic' | 'facilitated' | 'matching';
+  @IsIn(['classic', 'facilitated', 'matching', 'battleship'])
+  mode?: 'classic' | 'facilitated' | 'matching' | 'battleship';
 
   @IsOptional()
   @IsBoolean()
@@ -55,13 +55,13 @@ export class UpdateLobbyLockDto extends FacilitatorActionDto {
 }
 
 export class UpdatePresentationModeDto extends FacilitatorActionDto {
-  @IsIn(['scores', 'matching'])
-  presentationMode!: 'scores' | 'matching';
+  @IsIn(['scores', 'matching', 'battleship'])
+  presentationMode!: 'scores' | 'matching' | 'battleship';
 }
 
 export class RestartModeratedSessionDto extends FacilitatorActionDto {
-  @IsIn(['classic', 'facilitated', 'matching'])
-  mode!: 'classic' | 'facilitated' | 'matching';
+  @IsIn(['classic', 'facilitated', 'matching', 'battleship'])
+  mode!: 'classic' | 'facilitated' | 'matching' | 'battleship';
 }
 
 export class ReportModeratedGameScoreDto {
@@ -89,6 +89,21 @@ export class FlipMatchingCardDto {
 }
 
 export class MatchingNextDto {
+  @IsUUID('4')
+  participantId!: string;
+}
+
+export class BattleshipAttackDto {
+  @IsUUID('4')
+  participantId!: string;
+
+  @IsInt()
+  @Min(0)
+  @Max(99)
+  cell!: number;
+}
+
+export class BattleshipNextDto {
   @IsUUID('4')
   participantId!: string;
 }
