@@ -16,6 +16,9 @@ model Quiz {
   theme       String     @default("standard")
   // Number of pairs on the shared Matching-mode board, from a 2×2 board through 10×10.
   matchingPairCount Int @default(6)
+  // Square grid used by the shared Battleship-mode board. The fleet size is
+  // derived from this setting so the editor can present one sensible preset.
+  battleshipBoardSize Int @default(10)
   // -1 is unlimited; otherwise values are 15 through 180 in 15-second steps.
   defaultTimerSeconds Int @default(-1)
   startedAt   DateTime   @default(now())

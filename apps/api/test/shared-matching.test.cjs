@@ -38,6 +38,7 @@ test('matching mode shares one board and only broadcasts a completed two-card at
   assert.equal(attempt.attempt.isActor, true);
   assert.deepEqual(attempt.attempt.cards, [{ id: 0, symbol: 'A' }, { id: 2, symbol: 'A' }]);
   assert.equal(service.facilitatorState(run.sessionId, run.facilitatorToken).matching.attempt.id, attempt.attempt.id);
+  assert.equal(service.facilitatorState(run.sessionId, run.facilitatorToken).matching.attempt.playerName, 'Alice');
 
   session.matching.attempt.startedAt = new Date(0);
   const shared = service.studentState(run.pin, bob.participantId).matching;
@@ -67,4 +68,27 @@ test('matching mode supports a 10 by 10 board', async () => {
   assert.equal(matching.cards.length, 100);
   assert.equal(matching.columns, 10);
   assert.equal(matching.rows, 10);
+});
+
+test('matching announces completion and lets the facilitator start a clean board', async () => {
+  const service = new ModeratedService({ quiz: { findUnique: async () => ({ ...quiz, matchingPairCount: 2 }) } });
+  const run = await service.create(1, 'matching', 300);
+  const student = service.join(run.pin, 'Student', randomUUID());
+  service.start(run.sessionId, run.facilitatorToken);
+  const question = service.studentState(run.pin, student.participantId).currentQuestion;
+  service.submitAnswer(run.pin, { participantId: student.participantId, questionId: question.id, answer: 'Yes' });
+
+  const session = service.sessions.get(run.sessionId);
+  session.matching.cards = ['A', 'A'];
+  service.flipMatchingCard(run.pin, student.participantId, 0);
+  service.flipMatchingCard(run.pin, student.participantId, 1);
+  session.matching.attempt.startedAt = new Date(0);
+  const complete = service.studentState(run.pin, student.participantId).matching;
+  assert.equal(complete.complete, true);
+  assert.ok(complete.completionId);
+
+  const reset = service.resetBoard(run.sessionId, run.facilitatorToken);
+  assert.equal(reset.matching.complete, false);
+  assert.equal(reset.matching.cards.length, 4);
+  assert.equal(service.studentState(run.pin, student.participantId).matching.credits, 0);
 });

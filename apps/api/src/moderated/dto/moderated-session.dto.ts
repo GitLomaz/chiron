@@ -7,8 +7,8 @@ export class CreateModeratedSessionDto {
   durationSeconds!: number;
 
   @IsOptional()
-  @IsIn(['classic', 'facilitated', 'matching', 'battleship'])
-  mode?: 'classic' | 'facilitated' | 'matching' | 'battleship';
+  @IsIn(['classic', 'facilitated', 'matching', 'battleship', 'treasure_map', 'archery'])
+  mode?: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery';
 
   @IsOptional()
   @IsBoolean()
@@ -55,13 +55,18 @@ export class UpdateLobbyLockDto extends FacilitatorActionDto {
 }
 
 export class UpdatePresentationModeDto extends FacilitatorActionDto {
-  @IsIn(['scores', 'matching', 'battleship'])
-  presentationMode!: 'scores' | 'matching' | 'battleship';
+  @IsIn(['scores', 'matching', 'battleship', 'treasure_map', 'archery'])
+  presentationMode!: 'scores' | 'matching' | 'battleship' | 'treasure_map' | 'archery';
 }
 
 export class RestartModeratedSessionDto extends FacilitatorActionDto {
-  @IsIn(['classic', 'facilitated', 'matching', 'battleship'])
-  mode!: 'classic' | 'facilitated' | 'matching' | 'battleship';
+  @IsIn(['classic', 'facilitated', 'matching', 'battleship', 'treasure_map', 'archery'])
+  mode!: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery';
+}
+
+export class UpdateBoardAutoResetDto extends FacilitatorActionDto {
+  @IsBoolean()
+  autoBoardReset!: boolean;
 }
 
 export class ReportModeratedGameScoreDto {
@@ -104,6 +109,41 @@ export class BattleshipAttackDto {
 }
 
 export class BattleshipNextDto {
+  @IsUUID('4')
+  participantId!: string;
+}
+
+export class ArcheryShotDto {
+  @IsUUID('4')
+  participantId!: string;
+
+  @IsInt()
+  @Min(-100)
+  @Max(100)
+  x!: number;
+
+  @IsInt()
+  @Min(-100)
+  @Max(100)
+  y!: number;
+}
+
+export class ArcheryNextDto {
+  @IsUUID('4')
+  participantId!: string;
+}
+
+export class TreasureMapDigDto {
+  @IsUUID('4')
+  participantId!: string;
+
+  @IsInt()
+  @Min(0)
+  @Max(195)
+  cell!: number;
+}
+
+export class TreasureMapNextDto {
   @IsUUID('4')
   participantId!: string;
 }

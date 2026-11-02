@@ -6,7 +6,7 @@ import type { FormEvent, ReactNode } from 'react';
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 type QuizTheme = 'standard' | 'kids' | 'christmas' | 'halloween';
 const themeLabels: Record<QuizTheme, string> = { standard: 'Standard', kids: 'Kid-friendly', christmas: 'Christmas', halloween: 'Halloween' };
-type Quiz = { id: number; guid: string; title: string; description: string | null; randomizeQuestionOrder: boolean; theme: QuizTheme; defaultTimerSeconds: number; matchingPairCount: number; _count?: { questions: number } };
+type Quiz = { id: number; guid: string; title: string; description: string | null; randomizeQuestionOrder: boolean; theme: QuizTheme; defaultTimerSeconds: number; matchingPairCount: number; battleshipBoardSize: number; _count?: { questions: number } };
 type QuizItemType = 'question' | 'game';
 type GameType = 'coin_catch' | 'match_pairs' | 'tower_stack';
 type SpecialOptions = { kind: 'true_false'; statement: string } | { kind: 'matching'; pairs: { question: string; answer: string }[] };
@@ -23,6 +23,7 @@ type HomeworkSession = { sessionId: string; facilitatorToken: string };
 const TIMER_SECONDS = [-1, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180] as const;
 const GAME_DURATION_SECONDS = [10, 15, 20, 30, 45, 60, 90, 120] as const;
 const MATCHING_BOARD_SIZES = [{ pairs: 2, label: '2 × 2 · 2 pairs' }, { pairs: 4, label: '4 × 2 · 4 pairs' }, { pairs: 6, label: '4 × 3 · 6 pairs' }, { pairs: 8, label: '4 × 4 · 8 pairs' }, { pairs: 18, label: '6 × 6 · 18 pairs' }, { pairs: 32, label: '8 × 8 · 32 pairs' }, { pairs: 50, label: '10 × 10 · 50 pairs' }] as const;
+const BATTLESHIP_BOARD_SIZES = [{ size: 6, boats: 3 }, { size: 8, boats: 4 }, { size: 10, boats: 5 }] as const;
 function timerSettingLabel(seconds: number | null) {
   if (seconds === null) return 'Use quiz default';
   if (seconds === -1) return 'Unlimited';
@@ -165,7 +166,7 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
   const [error, setError] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
   const [launchMode, setLaunchMode] = useState<'live' | 'homework'>('live');
-  const [runMode, setRunMode] = useState<'classic' | 'facilitated' | 'matching' | 'battleship'>('classic');
+  const [runMode, setRunMode] = useState<'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery'>('classic');
   const [endless, setEndless] = useState(false);
   const [scoringEnabled, setScoringEnabled] = useState(true);
   const [durationValue, setDurationValue] = useState(60);
@@ -373,6 +374,22 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
     }
   }
 
+  async function updateBattleshipBoardSize(battleshipBoardSize: number) {
+    setSavingSettings(true);
+    setError('');
+    try {
+      const updatedQuiz = await request<Quiz>(`/quizzes/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ battleshipBoardSize }),
+      });
+      setQuiz((current) => current ? { ...current, battleshipBoardSize: updatedQuiz.battleshipBoardSize } : current);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update quiz settings');
+    } finally {
+      setSavingSettings(false);
+    }
+  }
+
   async function launchQuiz() {
     if (!Number.isInteger(durationMinutes) || durationMinutes < 5 || durationMinutes > 10080) { setError('Choose a duration between 5 minutes and 7 days.'); return; }
     setLaunching(true); setError('');
@@ -405,7 +422,7 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
         <label><input type="radio" name={`quiz-launch-mode-${id}`} checked={launchMode === 'homework'} onChange={() => { setLaunchMode('homework'); setRunMode('classic'); }} /><span><strong>Homework</strong><small>Students work independently on their own time</small></span></label>
       </fieldset></div>
       <div className="launch-options"><div className="launch-section launch-option"><h3>Play settings</h3>
-      <div className="launch-mode-details"><label htmlFor="run-mode"><strong>{launchMode === 'live' ? 'Live' : 'Homework'} mode</strong><select id="run-mode" value={runMode} disabled={launching} onChange={(event) => setRunMode(event.target.value as typeof runMode)}>{launchMode === 'live' && <option value="facilitated">Facilitated</option>}<option value="classic">Classic</option>{launchMode === 'live' && <option value="matching">Matching</option>}{launchMode === 'live' && <option value="battleship">Battleship</option>}</select></label><p>{runMode === 'facilitated' ? 'Release one question at a time and follow student progress. Games can appear between rounds.' : runMode === 'matching' ? 'Students answer at their own pace and earn credits to play a matching game. Timeline games are skipped.' : runMode === 'battleship' ? 'Students answer at their own pace and earn attack tokens to fire on a shared Battleship map. Timeline games are skipped.' : launchMode === 'live' ? 'Students answer at their own pace while you follow their progress. Games can appear between rounds.' : 'Students answer at their own pace. Games can appear between rounds.'}</p></div>
+      <div className="launch-mode-details"><label htmlFor="run-mode"><strong>{launchMode === 'live' ? 'Live' : 'Homework'} mode</strong><select id="run-mode" value={runMode} disabled={launching} onChange={(event) => setRunMode(event.target.value as typeof runMode)}>{launchMode === 'live' && <option value="facilitated">Facilitated</option>}<option value="classic">Classic</option>{launchMode === 'live' && <option value="matching">Matching</option>}{launchMode === 'live' && <option value="battleship">Battleship</option>}{launchMode === 'live' && <option value="treasure_map">Treasure Map</option>}{launchMode === 'live' && <option value="archery">Archery</option>}</select></label><p>{runMode === 'facilitated' ? 'Release one question at a time and follow student progress. Games can appear between rounds.' : runMode === 'matching' ? 'Students answer at their own pace and earn credits to play a matching game. Timeline games are skipped.' : runMode === 'battleship' ? 'Students answer at their own pace and earn attack tokens to fire on a shared Battleship map. Timeline games are skipped.' : runMode === 'treasure_map' ? 'Students earn scout tokens to uncover shared clues and find the class treasure. Timeline games are skipped.' : runMode === 'archery' ? 'Students earn arrows with correct answers, then time their X and Y aim on a shared target. Timeline games are skipped.' : launchMode === 'live' ? 'Students answer at their own pace while you follow their progress. Games can appear between rounds.' : 'Students answer at their own pace. Games can appear between rounds.'}</p></div>
       {launchMode === 'live' && runMode !== 'facilitated' && <label className="checkbox-label launch-endless"><input type="checkbox" checked={endless} disabled={launching} onChange={(event) => setEndless(event.target.checked)} /><span><strong>Endless questions</strong><small>After the last quiz item, repeat questions in random order until the session ends.</small></span></label>}
       {launchMode === 'live' && <label className="checkbox-label launch-endless"><input type="checkbox" checked={scoringEnabled} disabled={launching} onChange={(event) => setScoringEnabled(event.target.checked)} /><span><strong>Enable points scoring</strong><small>Correct answers earn 100 points, a streak bonus, and up to 100 speed points in the first 30 seconds (or the question timer).</small></span></label>}
       </div><div className="launch-section launch-option"><h3>Session duration</h3>
@@ -418,6 +435,7 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
         {launchMode === 'live' && runMode === 'matching' && <>
         <label className="theme-select"><span><strong>Shared matching board</strong><small>Choose the grid for Matching-mode sessions, up to 10 × 10.</small></span><select value={quiz.matchingPairCount} disabled={savingSettings} onChange={(event) => void updateMatchingPairCount(Number(event.target.value))}>{MATCHING_BOARD_SIZES.map((size) => <option key={size.pairs} value={size.pairs}>{size.label}</option>)}</select></label>
         </>}
+        {launchMode === 'live' && runMode === 'battleship' && <label className="theme-select"><span><strong>Shared Battleship board</strong><small>Choose the grid and fleet size for Battleship-mode sessions.</small></span><select value={quiz.battleshipBoardSize} disabled={savingSettings} onChange={(event) => void updateBattleshipBoardSize(Number(event.target.value))}>{BATTLESHIP_BOARD_SIZES.map((board) => <option key={board.size} value={board.size}>{board.size} × {board.size} · {board.boats} boats</option>)}</select></label>}
       </div>
     </section>
     {error && <p className="error">{error}</p>}

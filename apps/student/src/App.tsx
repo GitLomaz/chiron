@@ -1,5 +1,5 @@
 import { MatchingQuestion } from './MatchingQuestion';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, FormEvent, ReactNode } from 'react';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
@@ -37,8 +37,55 @@ type Screen = 'welcome' | 'intro' | 'question' | 'results';
 
 const CONFETTI_COLORS = ['#ff5a8a', '#ffcf3f', '#5ac7f2', '#8edb70', '#a981f7', '#ff9e42'];
 const KIDS_SUCCESS_SOUND = `${import.meta.env.BASE_URL}sounds/kids-success.mp3`;
+const VOLUME_STORAGE_KEY = 'quizboard-student-volume';
+const PLAYER_NAME_STORAGE_KEY = 'quizboard-student-name';
+
+type AudioSettings = { volume: number; setVolume: (volume: number) => void };
+const AudioSettingsContext = createContext<AudioSettings | null>(null);
+
+function savedVolume() {
+  try {
+    const stored = localStorage.getItem(VOLUME_STORAGE_KEY);
+    if (stored === null) return 70;
+    const value = Number(stored);
+    return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 70;
+  } catch { return 70; }
+}
+
+function savedPlayerName() {
+  try { return localStorage.getItem(PLAYER_NAME_STORAGE_KEY)?.trim().slice(0, 100) ?? ''; } catch { return ''; }
+}
+
+function rememberPlayerName(name: string) {
+  try { localStorage.setItem(PLAYER_NAME_STORAGE_KEY, name.trim()); } catch { /* Saving this convenience value is optional. */ }
+}
+
+function AudioSettingsProvider({ children }: { children: ReactNode }) {
+  const [volume, setVolumeState] = useState(savedVolume);
+  const setVolume = useCallback((nextVolume: number) => {
+    const value = Math.max(0, Math.min(100, nextVolume));
+    setVolumeState(value);
+    try { localStorage.setItem(VOLUME_STORAGE_KEY, String(value)); } catch { /* Saving this preference is optional. */ }
+  }, []);
+  return <AudioSettingsContext.Provider value={{ volume, setVolume }}>{children}</AudioSettingsContext.Provider>;
+}
+
+function useAudioSettings() {
+  const settings = useContext(AudioSettingsContext);
+  if (!settings) throw new Error('Audio settings must be used within AudioSettingsProvider');
+  return settings;
+}
+
+function VolumeControl() {
+  const { volume, setVolume } = useAudioSettings();
+  return <aside className="volume-control" aria-label="Sound settings">
+    <label htmlFor="student-volume">Sound <output htmlFor="student-volume">{volume}%</output></label>
+    <input id="student-volume" type="range" min="0" max="100" value={volume} onChange={(event) => setVolume(Number(event.target.value))} aria-valuetext={`${volume}% volume`} />
+  </aside>;
+}
 
 function KidsConfetti({ active }: { active: boolean }) {
+  const { volume } = useAudioSettings();
   const [origin, setOrigin] = useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   const successSound = useRef<HTMLAudioElement | null>(null);
   const hasPlayed = useRef(false);
@@ -73,9 +120,12 @@ function KidsConfetti({ active }: { active: boolean }) {
   useEffect(() => {
     const audio = new Audio(KIDS_SUCCESS_SOUND);
     audio.preload = 'auto';
+    audio.volume = volume / 100;
     successSound.current = audio;
     return () => { audio.pause(); audio.removeAttribute('src'); audio.load(); successSound.current = null; };
   }, []);
+
+  useEffect(() => { if (successSound.current) successSound.current.volume = volume / 100; }, [volume]);
 
   useEffect(() => {
     if (!active) { hasPlayed.current = false; return; }
@@ -226,11 +276,13 @@ function Welcome({ onModerated }: { onModerated: () => void }) {
 type ModeratedAnswerResult = { answer: string; correctAnswer: string; isCorrect: boolean };
 type ModeratedScore = { correct: number; answered: number; points?: number; streak?: number; lastAward?: { base: number; streak: number; speed: number; total: number } | null };
 type ModeratedQuestion = TimedQuestion & { special?: SpecialQuestion | null; matchProgress?: MatchProgress | null; id: string; text: string; itemType: 'question' | 'game'; gameType: 'coin_catch' | 'match_pairs' | 'tower_stack' | null; options: string[]; number: number; total?: number; answered?: boolean; timedOut?: boolean; gameScore?: number | null; result?: ModeratedAnswerResult | null };
-type MatchingAttempt = { id: string; cards: { id: number; symbol: string }[]; startedAt: string; isMatch: boolean; isActor: boolean };
-type MatchingState = { credits: number | null; columns: number; rows: number; selectedCard: { id: number; symbol: string } | null; cards: { symbol: string | null; matched: boolean }[]; attempt: MatchingAttempt | null };
-type BattleshipState = { size: number; tokens: number | null; shipCells: number; hits: number; cells: { result: 'hit' | 'miss' | null }[] };
-type ModeratedStudentState = { endless: boolean; scoringEnabled: boolean; pin: string; title: string; description: string | null; theme: 'standard' | 'kids' | 'christmas' | 'halloween'; mode: 'classic' | 'facilitated' | 'matching' | 'battleship'; matching: MatchingState | null; battleship: BattleshipState | null; betweenQuestions: boolean; phase: 'lobby' | 'question' | 'complete'; endedByTeacher: boolean; expired: boolean; endsAt: string | null; removed: boolean; participant: { id: string; name: string } | null; score: ModeratedScore | null; currentQuestion: ModeratedQuestion | null };
-type FacilitatorState = { endless: boolean; scoringEnabled: boolean; sessionId: string; pin: string; title: string; description: string | null; mode: 'classic' | 'facilitated' | 'matching' | 'battleship'; presentationMode: 'scores' | 'matching' | 'battleship'; matching: MatchingState | null; battleship: BattleshipState | null; currentRound: number; phase: 'lobby' | 'question' | 'complete'; endedByTeacher: boolean; expired: boolean; endsAt: string | null; durationSeconds: number; lobbyLocked: boolean; questionCount: number; completedCount: number; participants: { id: string; name: string; completed: boolean; completedItems: number; currentItemType: 'question' | 'game' | null; currentAnswered: boolean; score: ModeratedScore }[]; scoreLeaderboard: { id: string; name: string; score: number; correct: number; answered: number; longestStreak: number }[] };
+type MatchingAttempt = { id: string; cards: { id: number; symbol: string }[]; startedAt: string; isMatch: boolean; isActor: boolean; playerName?: string };
+type MatchingState = { credits: number | null; columns: number; rows: number; selectedCard: { id: number; symbol: string } | null; cards: { symbol: string | null; matched: boolean }[]; attempt: MatchingAttempt | null; complete: boolean; completionId: string | null };
+type BattleshipState = { size: number; tokens: number | null; shipCells: number; hits: number; cells: { result: 'hit' | 'miss' | null }[]; lastHit: { id: string; cell: number; participantName: string } | null; complete: boolean; completionId: string | null };
+type TreasureMapState = { size: number; tokens: number | null; cells: { result: 'clue' | 'treasure' | null; hint: string | null; terrain: 'land' | 'stream' }[]; lastDig: { id: string; cell: number; participantName: string } | null; complete: boolean; completionId: string | null };
+type ArcheryState = { arrows: number | null; lastShot: { id: string; x: number; y: number; score: number; participantName?: string } | null; attempts: { id: string; x: number; y: number; score: number; participantName?: string }[] };
+type ModeratedStudentState = { endless: boolean; scoringEnabled: boolean; pin: string; title: string; description: string | null; theme: 'standard' | 'kids' | 'christmas' | 'halloween'; mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery'; matching: MatchingState | null; battleship: BattleshipState | null; treasureMap: TreasureMapState | null; archery: ArcheryState | null; betweenQuestions: boolean; phase: 'lobby' | 'question' | 'complete'; endedByTeacher: boolean; expired: boolean; endsAt: string | null; removed: boolean; participant: { id: string; name: string } | null; score: ModeratedScore | null; currentQuestion: ModeratedQuestion | null };
+type FacilitatorState = { endless: boolean; scoringEnabled: boolean; sessionId: string; pin: string; title: string; description: string | null; mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery'; presentationMode: 'scores' | 'matching' | 'battleship' | 'treasure_map' | 'archery'; matching: MatchingState | null; battleship: BattleshipState | null; treasureMap: TreasureMapState | null; archery: ArcheryState | null; currentRound: number; phase: 'lobby' | 'question' | 'complete'; endedByTeacher: boolean; expired: boolean; endsAt: string | null; durationSeconds: number; lobbyLocked: boolean; autoBoardReset: boolean; boardResetAt: string | null; questionCount: number; completedCount: number; participants: { id: string; name: string; completed: boolean; completedItems: number; currentItemType: 'question' | 'game' | null; currentAnswered: boolean; score: ModeratedScore }[]; scoreLeaderboard: { id: string; name: string; score: number; correct: number; answered: number; longestStreak: number }[] };
 
 async function moderatedRequest<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}/moderated-sessions${path}`, { headers: { 'Content-Type': 'application/json', ...options?.headers }, ...options });
@@ -280,13 +332,15 @@ function ModeratedStudent({ pin }: { pin: string }) {
   const [participantId, setParticipantId] = useState(() => localStorage.getItem(participantStorageKey(pin)) ?? '');
   const [clientId] = useState(() => participantClientId(pin));
   const [state, setState] = useState<ModeratedStudentState | null>(null);
-  const [name, setName] = useState('');
+  const [name, setName] = useState(savedPlayerName);
   const [selected, setSelected] = useState('');
   const [error, setError] = useState('');
   const [joining, setJoining] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [playingMatching, setPlayingMatching] = useState(false);
   const [playingBattleship, setPlayingBattleship] = useState(false);
+  const [playingTreasureMap, setPlayingTreasureMap] = useState(false);
+  const [playingArchery, setPlayingArchery] = useState(false);
   const [flipping, setFlipping] = useState(false);
   const load = useCallback(async () => { try { const query = new URLSearchParams({ clientId }); if (participantId) query.set('participantId', participantId); const next = await moderatedRequest<ModeratedStudentState>(`/pin/${pin}?${query.toString()}`); setState((current) => { const restarted = Boolean(next.endsAt && (!current?.endsAt || Date.parse(next.endsAt) > Date.parse(current.endsAt))); return current?.pin === next.pin && (current.endedByTeacher || current.expired) && !next.endedByTeacher && !next.expired && !restarted ? current : next; }); setError(''); } catch (err) { setError(err instanceof Error ? err.message : 'Could not load this test'); } }, [clientId, pin, participantId]);
   const remainingMilliseconds = useDeadlineMilliseconds(state?.currentQuestion?.timerEndsAt ?? null);
@@ -301,17 +355,23 @@ function ModeratedStudent({ pin }: { pin: string }) {
   useEffect(() => { setSelected(''); }, [state?.currentQuestion?.id]);
   useEffect(() => { if (!state?.betweenQuestions) setPlayingMatching(false); }, [state?.betweenQuestions, state?.phase]);
   useEffect(() => { if (!state?.betweenQuestions) setPlayingBattleship(false); }, [state?.betweenQuestions, state?.phase]);
+  useEffect(() => { if (!state?.betweenQuestions) setPlayingTreasureMap(false); }, [state?.betweenQuestions, state?.phase]);
+  useEffect(() => { if (!state?.betweenQuestions) setPlayingArchery(false); }, [state?.betweenQuestions, state?.phase]);
   useEffect(() => {
     if (state?.mode !== 'matching' || !state.betweenQuestions || !state.currentQuestion?.result || playingMatching || submitting || state.endedByTeacher || state.removed) return;
     const timer = window.setTimeout(() => void nextMatchingQuestion(), 5000);
     return () => window.clearTimeout(timer);
   }, [state?.mode, state?.betweenQuestions, state?.currentQuestion?.id, state?.currentQuestion?.result?.answer, state?.endedByTeacher, state?.removed, playingMatching, submitting, participantId, pin]);
-  async function join(event: FormEvent) { event.preventDefault(); setJoining(true); try { const result = await moderatedRequest<{ participantId: string }>(`/pin/${pin}/participants`, { method: 'POST', body: JSON.stringify({ name, clientId }) }); localStorage.setItem(participantStorageKey(pin), result.participantId); setParticipantId(result.participantId); } catch (err) { setError(err instanceof Error ? err.message : 'Could not join'); } finally { setJoining(false); } }
+  async function join(event: FormEvent) { event.preventDefault(); setJoining(true); try { const result = await moderatedRequest<{ participantId: string }>(`/pin/${pin}/participants`, { method: 'POST', body: JSON.stringify({ name, clientId }) }); rememberPlayerName(name); localStorage.setItem(participantStorageKey(pin), result.participantId); setParticipantId(result.participantId); } catch (err) { setError(err instanceof Error ? err.message : 'Could not join'); } finally { setJoining(false); } }
   async function submit(answer = selected) { if (!state?.currentQuestion || !answer || submitting) return; setSelected(answer); setSubmitting(true); try { await moderatedRequest(`/pin/${pin}/answers`, { method: 'POST', body: JSON.stringify({ participantId, questionId: state.currentQuestion.id, answer }) }); await load(); } catch (err) { setError(err instanceof Error ? err.message : 'Could not submit your answer'); } finally { setSubmitting(false); } }
   async function flip(card: number) { setFlipping(true); try { const matching = await moderatedRequest<MatchingState>(`/pin/${pin}/matching/flip`, { method: 'POST', body: JSON.stringify({ participantId, card }) }); setState((current) => current ? { ...current, matching } : current); setError(''); } catch (err) { setError(err instanceof Error ? err.message : 'Could not flip card'); } finally { setFlipping(false); } }
   async function nextMatchingQuestion() { setSubmitting(true); try { await moderatedRequest(`/pin/${pin}/matching/next`, { method: 'POST', body: JSON.stringify({ participantId }) }); await load(); } catch (err) { setError(err instanceof Error ? err.message : 'Could not start the next question'); } finally { setSubmitting(false); } }
   async function attack(cell: number) { setFlipping(true); try { const battleship = await moderatedRequest<BattleshipState>(`/pin/${pin}/battleship/attack`, { method: 'POST', body: JSON.stringify({ participantId, cell }) }); setState((current) => current ? { ...current, battleship } : current); setError(''); } catch (err) { setError(err instanceof Error ? err.message : 'Could not attack that square'); } finally { setFlipping(false); } }
   async function nextBattleshipQuestion() { setSubmitting(true); try { await moderatedRequest(`/pin/${pin}/battleship/next`, { method: 'POST', body: JSON.stringify({ participantId }) }); await load(); } catch (err) { setError(err instanceof Error ? err.message : 'Could not start the next question'); } finally { setSubmitting(false); } }
+  async function dig(cell: number) { setFlipping(true); try { const treasureMap = await moderatedRequest<TreasureMapState>(`/pin/${pin}/treasure-map/dig`, { method: 'POST', body: JSON.stringify({ participantId, cell }) }); setState((current) => current ? { ...current, treasureMap } : current); setError(''); } catch (err) { setError(err instanceof Error ? err.message : 'Could not explore that square'); } finally { setFlipping(false); } }
+  async function nextTreasureMapQuestion() { setSubmitting(true); try { await moderatedRequest(`/pin/${pin}/treasure-map/next`, { method: 'POST', body: JSON.stringify({ participantId }) }); await load(); } catch (err) { setError(err instanceof Error ? err.message : 'Could not start the next question'); } finally { setSubmitting(false); } }
+  async function shootArchery(x: number, y: number) { setFlipping(true); try { const archery = await moderatedRequest<ArcheryState>(`/pin/${pin}/archery/shoot`, { method: 'POST', body: JSON.stringify({ participantId, x, y }) }); setState((current) => current ? { ...current, archery } : current); setError(''); } catch (err) { setError(err instanceof Error ? err.message : 'Could not release your arrow'); } finally { setFlipping(false); } }
+  async function nextArcheryQuestion() { setSubmitting(true); try { await moderatedRequest(`/pin/${pin}/archery/next`, { method: 'POST', body: JSON.stringify({ participantId }) }); await load(); } catch (err) { setError(err instanceof Error ? err.message : 'Could not start the next question'); } finally { setSubmitting(false); } }
   async function nextQuestion() { setSubmitting(true); try { await moderatedRequest(`/pin/${pin}/next`, { method: 'POST', body: JSON.stringify({ participantId }) }); await load(); } catch (err) { setError(err instanceof Error ? err.message : 'Could not start the next question'); } finally { setSubmitting(false); } }
   function render() {
   if (error && !state) return <main className="page status-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><section className="error-card"><p className="eyebrow">TEST UNAVAILABLE</p><h1>We couldn’t open this test.</h1><p>{error}</p></section></main>;
@@ -331,11 +391,13 @@ function ModeratedStudent({ pin }: { pin: string }) {
         <SharedMatchBoard matching={matching} disabled={flipping} onFlip={(id) => void flip(id)} />
         <p className="game-tip" aria-live="polite">{matchedPairs * 2 === matching.cards.length ? 'The class found all the pairs!' : matching.credits === 0 ? 'You are out of credits. Answer more questions to earn another.' : matching.attempt ? 'The shared board is revealing a pair.' : 'Your first pick stays on your screen. Pick a second card to reveal the pair to the class.'}</p>
         {error && <p className="form-error">{error}</p>}
-        <div className="matching-game-actions"><button className="matching-secondary-button" onClick={() => setPlayingMatching(false)}>← Back to Questions</button></div>
+        <div className="matching-game-actions"><button className="matching-secondary-button" disabled={submitting} onClick={() => void nextMatchingQuestion()}>{submitting ? 'Loading…' : 'Next question →'}</button></div>
       </section>
     </main>;
   }
-  if (playingBattleship && state.battleship) return <main className={`page quiz-page moderated-quiz-page theme-${state.theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">BATTLESHIP BREAK</span></header><section className="game-card battleship-game-card"><div className="game-heading"><div><p className="eyebrow">CLASSIC BATTLESHIP</p><h1>Take a shot</h1><p>Spend one attack token to fire at the shared fleet.</p></div><div className="game-stats"><span>Tokens <strong>{state.battleship.tokens}</strong></span><span>Hits <strong>{state.battleship.hits} / {state.battleship.shipCells}</strong></span></div></div><SharedBattleshipBoard battleship={state.battleship} disabled={flipping} onAttack={(cell) => void attack(cell)} /><p className="game-tip" aria-live="polite">{state.battleship.tokens ? 'Choose an unmarked square to attack.' : 'You are out of attack tokens. Answer more questions correctly to earn one.'}</p>{error && <p className="form-error">{error}</p>}<div className="matching-game-actions"><button className="matching-secondary-button" onClick={() => setPlayingBattleship(false)}>← Back to Questions</button></div></section></main>;
+  if (playingBattleship && state.battleship) return <main className={`page quiz-page moderated-quiz-page theme-${state.theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">BATTLESHIP BREAK</span></header><section className="game-card battleship-game-card"><div className="game-heading"><div><p className="eyebrow">CLASSIC BATTLESHIP</p><h1>Take a shot</h1><p>Spend one attack token to fire at the shared fleet.</p></div><div className="game-stats"><span>Tokens <strong>{state.battleship.tokens}</strong></span><span>Hits <strong>{state.battleship.hits} / {state.battleship.shipCells}</strong></span></div></div><SharedBattleshipBoard battleship={state.battleship} disabled={flipping} onAttack={(cell) => void attack(cell)} /><p className="game-tip" aria-live="polite">{state.battleship.complete ? 'The fleet is sunk! Your teacher will start the next board.' : state.battleship.tokens ? 'Choose an unmarked square to attack.' : 'You are out of attack tokens. Answer more questions correctly to earn one.'}</p>{error && <p className="form-error">{error}</p>}<div className="matching-game-actions"><button className="matching-secondary-button" disabled={submitting} onClick={() => void nextBattleshipQuestion()}>{submitting ? 'Loading…' : 'Next question →'}</button></div></section></main>;
+  if (playingTreasureMap && state.treasureMap) return <main className={`page quiz-page moderated-quiz-page treasure-map-page theme-${state.theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">TREASURE MAP BREAK</span></header><section className="game-card treasure-map-game-card"><div className="game-heading"><div><p className="eyebrow">CLASS TREASURE HUNT</p><h1>Choose where to scout</h1><p>Spend a scout token to uncover a clue or find the treasure.</p></div><div className="game-stats"><span>Scout tokens <strong>{state.treasureMap.tokens}</strong></span><span>Clues <strong>{state.treasureMap.cells.filter((cell) => cell.result === 'clue').length}</strong></span></div></div><SharedTreasureMap map={state.treasureMap} disabled={flipping} onDig={(cell) => void dig(cell)} /><p className="game-tip" aria-live="polite">{state.treasureMap.complete ? 'Treasure found! Your teacher will start the next map.' : state.treasureMap.tokens ? 'Choose an unexplored square. Each miss reveals a shared clue.' : 'Answer more questions correctly to earn a scout token.'}</p>{error && <p className="form-error">{error}</p>}<div className="matching-game-actions"><button className="matching-secondary-button" disabled={submitting} onClick={() => void nextTreasureMapQuestion()}>{submitting ? 'Loading…' : 'Next question →'}</button></div></section></main>;
+  if (playingArchery && state.archery) return <main className={`page quiz-page moderated-quiz-page archery-player-page theme-${state.theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">ARCHERY BREAK</span></header><section className="game-card archery-game-card"><div className="game-heading"><div><p className="eyebrow">SHARED ARCHERY RANGE</p><h1>Aim your arrow</h1><p>Watch the lower bar, then tap the target to lock it. Repeat for the side bar.</p></div><div className="game-stats"><span>Arrows <strong>{state.archery.arrows}</strong></span><span>Best <strong>{state.archery.attempts[0]?.score ?? '—'}</strong></span></div></div><ArcheryAim archery={state.archery} disabled={flipping || (state.archery.arrows ?? 0) < 1} hideControls={(state.archery.arrows ?? 0) < 1} onShoot={(x, y) => void shootArchery(x, y)} /><p className={`game-tip archery-token-tip${(state.archery.arrows ?? 0) > 0 ? ' is-reserved' : ''}`} aria-live={(state.archery.arrows ?? 0) < 1 ? 'polite' : undefined}>Answer more questions correctly to earn another arrow.</p>{error && <p className="form-error">{error}</p>}<div className="matching-game-actions"><button className="matching-secondary-button" disabled={submitting} onClick={() => void nextArcheryQuestion()}>{submitting ? 'Loading…' : 'Next question →'}</button></div></section></main>;
   if (state.phase === 'complete') return <WaitingScreen theme={state.theme} title={state.title} name={state.participant.name} copy="The test is complete. Thanks for taking part." score={state.score} scoreLabel="Final score" complete />;
   const question = state.currentQuestion;
   if (!question) return <WaitingScreen theme={state.theme} title={state.title} name={state.participant.name} copy="Waiting for the next question…" />;
@@ -361,6 +423,15 @@ function ModeratedStudent({ pin }: { pin: string }) {
   if (state.betweenQuestions && state.battleship) {
     const canPlay = (state.battleship.tokens ?? 0) > 0 && state.battleship.hits < state.battleship.shipCells;
     return <main className={`page quiz-page moderated-quiz-page theme-${state.theme}`}><KidsConfetti active={state.theme === 'kids' && question.result?.isCorrect === true} /><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">BATTLESHIP BREAK</span></header><section className="intro-card waiting-card matching-break-card"><p className="eyebrow">QUESTION {question.number}{!state.endless && <> OF {question.total}</>}</p><h1 data-confetti-origin={question.result?.isCorrect ? '' : undefined}>{question.result ? question.result.isCorrect ? 'Correct!' : 'Not quite.' : 'Time is up.'}</h1>{question.result && !question.result.isCorrect && <p className="matching-answer">The correct answer was <strong>{question.result.correctAnswer}</strong>.</p>}<div className="matching-credit-summary"><span>YOUR ATTACK TOKENS</span><strong>{state.battleship.tokens}</strong><small>{state.battleship.hits === state.battleship.shipCells ? 'The class sank the fleet!' : canPlay ? 'Ready to take a shot' : 'Answer more questions to earn an attack token'}</small></div><div className="matching-actions">{canPlay && <button className="matching-secondary-button" onClick={() => setPlayingBattleship(true)}>Attack the fleet</button>}<button className={`primary-button${question.result && !submitting ? ' advance-timer' : ''}`} disabled={submitting} onClick={() => void nextBattleshipQuestion()}>{question.result && !submitting && <AdvanceTimer />}{submitting ? 'Loading…' : !state.endless && question.number === question.total ? 'Finish test' : 'Next question'} <span aria-hidden="true">→</span></button></div>{error && <p className="form-error">{error}</p>}</section></main>;
+  }
+  if (state.betweenQuestions && state.treasureMap) {
+    const canPlay = (state.treasureMap.tokens ?? 0) > 0 && !state.treasureMap.complete;
+    const clueCount = state.treasureMap.cells.filter((cell) => cell.result === 'clue').length;
+    return <main className={`page quiz-page moderated-quiz-page theme-${state.theme}`}><KidsConfetti active={state.theme === 'kids' && question.result?.isCorrect === true} /><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">TREASURE MAP BREAK</span></header><section className="intro-card waiting-card matching-break-card"><p className="eyebrow">QUESTION {question.number}{!state.endless && <> OF {question.total}</>}</p><h1 data-confetti-origin={question.result?.isCorrect ? '' : undefined}>{question.result ? question.result.isCorrect ? 'Correct!' : 'Not quite.' : 'Time is up.'}</h1>{question.result && !question.result.isCorrect && <p className="matching-answer">The correct answer was <strong>{question.result.correctAnswer}</strong>.</p>}<div className="matching-credit-summary"><span>YOUR SCOUT TOKENS</span><strong>{state.treasureMap.tokens}</strong><small>{state.treasureMap.complete ? 'The class found the treasure!' : canPlay ? `${clueCount} clue${clueCount === 1 ? '' : 's'} uncovered — ready to scout` : 'Answer more questions to earn a scout token'}</small></div><div className="matching-actions">{canPlay && <button className="matching-secondary-button" onClick={() => setPlayingTreasureMap(true)}>Open the map</button>}<button className={`primary-button${question.result && !submitting ? ' advance-timer' : ''}`} disabled={submitting} onClick={() => void nextTreasureMapQuestion()}>{question.result && !submitting && <AdvanceTimer />}{submitting ? 'Loading…' : !state.endless && question.number === question.total ? 'Finish test' : 'Next question'} <span aria-hidden="true">→</span></button></div>{error && <p className="form-error">{error}</p>}</section></main>;
+  }
+  if (state.betweenQuestions && state.archery) {
+    const canPlay = (state.archery.arrows ?? 0) > 0;
+    return <main className={`page quiz-page moderated-quiz-page theme-${state.theme}`}><KidsConfetti active={state.theme === 'kids' && question.result?.isCorrect === true} /><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">ARCHERY BREAK</span></header><section className="intro-card waiting-card matching-break-card"><p className="eyebrow">QUESTION {question.number}{!state.endless && <> OF {question.total}</>}</p><h1 data-confetti-origin={question.result?.isCorrect ? '' : undefined}>{question.result ? question.result.isCorrect ? 'Correct!' : 'Not quite.' : 'Time is up.'}</h1>{question.result && !question.result.isCorrect && <p className="matching-answer">The correct answer was <strong>{question.result.correctAnswer}</strong>.</p>}<div className="matching-credit-summary"><span>YOUR ARROWS</span><strong>{state.archery.arrows}</strong><small>{canPlay ? 'Ready to aim for the bullseye' : 'Answer more questions to earn an arrow'}</small></div><div className="matching-actions">{canPlay && <button className="matching-secondary-button" onClick={() => setPlayingArchery(true)}>Take a shot</button>}<button className={`primary-button${question.result && !submitting ? ' advance-timer' : ''}`} disabled={submitting} onClick={() => void nextArcheryQuestion()}>{question.result && !submitting && <AdvanceTimer />}{submitting ? 'Loading…' : !state.endless && question.number === question.total ? 'Finish test' : 'Next question'} <span aria-hidden="true">→</span></button></div>{error && <p className="form-error">{error}</p>}</section></main>;
   }
   if (state.betweenQuestions) {
     const isFinalQuestion = !state.endless && question.number === question.total;
@@ -408,9 +479,11 @@ function Facilitator({ sessionId, token, projector = false }: { sessionId: strin
   async function start() { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/start`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not start the test'); } finally { setActing(false); } }
   async function next() { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/next`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not release the next round'); } finally { setActing(false); } }
   async function end() { if (!window.confirm('End this quiz for everyone? Students will no longer be able to answer or join.')) return; setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/end`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not end the quiz'); } finally { setActing(false); } }
-  async function restart(mode: 'classic' | 'facilitated' | 'matching' | 'battleship') { if (!window.confirm(`Launch a new ${mode} quiz for the current participants? Their scores will be cleared.`)) return; setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/restart`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token, mode }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not launch the new quiz'); } finally { setActing(false); } }
+  async function restart(mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery') { if (!window.confirm(`Launch a new ${mode} quiz for the current participants? Their scores will be cleared.`)) return; setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/restart`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token, mode }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not launch the new quiz'); } finally { setActing(false); } }
+  async function resetBoard() { if (!window.confirm('Start a fresh shared board? Board progress and player credits or tokens will be cleared.')) return; setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/board/reset`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not reset the shared board'); } finally { setActing(false); } }
+  async function updateBoardAutoReset(autoBoardReset: boolean) { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/board/auto-reset`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token, autoBoardReset }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not update automatic board reset'); } finally { setActing(false); } }
   async function updateLobbyLock(lobbyLocked: boolean) { setUpdatingLobby(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/lobby`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token, lobbyLocked }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not update the lobby'); } finally { setUpdatingLobby(false); } }
-  async function updatePresentationMode(presentationMode: 'scores' | 'matching' | 'battleship') { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/presentation`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token, presentationMode }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not update the projector display'); } finally { setActing(false); } }
+  async function updatePresentationMode(presentationMode: 'scores' | 'matching' | 'battleship' | 'treasure_map' | 'archery') { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/presentation`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token, presentationMode }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not update the projector display'); } finally { setActing(false); } }
   async function removeParticipant(participantId: string) { setRemovingParticipantId(participantId); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/participants/${participantId}/remove`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not remove this participant'); } finally { setRemovingParticipantId(null); } }
   if (!state) return <main className="page status-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div>{error ? <section className="error-card"><h1>Facilitator access unavailable.</h1><p>{error}</p></section> : <div className="loader" />}</main>;
   if (projector) {
@@ -443,6 +516,13 @@ function Facilitator({ sessionId, token, projector = false }: { sessionId: strin
     if (state.phase !== 'complete' && state.presentationMode === 'battleship' && state.battleship) {
       return <main className="projector-match-screen projector-battleship-screen" aria-live="polite"><section className="projector-match-content"><header><div className="projector-title"><p>SHARED BATTLE MAP</p><h1>Battleship</h1><span>{state.title}</span></div><div className="projector-match-score"><span>FLEET HIT</span><strong>{state.battleship.hits} / {state.battleship.shipCells}</strong></div></header><SharedBattleshipBoard battleship={state.battleship} projector /><p className="projector-match-tip">Students earn attack tokens by answering correctly, then choose a square to fire on the shared map.</p></section></main>;
     }
+    if (state.phase !== 'complete' && state.presentationMode === 'treasure_map' && state.treasureMap) {
+      const clues = state.treasureMap.cells.filter((cell) => cell.result === 'clue').length;
+      return <main className="projector-match-screen projector-treasure-map-screen" aria-live="polite"><section className="projector-match-content"><header><div className="projector-title"><p>SHARED TREASURE HUNT</p><h1>Treasure Map</h1><span>{state.title}</span></div><div className="projector-match-score"><span>CLUES FOUND</span><strong>{clues}</strong></div></header><SharedTreasureMap map={state.treasureMap} projector /><p className="projector-match-tip">Students earn scout tokens with correct answers, then uncover clues to find the treasure together.</p></section></main>;
+    }
+    if (state.phase !== 'complete' && state.presentationMode === 'archery' && state.archery) {
+      return <main className="projector-match-screen projector-archery-screen" aria-live="polite"><section className="projector-match-content"><header><div className="projector-title"><p>SHARED ARCHERY RANGE</p><h1>Archery</h1><span>{state.title}</span></div><div className="projector-match-score"><span>BEST BULLSEYE</span><strong>{state.archery.attempts[0]?.score ?? '—'}</strong></div></header><SharedArcheryBoard archery={state.archery} projector /><p className="projector-match-tip">Students place their shot using the bars beside and below the target.</p></section></main>;
+    }
     const complete = state.phase === 'complete';
     const scoring = state.scoringEnabled;
     const showingScores = complete ? scoring : scoring && projectorMetric === 'scores';
@@ -455,12 +535,12 @@ function Facilitator({ sessionId, token, projector = false }: { sessionId: strin
     const mostAnsweredPlayers = leaderboard.filter((player) => player.answered === mostAnswered && mostAnswered > 0);
     return <main className={`projector-scoreboard${complete ? ' projector-final-scoreboard' : ''}`} aria-live="polite"><section className="projector-scoreboard-content"><header><div className="projector-title"><p>{complete ? 'QUIZ OVER' : 'LIVE LEADERBOARD'}</p><h1>{complete ? 'High scores' : showingScores ? 'Scores' : 'Correct answers'}</h1><span>{state.title}</span></div>{!complete && <div className="projector-metric-toggle" aria-label="Leaderboard display"><button className={showingScores ? 'selected' : ''} disabled={!scoring} onClick={() => setProjectorMetric('scores')} title={scoring ? 'Show point scores' : 'Point scoring is not enabled for this session'}>Scores</button><button className={!showingScores ? 'selected' : ''} onClick={() => setProjectorMetric('correct')}>Correct</button></div>}</header>{leaderboard.length ? <div className="projector-leaderboard"><ol className="projector-podium">{leaderboard.slice(0, 3).map((player, index) => <li key={player.id} className={`podium-place podium-${index + 1}`}><span className="projector-rank">{index + 1}</span><strong title={player.name}>{player.name}</strong><em>{value(player)}<small>{unit}</small></em></li>)}</ol>{leaderboard.length > 3 && <ol className="projector-top-five">{leaderboard.slice(3, 5).map((player, index) => <li key={player.id}><span className="projector-rank">{index + 4}</span><strong title={player.name}>{player.name}</strong><em>{value(player)}<small>{unit}</small></em></li>)}</ol>}{complete && <section className="projector-honours" aria-label="Honourable mentions"><h2>Honourable mentions</h2><div>{longestStreakPlayers.length > 0 && <p><span>Longest streak{longestStreakPlayers.length > 1 ? 's' : ''}</span><strong>{longestStreakPlayers.map((player) => player.name).join(', ')}</strong><em>{longestStreak} in a row</em></p>}{mostAnsweredPlayers.length > 0 && <p><span>Most questions answered</span><strong>{mostAnsweredPlayers.map((player) => player.name).join(', ')}</strong><em>{mostAnswered} answered</em></p>}</div></section>}{leaderboard.length > 5 && <section className="projector-more"><h2>More players</h2><ol>{leaderboard.slice(5).map((player, index) => <li key={player.id}><span>{index + 6}</span><strong title={player.name}>{player.name}</strong><em>{value(player)}</em></li>)}</ol></section>}</div> : <p className="projector-empty">{complete ? 'No scores were recorded for this quiz.' : 'Scores will appear here as participants answer questions.'}</p>}</section></main>;
   }
-  return <LiveFacilitatorView state={state} sessionId={sessionId} token={token} acting={acting} updatingLobby={updatingLobby} removingParticipantId={removingParticipantId} error={error} onStart={start} onNext={next} onEnd={end} onRestart={restart} onLobbyLock={updateLobbyLock} onPresentationMode={updatePresentationMode} onRemoveParticipant={removeParticipant} />;
+  return <LiveFacilitatorView state={state} sessionId={sessionId} token={token} acting={acting} updatingLobby={updatingLobby} removingParticipantId={removingParticipantId} error={error} onStart={start} onNext={next} onEnd={end} onRestart={restart} onResetBoard={resetBoard} onBoardAutoReset={updateBoardAutoReset} onLobbyLock={updateLobbyLock} onPresentationMode={updatePresentationMode} onRemoveParticipant={removeParticipant} />;
 }
 
-function LiveFacilitatorView({ state, sessionId, token, acting, updatingLobby, removingParticipantId, error, onStart, onNext, onEnd, onRestart, onLobbyLock, onPresentationMode, onRemoveParticipant }: { state: FacilitatorState; sessionId: string; token: string; acting: boolean; updatingLobby: boolean; removingParticipantId: string | null; error: string; onStart: () => Promise<void>; onNext: () => Promise<void>; onEnd: () => Promise<void>; onRestart: (mode: 'classic' | 'facilitated' | 'matching' | 'battleship') => Promise<void>; onLobbyLock: (locked: boolean) => Promise<void>; onPresentationMode: (mode: 'scores' | 'matching' | 'battleship') => Promise<void>; onRemoveParticipant: (participantId: string) => Promise<void> }) {
+function LiveFacilitatorView({ state, sessionId, token, acting, updatingLobby, removingParticipantId, error, onStart, onNext, onEnd, onRestart, onResetBoard, onBoardAutoReset, onLobbyLock, onPresentationMode, onRemoveParticipant }: { state: FacilitatorState; sessionId: string; token: string; acting: boolean; updatingLobby: boolean; removingParticipantId: string | null; error: string; onStart: () => Promise<void>; onNext: () => Promise<void>; onEnd: () => Promise<void>; onRestart: (mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery') => Promise<void>; onResetBoard: () => Promise<void>; onBoardAutoReset: (autoReset: boolean) => Promise<void>; onLobbyLock: (locked: boolean) => Promise<void>; onPresentationMode: (mode: 'scores' | 'matching' | 'battleship' | 'treasure_map' | 'archery') => Promise<void>; onRemoveParticipant: (participantId: string) => Promise<void> }) {
   const [studentLinkCopied, setStudentLinkCopied] = useState(false);
-  const [restartMode, setRestartMode] = useState<'classic' | 'facilitated' | 'matching' | 'battleship'>(state.mode);
+  const [restartMode, setRestartMode] = useState<'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery'>(state.mode);
   const studentUrl = moderatedStudentUrl(state.pin);
   const scoreDisplayUrl = projectorUrl(sessionId, token);
   const activeParticipantCount = state.participants.filter((participant) => !participant.completed).length;
@@ -475,9 +555,15 @@ function LiveFacilitatorView({ state, sessionId, token, acting, updatingLobby, r
         <p className="lede">{state.phase === 'lobby' ? state.lobbyLocked ? 'The lobby is locked. Current participants can stay, but no one new can join.' : 'Participants can join now. Start when you are ready.' : state.phase === 'complete' ? 'The test has finished.' : state.mode === 'facilitated' ? `Round ${state.currentRound} of ${state.questionCount}. Release the next round when you are ready.` : 'Students move through questions and games at their own pace.'}</p>
         {state.phase === 'lobby' ? <button className="primary-button" disabled={acting} onClick={() => void onStart()}>{acting ? 'Starting…' : 'Start test'}</button> : <div className="score-so-far"><span>Completed</span><strong>{state.completedCount} / {state.participants.length}</strong><small>{state.endless ? 'Endless questions' : `${state.questionCount} quiz items per participant`}</small></div>}
         {state.mode === 'facilitated' && state.phase === 'question' && <button className="primary-button" disabled={acting} onClick={() => void onNext()}>{acting ? 'Releasing…' : state.currentRound >= state.questionCount ? 'Finish test' : 'Release next round'}</button>}
-        {(state.mode === 'matching' || state.mode === 'battleship') && <label className="projector-presentation-control"><span><strong>Projector display</strong><small>Choose what the class sees on the projector.</small></span><select value={state.presentationMode} disabled={acting} onChange={(event) => void onPresentationMode(event.target.value as 'scores' | 'matching' | 'battleship')}>{state.mode === 'matching' ? <option value="matching">Matching pairs grid</option> : <option value="battleship">Battleship map</option>}<option value="scores">High scores</option></select></label>}
+        {(state.mode === 'matching' || state.mode === 'battleship' || state.mode === 'treasure_map' || state.mode === 'archery') && <label className="projector-presentation-control"><span><strong>Projector display</strong><small>Choose what the class sees on the projector.</small></span><select value={state.presentationMode} disabled={acting} onChange={(event) => void onPresentationMode(event.target.value as 'scores' | 'matching' | 'battleship' | 'treasure_map' | 'archery')}>{state.mode === 'matching' ? <option value="matching">Matching pairs grid</option> : state.mode === 'battleship' ? <option value="battleship">Battleship map</option> : state.mode === 'treasure_map' ? <option value="treasure_map">Treasure map</option> : <option value="archery">Archery target</option>}<option value="scores">High scores</option></select></label>}
+        {(state.mode === 'matching' || state.mode === 'battleship' || state.mode === 'treasure_map') && (() => {
+          const boardComplete = state.mode === 'matching' ? state.matching?.complete : state.mode === 'battleship' ? state.battleship?.complete : state.treasureMap?.complete;
+          const boardName = state.mode === 'matching' ? 'matching board' : state.mode === 'battleship' ? 'Battleship board' : 'treasure map';
+          const completeMessage = state.mode === 'matching' ? 'All pairs found!' : state.mode === 'battleship' ? 'Fleet sunk!' : 'Treasure found!';
+          return <div className="shared-board-control"><label className="auto-advance-control"><span><strong>Start a new board automatically</strong><small>{state.autoBoardReset ? 'A fresh board starts four seconds after the fanfare.' : 'Keep the finished board up until you reset it.'}</small></span><input type="checkbox" role="switch" checked={state.autoBoardReset} disabled={acting || state.phase === 'complete'} onChange={(event) => void onBoardAutoReset(event.target.checked)} /><i aria-hidden="true" /></label>{boardComplete && <div className="shared-board-complete"><strong>{completeMessage}</strong><small>{state.autoBoardReset && state.boardResetAt ? 'Starting a fresh board now…' : `The ${boardName} is complete and ready to reset.`}</small>{!state.autoBoardReset && <button className="primary-button" disabled={acting || state.phase === 'complete'} onClick={() => void onResetBoard()}>Start new board</button>}</div>}</div>;
+        })()}
         {state.phase !== 'complete' && <div className="end-quiz-control"><button className="end-quiz-button" disabled={acting} onClick={() => void onEnd()}>End quiz</button><small>Stop the quiz for all participants.</small></div>}
-        {state.phase === 'complete' && <div className="restart-quiz-control"><label><span><strong>Launch another round</strong><small>Keep everyone in this session, but reset all scores and progress.</small></span><select value={restartMode} disabled={acting} onChange={(event) => setRestartMode(event.target.value as typeof restartMode)}><option value="classic">Classic</option><option value="facilitated">Facilitated</option><option value="matching">Matching</option><option value="battleship">Battleship</option></select></label><button className="primary-button" disabled={acting} onClick={() => void onRestart(restartMode)}>{acting ? 'Launching…' : 'Launch new quiz'}</button></div>}
+        {state.phase === 'complete' && <div className="restart-quiz-control"><label><span><strong>Launch another round</strong><small>Keep everyone in this session, but reset all scores and progress.</small></span><select value={restartMode} disabled={acting} onChange={(event) => setRestartMode(event.target.value as typeof restartMode)}><option value="classic">Classic</option><option value="facilitated">Facilitated</option><option value="matching">Matching</option><option value="battleship">Battleship</option><option value="treasure_map">Treasure Map</option><option value="archery">Archery</option></select></label><button className="primary-button" disabled={acting} onClick={() => void onRestart(restartMode)}>{acting ? 'Launching…' : 'Launch new quiz'}</button></div>}
         <label className="auto-advance-control lobby-lock-control"><span><strong>Lock the lobby</strong><small>{state.lobbyLocked ? 'New participants cannot join.' : 'Allow participants to join with the PIN.'}</small></span><input type="checkbox" role="switch" checked={state.lobbyLocked} disabled={updatingLobby || state.phase === 'complete'} onChange={(event) => void onLobbyLock(event.target.checked)} /><i aria-hidden="true" /></label>
         {error && <p className="form-error">{error}</p>}
       </div>
@@ -535,7 +621,7 @@ function HomeworkStudent({ sessionId }: { sessionId: string }) {
   const [playerFinished, setPlayerFinished] = useState(false);
   const [participantId, setParticipantId] = useState(() => localStorage.getItem(homeworkStorageKey(sessionId)) ?? '');
   const [state, setState] = useState<HomeworkStudentState | null>(null);
-  const [name, setName] = useState('');
+  const [name, setName] = useState(savedPlayerName);
   const [error, setError] = useState('');
   const [joining, setJoining] = useState(false);
   const load = useCallback(async () => {
@@ -548,6 +634,7 @@ function HomeworkStudent({ sessionId }: { sessionId: string }) {
     event.preventDefault(); setJoining(true);
     try {
       const result = await homeworkRequest<{ participantId: string }>(`/${sessionId}/participants`, { method: 'POST', body: JSON.stringify({ name }) });
+      rememberPlayerName(name);
       localStorage.setItem(homeworkStorageKey(sessionId), result.participantId);
       setParticipantId(result.participantId);
     } catch (err) { setError(err instanceof Error ? err.message : 'Could not begin homework'); }
@@ -672,6 +759,53 @@ function CoinCatchGame({ title, durationSeconds, onComplete }: { title: string; 
 
 const MATCH_PAIR_SYMBOLS = ['🍎', '🍌', '🍇', '🍓', '🍍', '🍉'];
 
+function playGameFanfare(kind: 'match' | 'hit' | 'complete', volume: number) {
+  if (volume === 0) return;
+  try {
+    const context = new AudioContext();
+    const notes = kind === 'match' ? [523, 659, 784, 1047] : kind === 'hit' ? [196, 294, 440, 659] : [392, 523, 659, 784, 1047, 1319];
+    const now = context.currentTime;
+    notes.forEach((frequency, index) => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      const start = now + (index * .09);
+      oscillator.type = kind === 'hit' ? 'square' : 'triangle';
+      oscillator.frequency.setValueAtTime(frequency, start);
+      gain.gain.setValueAtTime(.0001, start);
+      gain.gain.exponentialRampToValueAtTime(.07 * (volume / 100), start + .02);
+      gain.gain.exponentialRampToValueAtTime(.0001, start + .2);
+      oscillator.connect(gain).connect(context.destination);
+      oscillator.start(start);
+      oscillator.stop(start + .22);
+    });
+    window.setTimeout(() => void context.close(), 700);
+  } catch { /* Audio is optional and may be blocked by the browser. */ }
+}
+
+function GameFanfare({ eventId, kind, successName }: { eventId: string | null; kind: 'match' | 'hit' | 'complete'; successName?: string }) {
+  const { volume } = useAudioSettings();
+  const [activeEvent, setActiveEvent] = useState<string | null>(null);
+  const playedEvent = useRef<string | null>(null);
+  const expirationTimer = useRef<number | null>(null);
+  useEffect(() => {
+    if (!eventId || playedEvent.current === eventId) return;
+    playedEvent.current = eventId;
+    if (expirationTimer.current !== null) window.clearTimeout(expirationTimer.current);
+    setActiveEvent(eventId);
+    playGameFanfare(kind, volume);
+    expirationTimer.current = window.setTimeout(() => setActiveEvent((current) => current === eventId ? null : current), kind === 'complete' ? 2900 : 1600);
+  }, [eventId, kind]);
+  useEffect(() => () => { if (expirationTimer.current !== null) window.clearTimeout(expirationTimer.current); }, []);
+  if (!activeEvent) return null;
+  const copy = kind === 'match' ? 'MATCH!' : kind === 'hit' ? 'DIRECT HIT!' : 'BOARD CLEARED!';
+  const subcopy = successName ? `${successName} made it happen!` : kind === 'match' ? 'A pair for the team!' : kind === 'hit' ? 'The fleet takes a hit!' : 'The whole class did it!';
+  return <div className={`game-fanfare game-fanfare-${kind}`} role="status">
+    <div className="game-fanfare-rays" aria-hidden="true" />
+    <div className="game-fanfare-burst" aria-hidden="true">{Array.from({ length: kind === 'complete' ? 44 : 20 }, (_, index) => <i key={index} style={{ '--fanfare-angle': `${index * (kind === 'complete' ? 360 / 44 : 18)}deg`, '--fanfare-distance': `${80 + (index % 5) * (kind === 'complete' ? 34 : 18)}px` } as CSSProperties} />)}</div>
+    <div className="game-fanfare-copy"><strong>{copy}</strong><span>{subcopy}</span></div>
+  </div>;
+}
+
 function SharedMatchBoard({ matching, onFlip, projector = false, disabled = false }: { matching: MatchingState; onFlip?: (id: number) => void; projector?: boolean; disabled?: boolean }) {
   const [shownAttemptId, setShownAttemptId] = useState<string | null>(null);
   const [showSecond, setShowSecond] = useState(false);
@@ -698,19 +832,96 @@ function SharedMatchBoard({ matching, onFlip, projector = false, disabled = fals
     if (attempt.isActor || showSecond) revealed.set(attempt.cards[1].id, attempt.cards[1].symbol);
   }
   const denseBoard = matching.rows > 4;
+  const matchFanfareId = matching.completionId ?? (matching.attempt?.isMatch ? matching.attempt.id : null);
   return <div className={`shared-match-board${projector ? ' projector-match-board' : ''}${denseBoard ? ' dense-match-board' : ''}`} style={{ gridTemplateColumns: `repeat(${matching.columns}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${matching.rows}, minmax(0, 1fr))` }} aria-label={projector ? 'Shared Match Pairs board' : 'Shared Match Pairs game area'}>
     {matching.cards.map((card, id) => {
       const symbol = revealed.get(id) ?? null;
-      const canFlip = !projector && !disabled && !matching.attempt && !card.matched && matching.selectedCard?.id !== id && ((matching.credits ?? 0) > 0 || matching.selectedCard !== null);
+      const canFlip = !projector && !disabled && !matching.complete && !matching.attempt && !card.matched && matching.selectedCard?.id !== id && ((matching.credits ?? 0) > 0 || matching.selectedCard !== null);
       const className = `shared-match-card${symbol !== null ? ' flipped' : ''}${card.matched ? ' matched' : ''}`;
       const label = symbol === null ? `Face-down card ${id + 1}` : `Card ${id + 1}: ${symbol}${card.matched ? ', matched' : ''}`;
       return projector ? <div key={id} className={className} aria-label={label}>{symbol !== null ? <span>{symbol}</span> : <b>?</b>}</div> : <button key={id} className={className} onClick={() => onFlip?.(id)} disabled={!canFlip} aria-label={label}>{symbol !== null ? <span>{symbol}</span> : <b>?</b>}</button>;
     })}
+    <GameFanfare eventId={matchFanfareId} kind={matching.complete ? 'complete' : 'match'} successName={projector ? matching.attempt?.playerName : undefined} />
   </div>;
+}
+
+function ArcheryAim({ archery, disabled, hideControls = false, onShoot }: { archery: ArcheryState; disabled: boolean; hideControls?: boolean; onShoot: (x: number, y: number) => void }) {
+  const [axis, setAxis] = useState<'x' | 'y'>('x');
+  const [position, setPosition] = useState(0);
+  const [x, setX] = useState<number | null>(null);
+  const startedAt = useRef(performance.now());
+  useEffect(() => {
+    if (disabled) return;
+    startedAt.current = performance.now();
+    let frame = 0;
+    const tick = (now: number) => {
+      const phase = (now - startedAt.current) / 430;
+      // The added harmonic increases speed through the centre while keeping a gentle stop-and-turn at either edge.
+      const position = (Math.sin(phase) + (.07 * Math.sin(phase * 3))) / .93;
+      setPosition(Math.round(position * 96));
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [axis, disabled]);
+  function lockAim() {
+    if (disabled) return;
+    if (axis === 'x') { setX(position); setAxis('y'); return; }
+    onShoot(x ?? 0, position);
+    setX(null); setAxis('x');
+  }
+  return <SharedArcheryBoard archery={archery} aim={{ axis, position, x, disabled, hideControls, onLock: lockAim }} />;
+}
+
+function SharedArcheryBoard({ archery, projector = false, compact = false, aim }: { archery: ArcheryState; projector?: boolean; compact?: boolean; aim?: { axis: 'x' | 'y'; position: number; x: number | null; disabled: boolean; hideControls?: boolean; onLock: () => void } }) {
+  const seenAttempts = useRef<Set<string> | null>(null);
+  const seenLastShot = useRef<ArcheryState['lastShot'] | undefined>(undefined);
+  const [newestId, setNewestId] = useState<string | null>(null);
+  const [newestLastShotId, setNewestLastShotId] = useState<string | null>(null);
+  const [priorShots, setPriorShots] = useState<NonNullable<ArcheryState['lastShot']>[]>([]);
+  useEffect(() => {
+    const attempts = new Set(archery.attempts.map((attempt) => attempt.id));
+    if (seenAttempts.current) { const newest = archery.attempts.find((attempt) => !seenAttempts.current?.has(attempt.id)); if (newest) setNewestId(newest.id); }
+    seenAttempts.current = attempts;
+  }, [archery.attempts]);
+  useLayoutEffect(() => {
+    const previousShot = seenLastShot.current;
+    const nextShot = archery.lastShot;
+    if (previousShot !== undefined && nextShot?.id && nextShot.id !== previousShot?.id) {
+      setNewestLastShotId(nextShot.id);
+      if (previousShot) setPriorShots((shots) => shots.some((shot) => shot.id === previousShot.id) ? shots : [...shots, previousShot]);
+    }
+    seenLastShot.current = nextShot;
+  }, [archery.lastShot]);
+  const attemptedIds = new Set(archery.attempts.map((attempt) => attempt.id));
+  const playerOnlyShots = projector ? [] : [...priorShots.filter((shot) => !attemptedIds.has(shot.id)), ...(archery.lastShot && !attemptedIds.has(archery.lastShot.id) && !priorShots.some((shot) => shot.id === archery.lastShot?.id) ? [archery.lastShot] : [])];
+  const visibleArrows = [...archery.attempts, ...playerOnlyShots];
+  const arrowColors = ['#e85337', '#4f72d9', '#7a48b7', '#16846f', '#d48a1d', '#c64075'];
+  const arrowColor = (id: string) => arrowColors[[...id].reduce((total, character) => total + character.charCodeAt(0), 0) % arrowColors.length];
+  const target = <div className="archery-target"><div className="target-ring ring-outer" /><div className="target-ring ring-blue" /><div className="target-ring ring-red" /><div className="target-ring ring-gold" /><div className="target-ring ring-bull" />{visibleArrows.map((attempt) => <span key={attempt.id} className={`target-arrow${projector ? ' shared-target-mark' : ' player-target-arrow'}${attempt.id === newestId || attempt.id === newestLastShotId ? ' landing' : ''}${attempt.id === archery.lastShot?.id && !archery.attempts.some((shared) => shared.id === attempt.id) ? ' personal-arrow' : ''}`} style={{ left: `${50 + (attempt.x * .42)}%`, top: `${50 + (attempt.y * .42)}%`, '--arrow-color': arrowColor(attempt.id) } as CSSProperties} title={attempt.participantName ? `${attempt.participantName}: ${attempt.score}` : `${attempt.score} points`}>{projector ? '×' : <i />}</span>)}</div>;
+  if (aim) {
+    const xPosition = aim.axis === 'x' ? aim.position : aim.x ?? 0;
+    const yPosition = aim.axis === 'y' ? aim.position : 0;
+    return <div className={`shared-archery player-archery-board aiming-${aim.axis}`} aria-label="Click the target to lock your aim"><button type="button" className="archery-lock-target" disabled={aim.disabled} onClick={aim.onLock} aria-label={aim.axis === 'x' ? 'Lock horizontal aim' : 'Lock vertical aim and fire'}>{target}</button><div className={`archery-y-control${aim.hideControls ? ' archery-control-placeholder' : ''}`} aria-hidden="true"><i className="aim-center" /><b className="aim-marker" style={{ top: `${(yPosition + 100) / 2}%` }} /></div><div className={`archery-x-control${aim.hideControls ? ' archery-control-placeholder' : ''}`} aria-hidden="true"><i className="aim-center" /><b className="aim-marker" style={{ left: `${(xPosition + 100) / 2}%` }} /></div></div>;
+  }
+  return <div className={`shared-archery${projector ? ' projector-archery' : ''}${compact ? ' compact-archery-board' : ''}`} role="img" aria-label="Shared archery target showing the class best attempts">{target}<div className="archery-score-list">{archery.attempts.length ? archery.attempts.slice(0, compact ? 3 : 4).map((attempt, index) => <span key={attempt.id} style={{ '--arrow-color': arrowColor(attempt.id) } as CSSProperties}><b>{index + 1}</b>{attempt.participantName ? `${attempt.participantName} · ` : ''}{attempt.score}</span>) : <small>No attempts yet.</small>}</div></div>;
 }
 
 function SharedBattleshipBoard({ battleship, onAttack, projector = false, disabled = false }: { battleship: BattleshipState; onAttack?: (cell: number) => void; projector?: boolean; disabled?: boolean }) {
   const labels = 'ABCDEFGHIJ';
+  const seenHitCells = useRef<Set<number> | null>(null);
+  const [hitFanfare, setHitFanfare] = useState<{ id: string; successName?: string } | null>(null);
+  useEffect(() => {
+    const hitCells = new Set(battleship.cells.flatMap((cell, index) => cell.result === 'hit' ? [index] : []));
+    if (seenHitCells.current) {
+      const newHits = [...hitCells].filter((cell) => !seenHitCells.current?.has(cell));
+      if (newHits.length) {
+        const latestCell = newHits[newHits.length - 1];
+        setHitFanfare({ id: `${battleship.hits}-${newHits.join('-')}`, successName: projector && battleship.lastHit?.cell === latestCell ? battleship.lastHit.participantName : undefined });
+      }
+    }
+    seenHitCells.current = hitCells;
+  }, [battleship.cells, battleship.hits]);
   return <div className={`shared-battleship${projector ? ' projector-battleship' : ''}`} role="grid" aria-label={projector ? 'Shared Battleship map' : 'Battleship attack map'} style={{ gridTemplateColumns: `26px repeat(${battleship.size}, minmax(0, 1fr))` }}>
     <span className="battleship-corner" />
     {Array.from({ length: battleship.size }, (_, column) => <span className="battleship-label battleship-column-label" key={`column-${column}`}>{labels[column]}</span>)}
@@ -719,8 +930,44 @@ function SharedBattleshipBoard({ battleship, onAttack, projector = false, disabl
       const result = battleship.cells[cell]?.result;
       const label = `${labels[column]}${row + 1}${result ? `, ${result}` : ', unmarked'}`;
       const className = `battleship-cell${result ? ` ${result}` : ''}`;
-      return projector ? <span className={className} key={cell} aria-label={label}>{result === 'hit' ? '✦' : result === 'miss' ? '•' : ''}</span> : <button className={className} key={cell} aria-label={label} disabled={disabled || result !== null || (battleship.tokens ?? 0) < 1} onClick={() => onAttack?.(cell)}>{result === 'hit' ? '✦' : result === 'miss' ? '•' : ''}</button>;
+      return projector ? <span className={className} key={cell} aria-label={label}>{result === 'hit' ? '✦' : result === 'miss' ? '•' : ''}</span> : <button className={className} key={cell} aria-label={label} disabled={disabled || battleship.complete || result !== null || (battleship.tokens ?? 0) < 1} onClick={() => onAttack?.(cell)}>{result === 'hit' ? '✦' : result === 'miss' ? '•' : ''}</button>;
     })}</div>)}
+    <GameFanfare eventId={battleship.completionId ?? hitFanfare?.id ?? null} kind={battleship.complete ? 'complete' : 'hit'} successName={hitFanfare?.successName} />
+  </div>;
+}
+
+function SharedTreasureMap({ map, onDig, projector = false, disabled = false }: { map: TreasureMapState; onDig?: (cell: number) => void; projector?: boolean; disabled?: boolean }) {
+  const labels = 'ABCDEFGHIJKLMN';
+  const clues = map.cells.flatMap((cell, index) => cell.result === 'clue' && cell.hint ? [{ coordinate: `${labels[index % map.size]}${Math.floor(index / map.size) + 1}`, hint: cell.hint }] : []);
+  const visibleClues = clues.slice(projector ? -3 : -2);
+  const clueMarker = (hint: string | null) => {
+    const match = hint?.match(/The treasure is ([\w-]+)\.$/);
+    if (match) {
+      const arrows: Record<string, string> = { north: '↑', south: '↓', east: '→', west: '←', 'north-east': '↗', 'north-west': '↖', 'south-east': '↘', 'south-west': '↙' };
+      return arrows[match[1]] ?? '•';
+    }
+    if (hint?.includes('torn map')) return 'MAP';
+    if (hint?.includes('landmark')) return 'LAND';
+    if (hint?.includes('warmer')) return 'WARM';
+    if (hint?.includes('colder')) return 'COLD';
+    if (hint?.includes('just as warm')) return 'SAME';
+    if (hint?.includes('odd-numbered')) return 'ODD';
+    if (hint?.includes('even-numbered')) return 'EVEN';
+    return 'CLUE';
+  };
+  return <div className={`shared-treasure-map${projector ? ' projector-treasure-map' : ''}${map.size > 7 ? ' dense-treasure-map' : ''}`} role="grid" aria-label={projector ? 'Shared Treasure Map' : 'Treasure Map'} style={{ gridTemplateColumns: `26px repeat(${map.size}, minmax(0, 1fr))`, gridTemplateRows: `26px repeat(${map.size}, minmax(0, 1fr)) auto` }}>
+    <span className="treasure-map-corner" />
+    {Array.from({ length: map.size }, (_, column) => <span className="treasure-map-label treasure-map-column-label" key={`column-${column}`}>{labels[column]}</span>)}
+    {Array.from({ length: map.size }, (_, row) => <div className="treasure-map-row" key={row}><span className="treasure-map-label">{row + 1}</span>{Array.from({ length: map.size }, (_, column) => {
+      const cell = row * map.size + column;
+      const discovery = map.cells[cell];
+      const label = `${labels[column]}${row + 1}${discovery?.terrain === 'stream' ? ', stream, cannot be explored' : discovery?.result === 'treasure' ? ', treasure found' : discovery?.hint ? `, ${discovery.hint}` : ', unexplored'}`;
+      const className = `treasure-map-cell ${discovery?.terrain ?? 'land'}${discovery?.result ? ` ${discovery.result}` : ''}`;
+      const contents = discovery?.terrain === 'stream' ? '≈' : discovery?.result === 'treasure' ? '💎' : discovery?.result === 'clue' ? <small>{clueMarker(discovery.hint)}</small> : '';
+      return projector ? <span className={className} key={cell} aria-label={label} title={discovery?.hint ?? undefined}>{contents}</span> : <button className={className} key={cell} aria-label={label} title={discovery?.hint ?? undefined} disabled={disabled || map.complete || discovery?.terrain === 'stream' || Boolean(discovery?.result) || (map.tokens ?? 0) < 1} onClick={() => onDig?.(cell)}>{contents}</button>;
+    })}</div>)}
+    {visibleClues.length > 0 && <div className="treasure-map-hints" role="status" aria-label="Latest treasure clues">{visibleClues.map((clue) => <p key={clue.coordinate}><b>{clue.coordinate}</b><span>{clue.hint}</span></p>)}</div>}
+    <GameFanfare eventId={map.completionId} kind="complete" successName={projector ? map.lastDig?.participantName : undefined} />
   </div>;
 }
 
@@ -778,14 +1025,15 @@ function MatchPairsGame({ title, durationSeconds, onComplete }: { title: string;
 
 type TowerBlock = { id: number; x: number; width: number };
 
-function playTowerTone(kind: 'stack' | 'perfect' | 'miss') {
+function playTowerTone(kind: 'stack' | 'perfect' | 'miss', volume: number) {
+  if (volume === 0) return;
   try {
     const context = new AudioContext();
     const oscillator = context.createOscillator();
     const gain = context.createGain();
     oscillator.frequency.value = kind === 'perfect' ? 760 : kind === 'stack' ? 490 : 150;
     oscillator.type = kind === 'miss' ? 'sawtooth' : 'sine';
-    gain.gain.setValueAtTime(.06, context.currentTime);
+    gain.gain.setValueAtTime(.06 * (volume / 100), context.currentTime);
     gain.gain.exponentialRampToValueAtTime(.001, context.currentTime + .16);
     oscillator.connect(gain).connect(context.destination);
     oscillator.start(); oscillator.stop(context.currentTime + .16);
@@ -793,6 +1041,7 @@ function playTowerTone(kind: 'stack' | 'perfect' | 'miss') {
 }
 
 function TowerStackGame({ title, durationSeconds, onComplete }: { title: string; durationSeconds: number; onComplete: () => void }) {
+  const { volume } = useAudioSettings();
   const [tower, setTower] = useState<TowerBlock[]>([{ id: 0, x: 26, width: 48 }]);
   const [movingX, setMovingX] = useState(0);
   const [score, setScore] = useState(0);
@@ -840,12 +1089,12 @@ function TowerStackGame({ title, durationSeconds, onComplete }: { title: string;
     const overlapStart = Math.max(base.x, movingX);
     const overlapEnd = Math.min(base.x + base.width, movingX + base.width);
     const overlapWidth = overlapEnd - overlapStart;
-    if (overlapWidth <= .8) { playTowerTone('miss'); setMissed(true); setFinished(true); return; }
+    if (overlapWidth <= .8) { playTowerTone('miss', volume); setMissed(true); setFinished(true); return; }
     const perfect = Math.abs(movingX - base.x) <= 1;
     const nextCombo = perfect ? combo + 1 : 0;
     const nextBlock = { id: tower.length, x: perfect ? base.x : overlapStart, width: perfect ? base.width : overlapWidth };
     const points = 10 + tower.length + (perfect ? 25 + Math.max(0, nextCombo - 1) * 5 : 0);
-    playTowerTone(perfect ? 'perfect' : 'stack');
+    playTowerTone(perfect ? 'perfect' : 'stack', volume);
     setTower((current) => [...current, nextBlock]);
     setScore((current) => current + points);
     setCombo(nextCombo);
@@ -996,7 +1245,7 @@ function Player({ quiz, onSubmitAnswer, onCompleteItem, onFinished, allowRestart
   </main>;
 }
 
-export default function App() {
+function AppContent() {
   const [path, setPath] = useState(window.location.pathname);
   const [guid, setGuid] = useState(guidFromLocation());
   const [quiz, setQuiz] = useState<Quiz | null>(null);
@@ -1023,8 +1272,8 @@ export default function App() {
   const homeworkSessionId = homeworkFromLocation();
   const homeworkTeacherId = homeworkTeacherFromLocation();
   const facilitatorToken = new URLSearchParams(window.location.search).get('token') ?? '';
-  if (moderatedPin) return <ModeratedStudent key={moderatedPin} pin={moderatedPin} />;
-  if (homeworkSessionId) return <HomeworkStudent key={homeworkSessionId} sessionId={homeworkSessionId} />;
+  if (moderatedPin) return <><VolumeControl /><ModeratedStudent key={moderatedPin} pin={moderatedPin} /></>;
+  if (homeworkSessionId) return <><VolumeControl /><HomeworkStudent key={homeworkSessionId} sessionId={homeworkSessionId} /></>;
   if (homeworkTeacherId) return <HomeworkTeacher key={`${homeworkTeacherId}-${facilitatorToken}`} sessionId={homeworkTeacherId} token={facilitatorToken} />;
   if (projectorId) return <Facilitator key={`projector-${projectorId}-${facilitatorToken}`} sessionId={projectorId} token={facilitatorToken} projector />;
   if (facilitatorId) return <Facilitator key={`${facilitatorId}-${facilitatorToken}`} sessionId={facilitatorId} token={facilitatorToken} />;
@@ -1032,5 +1281,9 @@ export default function App() {
   if (!guid) return <ModeratedPinEntry />;
   if (loading) return <main className="page status-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><div className="loader" aria-label="Loading quiz" /><p>Loading your quiz…</p></main>;
   if (error || !quiz) return <main className="page status-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><section className="error-card"><p className="eyebrow">QUIZ UNAVAILABLE</p><h1>We couldn’t open that quiz.</h1><p>{error || 'Try pasting the quiz ID again.'}</p><QuizCodeForm initialCode={guid} onSubmit={goToQuiz} /><button className="text-button" onClick={() => goToQuiz('')}>Use another quiz</button></section></main>;
-  return <div className={`student-app theme-${quiz.theme}`}><Player key={quiz.guid} quiz={quiz} /></div>;
+  return <><VolumeControl /><div className={`student-app theme-${quiz.theme}`}><Player key={quiz.guid} quiz={quiz} /></div></>;
+}
+
+export default function App() {
+  return <AudioSettingsProvider><AppContent /></AudioSettingsProvider>;
 }

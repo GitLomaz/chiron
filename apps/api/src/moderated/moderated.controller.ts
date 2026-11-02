@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, ParseIntPipe, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { AdvanceModeratedQuestionDto, BattleshipAttackDto, BattleshipNextDto, CreateModeratedSessionDto, FacilitatorActionDto, FlipMatchingCardDto, JoinModeratedSessionDto, MatchingNextDto, ReportModeratedGameScoreDto, RestartModeratedSessionDto, SubmitModeratedAnswerDto, UpdateLobbyLockDto, UpdatePresentationModeDto } from './dto/moderated-session.dto';
+import { AdvanceModeratedQuestionDto, ArcheryNextDto, ArcheryShotDto, BattleshipAttackDto, BattleshipNextDto, CreateModeratedSessionDto, FacilitatorActionDto, FlipMatchingCardDto, JoinModeratedSessionDto, MatchingNextDto, ReportModeratedGameScoreDto, RestartModeratedSessionDto, SubmitModeratedAnswerDto, TreasureMapDigDto, TreasureMapNextDto, UpdateBoardAutoResetDto, UpdateLobbyLockDto, UpdatePresentationModeDto } from './dto/moderated-session.dto';
 import { ModeratedService } from './moderated.service';
 
 @Controller('moderated-sessions')
@@ -55,6 +55,26 @@ export class ModeratedController {
     return this.moderatedService.nextBattleshipQuestion(pin, body.participantId);
   }
 
+  @Post('pin/:pin/archery/shoot')
+  shootArchery(@Param('pin') pin: string, @Body() body: ArcheryShotDto) {
+    return this.moderatedService.shootArchery(pin, body.participantId, body.x, body.y);
+  }
+
+  @Post('pin/:pin/archery/next')
+  nextArcheryQuestion(@Param('pin') pin: string, @Body() body: ArcheryNextDto) {
+    return this.moderatedService.nextArcheryQuestion(pin, body.participantId);
+  }
+
+  @Post('pin/:pin/treasure-map/dig')
+  digTreasureMap(@Param('pin') pin: string, @Body() body: TreasureMapDigDto) {
+    return this.moderatedService.digTreasureMap(pin, body.participantId, body.cell);
+  }
+
+  @Post('pin/:pin/treasure-map/next')
+  nextTreasureMapQuestion(@Param('pin') pin: string, @Body() body: TreasureMapNextDto) {
+    return this.moderatedService.nextTreasureMapQuestion(pin, body.participantId);
+  }
+
   @Post('pin/:pin/next')
   nextQuestion(@Param('pin') pin: string, @Body() body: AdvanceModeratedQuestionDto) {
     return this.moderatedService.nextQuestion(pin, body.participantId);
@@ -93,6 +113,16 @@ export class ModeratedController {
   @Post(':sessionId/restart')
   restart(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: RestartModeratedSessionDto) {
     return this.moderatedService.restart(sessionId, body.facilitatorToken, body.mode);
+  }
+
+  @Post(':sessionId/board/reset')
+  resetBoard(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: FacilitatorActionDto) {
+    return this.moderatedService.resetBoard(sessionId, body.facilitatorToken);
+  }
+
+  @Post(':sessionId/board/auto-reset')
+  updateBoardAutoReset(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: UpdateBoardAutoResetDto) {
+    return this.moderatedService.updateBoardAutoReset(sessionId, body.facilitatorToken, body.autoBoardReset);
   }
 
   @Post(':sessionId/next')

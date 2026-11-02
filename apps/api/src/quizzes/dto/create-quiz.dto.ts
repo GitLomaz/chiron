@@ -6,6 +6,7 @@ export type QuizTheme = typeof QUIZ_THEMES[number];
 export const TIMER_SECONDS = [-1, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180] as const;
 // These map to 2×2, 4×2, 4×3, 4×4, 6×6, 8×8, and 10×10 boards.
 export const MATCHING_PAIR_COUNTS = [2, 4, 6, 8, 18, 32, 50] as const;
+export const BATTLESHIP_BOARD_SIZES = [6, 8, 10] as const;
 
 export class CreateQuizDto {
   @IsString()
@@ -35,4 +36,9 @@ export class CreateQuizDto {
   @IsInt()
   @IsIn(MATCHING_PAIR_COUNTS)
   matchingPairCount?: number;
+
+  @IsOptional()
+  @IsInt()
+  @IsIn(BATTLESHIP_BOARD_SIZES)
+  battleshipBoardSize?: number;
 }

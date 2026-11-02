@@ -33,7 +33,7 @@ export class QuizzesService {
     return quiz;
   }
 
-  create({ title, description, randomizeQuestionOrder, theme, defaultTimerSeconds, matchingPairCount }: CreateQuizDto) {
+  create({ title, description, randomizeQuestionOrder, theme, defaultTimerSeconds, matchingPairCount, battleshipBoardSize }: CreateQuizDto) {
     if (!title.trim()) {
       throw new BadRequestException('title cannot be blank');
     }
@@ -46,15 +46,16 @@ export class QuizzesService {
         theme: theme ?? 'standard',
         defaultTimerSeconds: defaultTimerSeconds ?? -1,
         matchingPairCount: matchingPairCount ?? 6,
+        battleshipBoardSize: battleshipBoardSize ?? 10,
       },
     });
   }
 
-  async update(id: number, { randomizeQuestionOrder, theme, defaultTimerSeconds, matchingPairCount }: UpdateQuizDto) {
+  async update(id: number, { randomizeQuestionOrder, theme, defaultTimerSeconds, matchingPairCount, battleshipBoardSize }: UpdateQuizDto) {
     await this.findOne(id);
     return this.prisma.quiz.update({
       where: { id },
-      data: { randomizeQuestionOrder, theme, defaultTimerSeconds, matchingPairCount },
+      data: { randomizeQuestionOrder, theme, defaultTimerSeconds, matchingPairCount, battleshipBoardSize },
     });
   }
 
