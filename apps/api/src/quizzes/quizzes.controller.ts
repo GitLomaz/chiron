@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Put } from '@nestjs/common';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { CreateQuizDto } from './dto/create-quiz.dto';
 import { UpdateQuizDto } from './dto/update-quiz.dto';
@@ -6,6 +6,7 @@ import { CreateAnswerPoolDto } from './dto/create-answer-pool.dto';
 import { ReorderQuestionsDto } from './dto/reorder-questions.dto';
 import { UpdateQuestionEnabledDto } from './dto/update-question-enabled.dto';
 import { CreateGameDto } from './dto/create-game.dto';
+import { CreateTextDto } from './dto/create-text.dto';
 import { QuizzesService } from './quizzes.service';
 
 @Controller('quizzes')
@@ -87,6 +88,16 @@ export class QuizzesController {
     return this.quizzesService.updateGame(id, gameId, game);
   }
 
+  @Post(':id/texts')
+  addText(@Param('id', ParseIntPipe) id: number, @Body() text: CreateTextDto) {
+    return this.quizzesService.addText(id, text);
+  }
+
+  @Put(':id/texts/:textId')
+  updateText(@Param('id', ParseIntPipe) id: number, @Param('textId', ParseIntPipe) textId: number, @Body() text: CreateTextDto) {
+    return this.quizzesService.updateText(id, textId, text);
+  }
+
   @Put(':id/questions/order')
   reorderQuestions(
     @Param('id', ParseIntPipe) id: number,
@@ -111,6 +122,11 @@ export class QuizzesController {
     @Body() { isEnabled }: UpdateQuestionEnabledDto,
   ) {
     return this.quizzesService.updateQuestionEnabled(id, questionId, isEnabled);
+  }
+
+  @Delete(':id/items/:itemId')
+  deleteItem(@Param('id', ParseIntPipe) id: number, @Param('itemId', ParseIntPipe) itemId: number) {
+    return this.quizzesService.deleteItem(id, itemId);
   }
 
   @Post(':id/questions/common/:commonQuestionId')

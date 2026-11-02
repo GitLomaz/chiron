@@ -1,5 +1,5 @@
 import { IsBoolean, IsIn, IsInt, IsOptional } from 'class-validator';
-import { BATTLESHIP_BOARD_SIZES, MATCHING_PAIR_COUNTS, QUIZ_THEMES, QuizTheme, TIMER_SECONDS } from './create-quiz.dto';
+import { BATTLESHIP_BOARD_SIZES, CREDIT_EARNING_INTERVALS, MATCHING_PAIR_COUNTS, QUIZ_THEMES, QuizTheme, TIMER_SECONDS } from './create-quiz.dto';
 
 export class UpdateQuizDto {
   @IsOptional()
@@ -24,4 +24,9 @@ export class UpdateQuizDto {
   @IsInt()
   @IsIn(BATTLESHIP_BOARD_SIZES)
   battleshipBoardSize?: number;
+
+  @IsOptional()
+  @IsInt()
+  @IsIn(CREDIT_EARNING_INTERVALS)
+  creditEveryCorrectAnswers?: number;
 }

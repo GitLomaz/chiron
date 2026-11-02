@@ -1,13 +1,14 @@
 import { SpecialQuestionForm } from './SpecialQuestionForm';
 import { DataSetsPage, ImportPage } from './DataSets';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ConfirmDialog, ConfirmDialogHost } from './ConfirmDialog';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 type QuizTheme = 'standard' | 'kids' | 'christmas' | 'halloween';
 const themeLabels: Record<QuizTheme, string> = { standard: 'Standard', kids: 'Kid-friendly', christmas: 'Christmas', halloween: 'Halloween' };
-type Quiz = { id: number; guid: string; title: string; description: string | null; randomizeQuestionOrder: boolean; theme: QuizTheme; defaultTimerSeconds: number; matchingPairCount: number; battleshipBoardSize: number; _count?: { questions: number } };
-type QuizItemType = 'question' | 'game';
+type Quiz = { id: number; guid: string; title: string; description: string | null; randomizeQuestionOrder: boolean; theme: QuizTheme; defaultTimerSeconds: number; matchingPairCount: number; battleshipBoardSize: number; creditEveryCorrectAnswers: number; _count?: { questions: number } };
+type QuizItemType = 'question' | 'game' | 'text';
 type GameType = 'coin_catch' | 'match_pairs' | 'tower_stack';
 type SpecialOptions = { kind: 'true_false'; statement: string } | { kind: 'matching'; pairs: { question: string; answer: string }[] };
 type Question = { id: number; text: string; options: string[] | SpecialOptions; correctAnswer: string; isEnabled: boolean; itemType: QuizItemType; gameType?: GameType | null; gameDurationSeconds?: number | null; answerPoolId?: number | null; answerCount?: number | null; timerSeconds: number | null; answerPool?: { name: string } | null };
@@ -24,6 +25,7 @@ const TIMER_SECONDS = [-1, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180]
 const GAME_DURATION_SECONDS = [10, 15, 20, 30, 45, 60, 90, 120] as const;
 const MATCHING_BOARD_SIZES = [{ pairs: 2, label: '2 × 2 · 2 pairs' }, { pairs: 4, label: '4 × 2 · 4 pairs' }, { pairs: 6, label: '4 × 3 · 6 pairs' }, { pairs: 8, label: '4 × 4 · 8 pairs' }, { pairs: 18, label: '6 × 6 · 18 pairs' }, { pairs: 32, label: '8 × 8 · 32 pairs' }, { pairs: 50, label: '10 × 10 · 50 pairs' }] as const;
 const BATTLESHIP_BOARD_SIZES = [{ size: 6, boats: 3 }, { size: 8, boats: 4 }, { size: 10, boats: 5 }] as const;
+const CREDIT_EARNING_INTERVALS = [1, 2, 3] as const;
 function timerSettingLabel(seconds: number | null) {
   if (seconds === null) return 'Use quiz default';
   if (seconds === -1) return 'Unlimited';
@@ -45,7 +47,9 @@ function useRoute() { const [path, setPath] = useState(window.location.pathname)
 
 function AdminShell({ path, go, children }: { path: string; go: (value: string) => void; children: ReactNode }) {
   const items = [{ path: '/quizzes', label: 'Quizzes', icon: '▦' }, { path: '/running', label: 'Running Quizzes', icon: '▶' }, { path: '/games', label: 'Games', icon: '★' }, { path: '/questions', label: 'Common Questions', icon: '?' }, { path: '/answer-pools', label: 'Answer Pools', icon: '◌' }, { path: '/data-sets', label: 'Data Sets', icon: '≡' }, { path: '/import', label: 'Import', icon: '↓' }]; const active = path.startsWith('/quizzes/') ? '/quizzes' : path;
-  return <div className="admin-shell"><aside className="sidebar"><button className="brand" onClick={() => go('/quizzes')}><span className="brand-mark">Q</span><span>Quizboard<small>ADMIN PORTAL</small></span></button><nav aria-label="Main navigation">{items.map((item) => <button key={item.path} className={active === item.path ? 'nav-link active' : 'nav-link'} onClick={() => go(item.path)}><span>{item.icon}</span>{item.label}</button>)}</nav><div className="sidebar-foot"><span className="avatar">AD</span><div><strong>Admin</strong><small>Content manager</small></div></div></aside><div className="page-wrap"><header className="topbar"><div><span className="crumb">ADMINISTRATION</span><span className="topbar-title">Quiz management</span></div><button className="help-button" aria-label="Help">?</button></header><main className="content">{children}</main></div></div>;
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('quizboard-admin-dark-mode') === 'true');
+  useEffect(() => { localStorage.setItem('quizboard-admin-dark-mode', String(darkMode)); }, [darkMode]);
+  return <><div className={`admin-shell${darkMode ? ' dark-mode' : ''}`}><aside className="sidebar"><button className="brand" onClick={() => go('/quizzes')}><span className="brand-mark">Q</span><span>Quizboard<small>ADMIN PORTAL</small></span></button><nav aria-label="Main navigation">{items.map((item) => <button key={item.path} className={active === item.path ? 'nav-link active' : 'nav-link'} onClick={() => go(item.path)}><span>{item.icon}</span>{item.label}</button>)}</nav><div className="sidebar-bottom"><button className="theme-toggle" type="button" aria-pressed={darkMode} onClick={() => setDarkMode((enabled) => !enabled)}><span>{darkMode ? '☀' : '☾'}</span>{darkMode ? 'Light mode' : 'Dark mode'}</button><div className="sidebar-foot"><span className="avatar">AD</span><div><strong>Admin</strong><small>Content manager</small></div></div></div></aside><div className="page-wrap"><header className="topbar"><div><span className="crumb">ADMINISTRATION</span><span className="topbar-title">Quiz management</span></div><button className="help-button" aria-label="Help">?</button></header><main className="content">{children}</main></div></div><ConfirmDialogHost /></>;
 }
 function PageHeading({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: ReactNode }) { return <div className="page-heading"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{description}</p></div>{action}</div>; }
 function Empty({ icon, title, copy }: { icon: string; title: string; copy: string }) { return <div className="empty"><span>{icon}</span><h3>{title}</h3><p>{copy}</p></div>; }
@@ -94,7 +98,22 @@ function GamesPage() {
 }
 
 function GamePicker({ onClose, onSelect, saving }: { onClose: () => void; onSelect: (gameType: GameType) => void; saving: boolean }) {
-  return <Modal title="Add a game" onClose={onClose} wide><p className="modal-intro">Choose a game type to add it at the end of this quiz. You can drag it into place and configure it afterward.</p><div className="game-picker"><button type="button" disabled={saving} onClick={() => onSelect('coin_catch')}><span>★</span><span><strong>Coin Catch</strong><small>Catch coins, avoid veggies</small><em>20 seconds by default · configurable</em></span><b>+</b></button><button type="button" disabled={saving} onClick={() => onSelect('match_pairs')}><span>⌑</span><span><strong>Match Pairs</strong><small>Flip cards and find the matching pairs</small><em>20 seconds by default · configurable</em></span><b>+</b></button><button type="button" disabled={saving} onClick={() => onSelect('tower_stack')}><span>▤</span><span><strong>Tower Stack</strong><small>Drop blocks and build the tallest tower</small><em>20 seconds by default · configurable</em></span><b>+</b></button></div></Modal>;
+  return <Modal title="Add a game" onClose={onClose} wide><p className="modal-intro">Choose a game type to insert at the selected point. You can configure it afterward.</p><div className="game-picker"><button type="button" disabled={saving} onClick={() => onSelect('coin_catch')}><span>★</span><span><strong>Coin Catch</strong><small>Catch coins, avoid veggies</small><em>20 seconds by default · configurable</em></span><b>+</b></button><button type="button" disabled={saving} onClick={() => onSelect('match_pairs')}><span>⌑</span><span><strong>Match Pairs</strong><small>Flip cards and find the matching pairs</small><em>20 seconds by default · configurable</em></span><b>+</b></button><button type="button" disabled={saving} onClick={() => onSelect('tower_stack')}><span>▤</span><span><strong>Tower Stack</strong><small>Drop blocks and build the tallest tower</small><em>20 seconds by default · configurable</em></span><b>+</b></button></div></Modal>;
+}
+
+function ItemPicker({ onClose, onSelect }: { onClose: () => void; onSelect: (type: QuizItemType) => void }) {
+  return <Modal title="Add to quiz" onClose={onClose}><p className="modal-intro">Choose what belongs at this point in the quiz.</p><div className="item-picker"><button type="button" onClick={() => onSelect('question')}><span>?</span><strong>Question</strong><small>Ask students a scored question.</small></button><button type="button" onClick={() => onSelect('game')}><span>★</span><strong>Game</strong><small>Add an interactive game break.</small></button><button type="button" onClick={() => onSelect('text')}><span>✦</span><strong>Text</strong><small>Show instructions, encouragement, or a transition.</small></button></div></Modal>;
+}
+
+function TimelineAddPanel({ onSelect }: { onSelect: (type: QuizItemType) => void }) {
+  return <aside className="surface timeline-add-panel"><div className="surface-head"><div><h2>Add to quiz</h2><p>Start building the next item in your timeline.</p></div></div><div className="item-picker"><button type="button" onClick={() => onSelect('question')}><span>?</span><strong>Question</strong><small>Ask students a scored question.</small></button><button type="button" onClick={() => onSelect('game')}><span>★</span><strong>Game</strong><small>Add an interactive game break.</small></button><button type="button" onClick={() => onSelect('text')}><span>✦</span><strong>Text</strong><small>Show instructions, encouragement, or a transition.</small></button></div></aside>;
+}
+
+function TextEditor({ initial, saving, onSave }: { initial?: Question; saving: boolean; onSave: (text: string) => Promise<void> }) {
+  const [text, setText] = useState(initial?.text ?? '');
+  const [error, setError] = useState('');
+  async function submit(event: FormEvent) { event.preventDefault(); setError(''); if (!text.trim()) { setError('Enter some text for students.'); return; } try { await onSave(text); } catch (err) { setError(err instanceof Error ? err.message : 'Could not save this text item'); } }
+  return <aside className="surface question-preview-panel text-editor"><div className="surface-head"><div><h2>{initial ? 'Edit text' : 'Add text'}</h2><p>Use <code>{'{{name}}'}</code> to include each student&apos;s name.</p></div></div><form className="question-form" onSubmit={submit}><label>Text to show students<textarea autoFocus rows={7} value={text} onChange={(event) => setText(event.target.value)} placeholder="You’re doing great, {{name}}!" maxLength={2000} required /></label><small className="text-editor-help">Text items pause the quiz until the student chooses Continue. They are not scored or timed.</small>{error && <p className="error">{error}</p>}<button className="primary" disabled={saving}>{saving ? 'Saving…' : initial ? 'Save text' : 'Add text'}</button></form></aside>;
 }
 
 function QuestionForm({ pools, onSave, saving, submitLabel, initial, onPreviewChange, showTimer = false }: { pools: AnswerPool[]; onSave: (data: QuestionData) => Promise<void>; saving: boolean; submitLabel: string; initial?: Question; onPreviewChange?: (preview: QuestionPreviewData) => void; showTimer?: boolean }) {
@@ -162,6 +181,8 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
   const [draggingQuestionId, setDraggingQuestionId] = useState<number | null>(null);
   const [reordering, setReordering] = useState(false);
   const [togglingQuestionId, setTogglingQuestionId] = useState<number | null>(null);
+  const [deletingItemId, setDeletingItemId] = useState<number | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Question | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
@@ -174,6 +195,9 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
   const durationMinutes = durationValue * (durationUnit === 'days' ? 1440 : durationUnit === 'hours' ? 60 : 1);
   const [launching, setLaunching] = useState(false);
   const [showGamePicker, setShowGamePicker] = useState(false);
+  const [showItemPicker, setShowItemPicker] = useState(false);
+  const [addingText, setAddingText] = useState(false);
+  const [insertAt, setInsertAt] = useState<number | null>(null);
 
   useEffect(() => {
     const resetLaunchState = () => setLaunching(false);
@@ -204,11 +228,20 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
 
   useEffect(() => { void load(); }, [load]);
 
+  async function placeNewItem(itemId: number) {
+    if (!quiz || insertAt === null) { await load(); return; }
+    const order = quiz.questions.map((item) => item.id);
+    order.splice(insertAt, 0, itemId);
+    const updatedQuiz = await request<QuizDetail>(`/quizzes/${id}/questions/order`, { method: 'PUT', body: JSON.stringify({ questionIds: order }) });
+    setQuiz(updatedQuiz);
+    setInsertAt(null);
+  }
+
   async function addOwnQuestion(data: QuestionData) {
     setSaving(true);
     try {
-      await request(`/quizzes/${id}/questions`, { method: 'POST', body: JSON.stringify(data) });
-      await load();
+      const item = await request<Question>(`/quizzes/${id}/questions`, { method: 'POST', body: JSON.stringify(data) });
+      await placeNewItem(item.id);
     } finally {
       setSaving(false);
     }
@@ -231,8 +264,8 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
     setSaving(true);
     setError('');
     try {
-      await request(`/quizzes/${id}/questions/common/${questionId}`, { method: 'POST' });
-      await load();
+      const item = await request<Question>(`/quizzes/${id}/questions/common/${questionId}`, { method: 'POST' });
+      await placeNewItem(item.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not add the common question');
     } finally {
@@ -244,16 +277,40 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
     setSaving(true);
     setError('');
     try {
-      await request(`/quizzes/${id}/games`, { method: 'POST', body: JSON.stringify({ gameType }) });
+      const item = await request<Question>(`/quizzes/${id}/games`, { method: 'POST', body: JSON.stringify({ gameType }) });
       setEditing(null);
       setQuestionPreview(null);
       setShowGamePicker(false);
-      await load();
+      await placeNewItem(item.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not add the game');
     } finally {
       setSaving(false);
     }
+  }
+
+  async function addText(text: string) {
+    setSaving(true);
+    setError('');
+    try {
+      const item = await request<Question>(`/quizzes/${id}/texts`, { method: 'POST', body: JSON.stringify({ text }) });
+      setAddingText(false);
+      await placeNewItem(item.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not add the text item');
+      throw err;
+    } finally { setSaving(false); }
+  }
+
+  async function saveText(text: string) {
+    if (!editing || editing.itemType !== 'text') return;
+    setSaving(true);
+    setError('');
+    try {
+      await request(`/quizzes/${id}/texts/${editing.id}`, { method: 'PUT', body: JSON.stringify({ text }) });
+      setEditing(null);
+      await load();
+    } finally { setSaving(false); }
   }
 
   async function saveGame(data: { gameType: GameType; text: string; durationSeconds: number }) {
@@ -268,10 +325,41 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
     }
   }
 
-  function startNewQuestion() {
+  function startNewQuestion(index = quiz?.questions.length ?? 0) {
     setEditing(null);
+    setAddingText(false);
+    setInsertAt(index);
     setMode('new');
     setQuestionPreview(null);
+  }
+
+  function chooseItem(type: QuizItemType) {
+    setShowItemPicker(false);
+    if (type === 'question') { startNewQuestion(insertAt ?? quiz?.questions.length ?? 0); return; }
+    if (type === 'game') { setShowGamePicker(true); return; }
+    setEditing(null); setQuestionPreview(null); setAddingText(true);
+  }
+
+  function openItemPicker(index: number) { setInsertAt(index); setShowItemPicker(true); }
+
+  function startItemAtEnd(type: QuizItemType) {
+    const index = quiz?.questions.length ?? 0;
+    if (type === 'question') { startNewQuestion(index); return; }
+    setInsertAt(index);
+    if (type === 'game') { setShowGamePicker(true); return; }
+    setEditing(null); setQuestionPreview(null); setAddingText(true);
+  }
+
+  function selectItem(item: Question) {
+    if (editing?.id === item.id) {
+      setEditing(null);
+      setQuestionPreview(null);
+      return;
+    }
+    setAddingText(false);
+    setInsertAt(null);
+    setEditing(item);
+    setQuestionPreview(item.itemType === 'question' ? { text: item.text, options: Array.isArray(item.options) ? item.options : [] } : null);
   }
 
   async function moveQuestion(targetQuestionId: number) {
@@ -308,6 +396,19 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
     } finally {
       setTogglingQuestionId(null);
     }
+  }
+
+  async function deleteItem(item: Question) {
+    setDeletingItemId(item.id);
+    setError('');
+    try {
+      const updatedQuiz = await request<QuizDetail>(`/quizzes/${id}/items/${item.id}`, { method: 'DELETE' });
+      setQuiz(updatedQuiz);
+      if (editing?.id === item.id) { setEditing(null); setQuestionPreview(null); }
+      setDeleteTarget(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete this quiz item');
+    } finally { setDeletingItemId(null); }
   }
 
   async function updateQuestionOrder(randomizeQuestionOrder: boolean) {
@@ -390,6 +491,17 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
     }
   }
 
+  async function updateCreditEveryCorrectAnswers(creditEveryCorrectAnswers: number) {
+    setSavingSettings(true);
+    setError('');
+    try {
+      const updatedQuiz = await request<Quiz>(`/quizzes/${id}`, { method: 'PUT', body: JSON.stringify({ creditEveryCorrectAnswers }) });
+      setQuiz((current) => current ? { ...current, creditEveryCorrectAnswers: updatedQuiz.creditEveryCorrectAnswers } : current);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update credit settings');
+    } finally { setSavingSettings(false); }
+  }
+
   async function launchQuiz() {
     if (!Number.isInteger(durationMinutes) || durationMinutes < 5 || durationMinutes > 10080) { setError('Choose a duration between 5 minutes and 7 days.'); return; }
     setLaunching(true); setError('');
@@ -425,18 +537,13 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
       <div className="launch-mode-details"><label htmlFor="run-mode"><strong>{launchMode === 'live' ? 'Live' : 'Homework'} mode</strong><select id="run-mode" value={runMode} disabled={launching} onChange={(event) => setRunMode(event.target.value as typeof runMode)}>{launchMode === 'live' && <option value="facilitated">Facilitated</option>}<option value="classic">Classic</option>{launchMode === 'live' && <option value="matching">Matching</option>}{launchMode === 'live' && <option value="battleship">Battleship</option>}{launchMode === 'live' && <option value="treasure_map">Treasure Map</option>}{launchMode === 'live' && <option value="archery">Archery</option>}</select></label><p>{runMode === 'facilitated' ? 'Release one question at a time and follow student progress. Games can appear between rounds.' : runMode === 'matching' ? 'Students answer at their own pace and earn credits to play a matching game. Timeline games are skipped.' : runMode === 'battleship' ? 'Students answer at their own pace and earn attack tokens to fire on a shared Battleship map. Timeline games are skipped.' : runMode === 'treasure_map' ? 'Students earn scout tokens to uncover shared clues and find the class treasure. Timeline games are skipped.' : runMode === 'archery' ? 'Students earn arrows with correct answers, then time their X and Y aim on a shared target. Timeline games are skipped.' : launchMode === 'live' ? 'Students answer at their own pace while you follow their progress. Games can appear between rounds.' : 'Students answer at their own pace. Games can appear between rounds.'}</p></div>
       {launchMode === 'live' && runMode !== 'facilitated' && <label className="checkbox-label launch-endless"><input type="checkbox" checked={endless} disabled={launching} onChange={(event) => setEndless(event.target.checked)} /><span><strong>Endless questions</strong><small>After the last quiz item, repeat questions in random order until the session ends.</small></span></label>}
       {launchMode === 'live' && <label className="checkbox-label launch-endless"><input type="checkbox" checked={scoringEnabled} disabled={launching} onChange={(event) => setScoringEnabled(event.target.checked)} /><span><strong>Enable points scoring</strong><small>Correct answers earn 100 points, a streak bonus, and up to 100 speed points in the first 30 seconds (or the question timer).</small></span></label>}
+        {launchMode === 'live' && ['matching', 'battleship', 'treasure_map', 'archery'].includes(runMode) && <label className="theme-select launch-credit-setting"><span><strong>Credit earning</strong><small>Give one {runMode === 'matching' ? 'credit' : runMode === 'archery' ? 'arrow' : runMode === 'battleship' ? 'attack token' : 'scout token'} for every X correct answers.</small></span><select value={quiz.creditEveryCorrectAnswers} disabled={savingSettings || launching} onChange={(event) => void updateCreditEveryCorrectAnswers(Number(event.target.value))} aria-label="Correct answers per credit">{CREDIT_EARNING_INTERVALS.map((interval) => <option key={interval} value={interval}>{interval}</option>)}</select></label>}
+      {launchMode === 'live' && runMode === 'matching' && <label className="theme-select launch-credit-setting"><span><strong>Shared matching board</strong><small>Choose the grid for Matching-mode sessions, up to 10 × 10.</small></span><select value={quiz.matchingPairCount} disabled={savingSettings || launching} onChange={(event) => void updateMatchingPairCount(Number(event.target.value))}>{MATCHING_BOARD_SIZES.map((size) => <option key={size.pairs} value={size.pairs}>{size.label}</option>)}</select></label>}
+      {launchMode === 'live' && runMode === 'battleship' && <label className="theme-select launch-credit-setting"><span><strong>Shared Battleship board</strong><small>Choose the grid and fleet size for Battleship-mode sessions.</small></span><select value={quiz.battleshipBoardSize} disabled={savingSettings || launching} onChange={(event) => void updateBattleshipBoardSize(Number(event.target.value))}>{BATTLESHIP_BOARD_SIZES.map((board) => <option key={board.size} value={board.size}>{board.size} × {board.size} · {board.boats} boats</option>)}</select></label>}
       </div><div className="launch-section launch-option"><h3>Session duration</h3>
       <div className="launch-mode-details launch-duration"><label htmlFor="run-duration"><strong>Overall duration</strong><input id="run-duration" type="number" min="1" step="1" value={durationValue || ''} disabled={launching} onChange={(event) => setDurationValue(Number(event.target.value))} /></label><label htmlFor="duration-unit"><strong>Unit</strong><select id="duration-unit" value={durationUnit} disabled={launching} onChange={(event) => setDurationUnit(event.target.value as typeof durationUnit)}><option value="minutes">Minutes</option><option value="hours">Hours</option><option value="days">Days</option></select></label><p>5 minutes to 7 days. {launchMode === 'live' ? 'The clock starts when you start the test.' : 'The clock starts when you launch the homework.'} The run closes for everyone when time is up.</p></div>
+      <label className="theme-select launch-student-theme"><span><strong>Student theme</strong><small>Choose the visual style students see while taking this quiz.</small></span><select value={quiz.theme} disabled={savingSettings || launching} onChange={(event) => void updateTheme(event.target.value as QuizTheme)}><option value="standard">Standard</option><option value="kids">Kid-friendly</option><option value="christmas">Christmas</option><option value="halloween">Halloween</option></select></label>
       </div></div>
-    </section>
-    <section className="surface quiz-settings">
-      <div className="quiz-settings-grid">
-        <label className="theme-select"><span><strong>Student theme</strong><small>Choose the visual style students see while taking this quiz.</small></span><select value={quiz.theme} disabled={savingSettings} onChange={(event) => void updateTheme(event.target.value as QuizTheme)}><option value="standard">Standard</option><option value="kids">Kid-friendly</option><option value="christmas">Christmas</option><option value="halloween">Halloween</option></select></label>
-        {launchMode === 'live' && runMode === 'matching' && <>
-        <label className="theme-select"><span><strong>Shared matching board</strong><small>Choose the grid for Matching-mode sessions, up to 10 × 10.</small></span><select value={quiz.matchingPairCount} disabled={savingSettings} onChange={(event) => void updateMatchingPairCount(Number(event.target.value))}>{MATCHING_BOARD_SIZES.map((size) => <option key={size.pairs} value={size.pairs}>{size.label}</option>)}</select></label>
-        </>}
-        {launchMode === 'live' && runMode === 'battleship' && <label className="theme-select"><span><strong>Shared Battleship board</strong><small>Choose the grid and fleet size for Battleship-mode sessions.</small></span><select value={quiz.battleshipBoardSize} disabled={savingSettings} onChange={(event) => void updateBattleshipBoardSize(Number(event.target.value))}>{BATTLESHIP_BOARD_SIZES.map((board) => <option key={board.size} value={board.size}>{board.size} × {board.size} · {board.boats} boats</option>)}</select></label>}
-      </div>
     </section>
     {error && <p className="error">{error}</p>}
     <div className="editor-grid editor-grid-two">
@@ -450,22 +557,25 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
           <label className="theme-select"><span><strong>Default question timer</strong><small>Used unless a question overrides it.</small></span><select value={quiz.defaultTimerSeconds} disabled={savingSettings} onChange={(event) => void updateDefaultTimer(Number(event.target.value))}>{TIMER_SECONDS.map((seconds) => <option key={seconds} value={seconds}>{timerSettingLabel(seconds)}</option>)}</select></label>
         </div>
         <ol className="question-list">
-          {quiz.questions.map((question, index) => <li key={question.id} className={`quiz-item-${question.itemType}${editing?.id === question.id ? ' selected-question' : ''}${draggingQuestionId === question.id ? ' dragging-question' : ''}${question.isEnabled ? '' : ' disabled-question'}`} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); void moveQuestion(question.id); }}>
-            <button className="question-select" type="button" aria-pressed={editing?.id === question.id} onClick={() => { setEditing(question); setQuestionPreview(question.itemType === 'question' ? { text: question.text, options: Array.isArray(question.options) ? question.options : [] } : null); }}>
+          {quiz.questions.map((question, index) => <Fragment key={question.id}><li className="item-insert-slot"><button type="button" onClick={() => openItemPicker(index)} aria-label={`Insert an item before ${question.text}`}><span>+</span> Add here</button></li><li className={`quiz-item-${question.itemType}${editing?.id === question.id ? ' selected-question' : ''}${draggingQuestionId === question.id ? ' dragging-question' : ''}${question.isEnabled ? '' : ' disabled-question'}`} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); void moveQuestion(question.id); }}>
+            <button className="question-select" type="button" aria-pressed={editing?.id === question.id} onClick={() => selectItem(question)}>
               <span className="question-number">{String(index + 1).padStart(2, '0')}</span>
               <span className="question-list-content">
-                {question.itemType === 'game' ? <><span className="game-item-badge">GAME</span><strong>{question.text}</strong><small className="question-timer-setting">{question.gameType === 'match_pairs' ? 'Match Pairs · flip cards to find matching pairs' : question.gameType === 'tower_stack' ? 'Tower Stack · drop blocks to build a tower' : 'Coin Catch · collect coins and avoid falling veggies'} · {question.gameDurationSeconds ?? 20} seconds</small></> : <><span className="question-item-badge">{Array.isArray(question.options) ? 'MULTI-CHOICE' : question.options.kind === 'true_false' ? 'T/F' : 'MATCHING'}</span><strong>{question.text}</strong>{!Array.isArray(question.options) && <small className="question-timer-setting">{question.options.kind === 'true_false' ? `Statement: ${question.options.statement} ? Correct answer: ${question.correctAnswer}` : `${question.options.pairs.length} pairs ? 3 incorrect attempts allowed`}</small>}{question.answerPool ? <span className="answer-chips"><span className="answer-chip correct">Correct: {question.correctAnswer}</span><span className="answer-pool-badge">Answer pool: {question.answerPool.name}</span></span> : <span className="answer-chips">{(Array.isArray(question.options) ? question.options : []).map((answer) => <span className={answer === question.correctAnswer ? 'answer-chip correct' : 'answer-chip'} key={answer}>{answer === question.correctAnswer && 'Correct: '}{answer}</span>)}</span>}<small className="question-timer-setting">Timer: {question.timerSeconds === null ? `${timerSettingLabel(quiz.defaultTimerSeconds)} (quiz default)` : timerSettingLabel(question.timerSeconds)}</small></>}
+                {question.itemType === 'game' ? <><span className="game-item-badge">GAME</span><strong>{question.text}</strong><small className="question-timer-setting">{question.gameType === 'match_pairs' ? 'Match Pairs · flip cards to find matching pairs' : question.gameType === 'tower_stack' ? 'Tower Stack · drop blocks to build a tower' : 'Coin Catch · collect coins and avoid falling veggies'} · {question.gameDurationSeconds ?? 20} seconds</small></> : question.itemType === 'text' ? <><span className="text-item-badge">TEXT</span><strong>{question.text}</strong><small className="question-timer-setting">Shown between quiz items · supports {'{{name}}'}</small></> : <><span className="question-item-badge">{Array.isArray(question.options) ? 'MULTI-CHOICE' : question.options.kind === 'true_false' ? 'T/F' : 'MATCHING'}</span><strong>{question.text}</strong>{!Array.isArray(question.options) && <small className="question-timer-setting">{question.options.kind === 'true_false' ? `Statement: ${question.options.statement} ? Correct answer: ${question.correctAnswer}` : `${question.options.pairs.length} pairs ? 3 incorrect attempts allowed`}</small>}{question.answerPool ? <span className="answer-chips"><span className="answer-chip correct">Correct: {question.correctAnswer}</span><span className="answer-pool-badge">Answer pool: {question.answerPool.name}</span></span> : <span className="answer-chips">{(Array.isArray(question.options) ? question.options : []).map((answer) => <span className={answer === question.correctAnswer ? 'answer-chip correct' : 'answer-chip'} key={answer}>{answer === question.correctAnswer && 'Correct: '}{answer}</span>)}</span>}<small className="question-timer-setting">Timer: {question.timerSeconds === null ? `${timerSettingLabel(quiz.defaultTimerSeconds)} (quiz default)` : timerSettingLabel(question.timerSeconds)}</small></>}
               </span>
             </button>
             <label className="question-toggle" onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={question.isEnabled} disabled={togglingQuestionId === question.id} onChange={(event) => void setQuestionEnabled(question.id, event.target.checked)} /><span>{question.isEnabled ? 'Included' : 'Skipped'}</span></label>
+            <button className="question-delete" type="button" disabled={deletingItemId === question.id} aria-label={`Delete ${question.itemType} ${index + 1}`} title="Delete item" onClick={() => setDeleteTarget(question)}>{deletingItemId === question.id ? '…' : '×'}</button>
             <button className="question-grip" type="button" draggable={!reordering} disabled={reordering} aria-label={`Drag question ${index + 1} to reorder`} title="Drag to reorder" onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', String(question.id)); setDraggingQuestionId(question.id); }} onDragEnd={() => setDraggingQuestionId(null)}>⠿</button>
-          </li>)}
-          <li className="new-question-slot"><button type="button" onClick={startNewQuestion}><span>+</span><strong>Add a new question</strong><small>Build a new question from scratch</small></button><button type="button" className="add-game-button" disabled={saving} onClick={() => setShowGamePicker(true)}><span>★</span><strong>Add a game</strong><small>Choose a game type for this quiz</small></button></li>
+          </li></Fragment>)}
+          <li className="new-question-slot"><button type="button" onClick={() => openItemPicker(quiz.questions.length)}><span>+</span><strong>Add to end</strong><small>Question, game, or text</small></button></li>
         </ol>
       </section>
-      {editing?.itemType === 'game' ? <GameEditor key={editing.id} game={editing} saving={saving} onSave={saveGame} /> : <QuestionEditor draft={mode === 'new' || editing ? questionPreview : null} theme={quiz.theme} editing={editing} pools={pools} mode={mode} onModeChange={setMode} commonQuestions={commonQuestions} onCreateQuestion={addOwnQuestion} onSaveQuestion={saveQuestion} onAddCommonQuestion={addCommonQuestion} saving={saving} onPreviewChange={setQuestionPreview} />}
+      {editing?.itemType === 'game' ? <GameEditor key={editing.id} game={editing} saving={saving} onSave={saveGame} /> : editing?.itemType === 'text' ? <TextEditor key={editing.id} initial={editing} saving={saving} onSave={saveText} /> : addingText ? <TextEditor saving={saving} onSave={addText} /> : editing?.itemType === 'question' || insertAt !== null ? <QuestionEditor draft={mode === 'new' || editing ? questionPreview : null} theme={quiz.theme} editing={editing} pools={pools} mode={mode} onModeChange={setMode} commonQuestions={commonQuestions} onCreateQuestion={addOwnQuestion} onSaveQuestion={saveQuestion} onAddCommonQuestion={addCommonQuestion} saving={saving} onPreviewChange={setQuestionPreview} /> : <TimelineAddPanel onSelect={startItemAtEnd} />}
     </div>
+    {showItemPicker && <ItemPicker onClose={() => { setShowItemPicker(false); setInsertAt(null); }} onSelect={chooseItem} />}
     {showGamePicker && <GamePicker saving={saving} onClose={() => setShowGamePicker(false)} onSelect={(gameType) => void addGame(gameType)} />}
+    {deleteTarget && <ConfirmDialog title={`Delete ${deleteTarget.itemType === 'text' ? 'text item' : deleteTarget.itemType}`} confirmLabel="Delete item" busy={deletingItemId === deleteTarget.id} onClose={() => setDeleteTarget(null)} onConfirm={() => void deleteItem(deleteTarget)}>This cannot be undone.</ConfirmDialog>}
   </>;
 }
 

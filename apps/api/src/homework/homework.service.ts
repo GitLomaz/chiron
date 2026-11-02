@@ -7,7 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 type HomeworkQuestion = {
   id: string;
   text: string;
-  itemType: 'question' | 'game';
+  itemType: 'question' | 'game' | 'text';
   gameType: 'coin_catch' | 'match_pairs' | 'tower_stack' | null;
   gameDurationSeconds: number | null;
   options: string[];
@@ -64,7 +64,7 @@ export class HomeworkService {
     const id = randomUUID();
     const authoredQuestions = quiz.questions.map((question): HomeworkQuestion => {
       const special = specialQuestion(question.options);
-      const itemType = question.itemType === 'game' ? 'game' as const : 'question' as const;
+      const itemType = question.itemType === 'game' ? 'game' as const : question.itemType === 'text' ? 'text' as const : 'question' as const;
       const storedOptions = Array.isArray(question.options) ? question.options.filter((value): value is string => typeof value === 'string') : [];
       const wrongAnswers = [...new Set(storedOptions.filter((option) => option !== question.correctAnswer))];
       const optionCount = Math.min(question.answerCount ?? wrongAnswers.length + 1, wrongAnswers.length + 1);
@@ -74,7 +74,7 @@ export class HomeworkService {
         itemType, special,
         gameType: question.gameType === 'coin_catch' || question.gameType === 'match_pairs' || question.gameType === 'tower_stack' ? question.gameType : null,
         gameDurationSeconds: question.gameDurationSeconds,
-        options: itemType === 'game' || special?.kind === 'matching' ? [] : special?.kind === 'true_false' ? ['True', 'False'] : this.shuffle([question.correctAnswer, ...this.shuffle(wrongAnswers).slice(0, optionCount - 1)]),
+        options: itemType !== 'question' || special?.kind === 'matching' ? [] : special?.kind === 'true_false' ? ['True', 'False'] : this.shuffle([question.correctAnswer, ...this.shuffle(wrongAnswers).slice(0, optionCount - 1)]),
         correctAnswer: question.correctAnswer,
         timerSeconds: this.effectiveTimer(question.timerSeconds, quiz.defaultTimerSeconds),
       };

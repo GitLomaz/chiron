@@ -1,4 +1,5 @@
 import { MatchingQuestion } from './MatchingQuestion';
+import { confirmAction, ConfirmDialogHost } from './ConfirmDialog';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, FormEvent, ReactNode } from 'react';
 
@@ -10,7 +11,7 @@ type SpecialQuestion = { kind: 'true_false'; statement: string } | { kind: 'matc
 type MatchProgress = { matched: number[]; mistakes: number };
 type QuizQuestion = {
   id: string | number;
-  itemType: 'question' | 'game';
+  itemType: 'question' | 'game' | 'text';
   gameType: 'coin_catch' | 'match_pairs' | 'tower_stack' | null;
   gameDurationSeconds: number | null;
   text: string;
@@ -194,6 +195,10 @@ function timerText(seconds: number) {
   return minutes ? `${minutes}:${String(remainder).padStart(2, '0')}` : `0:${String(remainder).padStart(2, '0')}`;
 }
 
+function personalizeText(text: string, name?: string) {
+  return text.replace(/{{\s*name\s*}}/gi, name?.trim() || 'friend');
+}
+
 function TimerBadge({ seconds, expired = false }: { seconds: number; expired?: boolean }) {
   return <span className={`timer-badge${expired ? ' expired' : ''}`} role="timer" aria-label={expired ? 'Time expired' : `${seconds} seconds remaining`}>{expired ? 'Time’s up' : `⏱ ${timerText(seconds)}`}</span>;
 }
@@ -275,14 +280,14 @@ function Welcome({ onModerated }: { onModerated: () => void }) {
 
 type ModeratedAnswerResult = { answer: string; correctAnswer: string; isCorrect: boolean };
 type ModeratedScore = { correct: number; answered: number; points?: number; streak?: number; lastAward?: { base: number; streak: number; speed: number; total: number } | null };
-type ModeratedQuestion = TimedQuestion & { special?: SpecialQuestion | null; matchProgress?: MatchProgress | null; id: string; text: string; itemType: 'question' | 'game'; gameType: 'coin_catch' | 'match_pairs' | 'tower_stack' | null; options: string[]; number: number; total?: number; answered?: boolean; timedOut?: boolean; gameScore?: number | null; result?: ModeratedAnswerResult | null };
+type ModeratedQuestion = TimedQuestion & { special?: SpecialQuestion | null; matchProgress?: MatchProgress | null; id: string; text: string; itemType: 'question' | 'game' | 'text'; gameType: 'coin_catch' | 'match_pairs' | 'tower_stack' | null; options: string[]; number: number; total?: number; answered?: boolean; timedOut?: boolean; gameScore?: number | null; result?: ModeratedAnswerResult | null };
 type MatchingAttempt = { id: string; cards: { id: number; symbol: string }[]; startedAt: string; isMatch: boolean; isActor: boolean; playerName?: string };
 type MatchingState = { credits: number | null; columns: number; rows: number; selectedCard: { id: number; symbol: string } | null; cards: { symbol: string | null; matched: boolean }[]; attempt: MatchingAttempt | null; complete: boolean; completionId: string | null };
 type BattleshipState = { size: number; tokens: number | null; shipCells: number; hits: number; cells: { result: 'hit' | 'miss' | null }[]; lastHit: { id: string; cell: number; participantName: string } | null; complete: boolean; completionId: string | null };
 type TreasureMapState = { size: number; tokens: number | null; cells: { result: 'clue' | 'treasure' | null; hint: string | null; terrain: 'land' | 'stream' }[]; lastDig: { id: string; cell: number; participantName: string } | null; complete: boolean; completionId: string | null };
 type ArcheryState = { arrows: number | null; lastShot: { id: string; x: number; y: number; score: number; participantName?: string } | null; attempts: { id: string; x: number; y: number; score: number; participantName?: string }[] };
 type ModeratedStudentState = { endless: boolean; scoringEnabled: boolean; pin: string; title: string; description: string | null; theme: 'standard' | 'kids' | 'christmas' | 'halloween'; mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery'; matching: MatchingState | null; battleship: BattleshipState | null; treasureMap: TreasureMapState | null; archery: ArcheryState | null; betweenQuestions: boolean; phase: 'lobby' | 'question' | 'complete'; endedByTeacher: boolean; expired: boolean; endsAt: string | null; removed: boolean; participant: { id: string; name: string } | null; score: ModeratedScore | null; currentQuestion: ModeratedQuestion | null };
-type FacilitatorState = { endless: boolean; scoringEnabled: boolean; sessionId: string; pin: string; title: string; description: string | null; mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery'; presentationMode: 'scores' | 'matching' | 'battleship' | 'treasure_map' | 'archery'; matching: MatchingState | null; battleship: BattleshipState | null; treasureMap: TreasureMapState | null; archery: ArcheryState | null; currentRound: number; phase: 'lobby' | 'question' | 'complete'; endedByTeacher: boolean; expired: boolean; endsAt: string | null; durationSeconds: number; lobbyLocked: boolean; autoBoardReset: boolean; boardResetAt: string | null; questionCount: number; completedCount: number; participants: { id: string; name: string; completed: boolean; completedItems: number; currentItemType: 'question' | 'game' | null; currentAnswered: boolean; score: ModeratedScore }[]; scoreLeaderboard: { id: string; name: string; score: number; correct: number; answered: number; longestStreak: number }[] };
+type FacilitatorState = { endless: boolean; scoringEnabled: boolean; sessionId: string; pin: string; title: string; description: string | null; mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery'; presentationMode: 'scores' | 'matching' | 'battleship' | 'treasure_map' | 'archery'; matching: MatchingState | null; battleship: BattleshipState | null; treasureMap: TreasureMapState | null; archery: ArcheryState | null; currentRound: number; phase: 'lobby' | 'question' | 'complete'; endedByTeacher: boolean; expired: boolean; endsAt: string | null; durationSeconds: number; lobbyLocked: boolean; autoBoardReset: boolean; boardResetAt: string | null; questionCount: number; completedCount: number; participants: { id: string; name: string; completed: boolean; completedItems: number; currentItemType: 'question' | 'game' | 'text' | null; currentAnswered: boolean; score: ModeratedScore }[]; scoreLeaderboard: { id: string; name: string; score: number; correct: number; answered: number; longestStreak: number }[] };
 
 async function moderatedRequest<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}/moderated-sessions${path}`, { headers: { 'Content-Type': 'application/json', ...options?.headers }, ...options });
@@ -437,7 +442,8 @@ function ModeratedStudent({ pin }: { pin: string }) {
     const isFinalQuestion = !state.endless && question.number === question.total;
     return <WaitingScreen theme={state.theme} title={state.title} name={state.participant.name} heading="Game complete!" copy="Choose next question when you are ready." action={<button className="primary-button" disabled={submitting} onClick={() => void nextQuestion()}>{submitting ? 'Loading…' : isFinalQuestion ? 'Finish test' : 'Next question'} <span aria-hidden="true">→</span></button>} />;
   }
-if (question.itemType === 'game') return question.timedOut ? <WaitingScreen theme={state.theme} title={state.title} name={state.participant.name} copy="Time is up for the game. Wait for the next round." /> : question.gameType === 'match_pairs' ? <MatchPairsGame key={question.id} title={question.text} durationSeconds={question.timerSeconds ?? 20} onComplete={() => void load()} /> : question.gameType === 'tower_stack' ? <TowerStackGame key={question.id} title={question.text} durationSeconds={question.timerSeconds ?? 20} onComplete={() => void load()} /> : <ModeratedCoinCatch key={question.id} pin={pin} participantId={participantId} question={question} theme={state.theme} facilitated={state.mode === 'facilitated'} />;
+  if (question.itemType === 'game') return question.timedOut ? <WaitingScreen theme={state.theme} title={state.title} name={state.participant.name} copy="Time is up for the game. Wait for the next round." /> : question.gameType === 'match_pairs' ? <MatchPairsGame key={question.id} title={question.text} durationSeconds={question.timerSeconds ?? 20} onComplete={() => void load()} /> : question.gameType === 'tower_stack' ? <TowerStackGame key={question.id} title={question.text} durationSeconds={question.timerSeconds ?? 20} onComplete={() => void load()} /> : <ModeratedCoinCatch key={question.id} pin={pin} participantId={participantId} question={question} theme={state.theme} facilitated={state.mode === 'facilitated'} />;
+  if (question.itemType === 'text') return <main className={`page quiz-page moderated-quiz-page theme-${state.theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">MESSAGE {question.number}{!state.endless && <> of {question.total}</>}</span></header>{!state.endless && <div className="progress"><span style={{ width: `${(question.number / (question.total ?? 1)) * 100}%` }} /></div>}<section className="intro-card text-item-card"><p className="eyebrow">A NOTE FOR YOU</p><h1>{personalizeText(question.text, state.participant.name)}</h1>{state.mode === 'facilitated' ? <p className="lede">Your facilitator will continue when everyone is ready.</p> : <button className="primary-button" disabled={submitting} onClick={() => void nextQuestion()}>{submitting ? 'Loading…' : 'Continue'} <span aria-hidden="true">→</span></button>}</section></main>;
   if (question.answered || question.timedOut) {
     const canAdvance = state.mode !== 'facilitated';
     const isFinalQuestion = !state.endless && question.number === question.total;
@@ -478,9 +484,12 @@ function Facilitator({ sessionId, token, projector = false }: { sessionId: strin
   useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 2000); return () => window.clearInterval(timer); }, [load]);
   async function start() { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/start`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not start the test'); } finally { setActing(false); } }
   async function next() { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/next`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not release the next round'); } finally { setActing(false); } }
-  async function end() { if (!window.confirm('End this quiz for everyone? Students will no longer be able to answer or join.')) return; setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/end`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not end the quiz'); } finally { setActing(false); } }
-  async function restart(mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery') { if (!window.confirm(`Launch a new ${mode} quiz for the current participants? Their scores will be cleared.`)) return; setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/restart`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token, mode }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not launch the new quiz'); } finally { setActing(false); } }
-  async function resetBoard() { if (!window.confirm('Start a fresh shared board? Board progress and player credits or tokens will be cleared.')) return; setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/board/reset`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not reset the shared board'); } finally { setActing(false); } }
+  async function end() { confirmAction({ title: 'End quiz?', copy: 'Students will no longer be able to answer or join.', confirmLabel: 'End quiz', onConfirm: endNow }); }
+  async function endNow() { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/end`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not end the quiz'); } finally { setActing(false); } }
+  async function restart(mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery') { confirmAction({ title: `Launch a new ${mode} quiz?`, copy: 'Current participants will remain, but their scores and progress will be cleared.', confirmLabel: 'Launch new quiz', onConfirm: () => restartNow(mode) }); }
+  async function restartNow(mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery') { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/restart`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token, mode }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not launch the new quiz'); } finally { setActing(false); } }
+  async function resetBoard() { confirmAction({ title: 'Start a fresh board?', copy: 'Board progress and player credits or tokens will be cleared.', confirmLabel: 'Reset board', onConfirm: resetBoardNow }); }
+  async function resetBoardNow() { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/board/reset`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not reset the shared board'); } finally { setActing(false); } }
   async function updateBoardAutoReset(autoBoardReset: boolean) { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/board/auto-reset`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token, autoBoardReset }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not update automatic board reset'); } finally { setActing(false); } }
   async function updateLobbyLock(lobbyLocked: boolean) { setUpdatingLobby(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/lobby`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token, lobbyLocked }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not update the lobby'); } finally { setUpdatingLobby(false); } }
   async function updatePresentationMode(presentationMode: 'scores' | 'matching' | 'battleship' | 'treasure_map' | 'archery') { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/presentation`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token, presentationMode }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not update the projector display'); } finally { setActing(false); } }
@@ -650,7 +659,7 @@ function HomeworkStudent({ sessionId }: { sessionId: string }) {
   const quiz: Quiz = { guid: sessionId, title: state.title, description: state.description, theme: state.theme, defaultTimerSeconds: -1, questions: state.questions };
   const submitAnswer = (questionId: string, answer: string) => homeworkRequest(`/${sessionId}/answers`, { method: 'POST', body: JSON.stringify({ participantId, questionId, answer }) });
   const completeItem = (questionId: string) => homeworkRequest(`/${sessionId}/items/complete`, { method: 'POST', body: JSON.stringify({ participantId, questionId }) });
-  return <div className={`student-app theme-${state.theme}`}>{!playerFinished && <RunDeadline endsAt={state.endsAt} />}<Player key={participantId} quiz={quiz} onSubmitAnswer={submitAnswer} onCompleteItem={completeItem} onFinished={() => setPlayerFinished(true)} allowRestart={false} /></div>;
+  return <div className={`student-app theme-${state.theme}`}>{!playerFinished && <RunDeadline endsAt={state.endsAt} />}<Player key={participantId} quiz={quiz} studentName={state.participant.name} onSubmitAnswer={submitAnswer} onCompleteItem={completeItem} onFinished={() => setPlayerFinished(true)} allowRestart={false} /></div>;
 }
 
 function HomeworkTeacher({ sessionId, token }: { sessionId: string; token: string }) {
@@ -664,7 +673,8 @@ function HomeworkTeacher({ sessionId, token }: { sessionId: string; token: strin
   }, [sessionId, token]);
   useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 2000); return () => window.clearInterval(timer); }, [load]);
   async function copyStudentLink() { try { await navigator.clipboard.writeText(homeworkStudentUrl(sessionId)); setCopied(true); window.setTimeout(() => setCopied(false), 2000); } catch { setError('Could not copy the student link.'); } }
-  async function end() { if (!window.confirm('End this homework for everyone? Students will no longer be able to answer or join.')) return; setEnding(true); setError(''); try { setState(await homeworkRequest<HomeworkTeacherState>(`/${sessionId}/end`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not end the homework'); } finally { setEnding(false); } }
+  function end() { confirmAction({ title: 'End homework?', copy: 'Students will no longer be able to answer or join.', confirmLabel: 'End homework', onConfirm: endNow }); }
+  async function endNow() { setEnding(true); setError(''); try { setState(await homeworkRequest<HomeworkTeacherState>(`/${sessionId}/end`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not end the homework'); } finally { setEnding(false); } }
   if (!state) return <main className="page status-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div>{error ? <section className="error-card"><h1>Teacher access unavailable.</h1><p>{error}</p></section> : <div className="loader" />}</main>;
   const completed = state.participants.filter((participant) => participant.completed).length;
   const studentUrl = homeworkStudentUrl(sessionId);
@@ -1114,7 +1124,7 @@ function TowerStackGame({ title, durationSeconds, onComplete }: { title: string;
   </section>;
 }
 
-function Player({ quiz, onSubmitAnswer, onCompleteItem, onFinished, allowRestart = true }: { quiz: Quiz; onSubmitAnswer?: (questionId: string, answer: string) => Promise<unknown>; onCompleteItem?: (questionId: string) => Promise<unknown>; onFinished?: () => void; allowRestart?: boolean }) {
+function Player({ quiz, onSubmitAnswer, onCompleteItem, onFinished, allowRestart = true, studentName }: { quiz: Quiz; onSubmitAnswer?: (questionId: string, answer: string) => Promise<unknown>; onCompleteItem?: (questionId: string) => Promise<unknown>; onFinished?: () => void; allowRestart?: boolean; studentName?: string }) {
   const [screen, setScreen] = useState<Screen>(quiz.questions.length ? 'intro' : 'results');
   const [current, setCurrent] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -1225,6 +1235,11 @@ function Player({ quiz, onSubmitAnswer, onCompleteItem, onFinished, allowRestart
     <div className="progress" aria-hidden="true"><span style={{ width: `${((current + 1) / quiz.questions.length) * 100}%` }} /></div>
     {question.gameType === 'tower_stack' ? <TowerStackGame key={question.id} title={question.text} durationSeconds={question.gameDurationSeconds ?? 20} onComplete={() => void finishGame()} /> : question.gameType === 'match_pairs' ? <MatchPairsGame key={question.id} title={question.text} durationSeconds={question.gameDurationSeconds ?? 20} onComplete={() => void finishGame()} /> : <CoinCatchGame key={question.id} title={question.text} durationSeconds={question.gameDurationSeconds ?? 20} onComplete={() => void finishGame()} />}
   </main>;
+  if (question.itemType === 'text') return <main className="page quiz-page">
+    <header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">Message {current + 1} of {quiz.questions.length}</span></header>
+    <div className="progress" aria-hidden="true"><span style={{ width: `${((current + 1) / quiz.questions.length) * 100}%` }} /></div>
+    <section className="intro-card text-item-card"><p className="eyebrow">A NOTE FOR YOU</p><h1>{personalizeText(question.text, studentName)}</h1><button className="primary-button" disabled={submitting} onClick={() => void finishGame()}>{submitting ? 'Saving…' : isFinalQuestion ? 'Finish quiz' : 'Continue'} <span aria-hidden="true">→</span></button>{submissionError && <p className="form-error">{submissionError}</p>}</section>
+  </main>;
   return <main className="page quiz-page">
     <KidsConfetti active={quiz.theme === 'kids' && revealed && !timedOut && selected === question.correctAnswer} />
     <header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-header-meta"><span className="question-label">Question {current + 1} of {quiz.questions.length}</span>{remainingSeconds !== null && <TimerBadge seconds={remainingSeconds} expired={remainingSeconds === 0} />}</span></header>
@@ -1285,5 +1300,5 @@ function AppContent() {
 }
 
 export default function App() {
-  return <AudioSettingsProvider><AppContent /></AudioSettingsProvider>;
+  return <AudioSettingsProvider><AppContent /><ConfirmDialogHost /></AudioSettingsProvider>;
 }

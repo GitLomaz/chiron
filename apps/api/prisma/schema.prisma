@@ -19,6 +19,8 @@ model Quiz {
   // Square grid used by the shared Battleship-mode board. The fleet size is
   // derived from this setting so the editor can present one sensible preset.
   battleshipBoardSize Int @default(10)
+  // Award a shared-mode credit, token, or arrow after this many correct answers.
+  creditEveryCorrectAnswers Int @default(1)
   // -1 is unlimited; otherwise values are 15 through 180 in 15-second steps.
   defaultTimerSeconds Int @default(-1)
   startedAt   DateTime   @default(now())

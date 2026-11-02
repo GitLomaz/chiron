@@ -22,6 +22,7 @@ export class PlayService {
             id: true,
             itemType: true,
             gameType: true,
+            gameDurationSeconds: true,
             text: true,
             options: true,
             correctAnswer: true,

@@ -6,6 +6,7 @@ import { CreateQuizDto } from './dto/create-quiz.dto';
 import { UpdateQuizDto } from './dto/update-quiz.dto';
 import { CreateAnswerPoolDto } from './dto/create-answer-pool.dto';
 import { CreateGameDto } from './dto/create-game.dto';
+import { CreateTextDto } from './dto/create-text.dto';
 
 @Injectable()
 export class QuizzesService {
@@ -33,7 +34,7 @@ export class QuizzesService {
     return quiz;
   }
 
-  create({ title, description, randomizeQuestionOrder, theme, defaultTimerSeconds, matchingPairCount, battleshipBoardSize }: CreateQuizDto) {
+  create({ title, description, randomizeQuestionOrder, theme, defaultTimerSeconds, matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers }: CreateQuizDto) {
     if (!title.trim()) {
       throw new BadRequestException('title cannot be blank');
     }
@@ -47,15 +48,16 @@ export class QuizzesService {
         defaultTimerSeconds: defaultTimerSeconds ?? -1,
         matchingPairCount: matchingPairCount ?? 6,
         battleshipBoardSize: battleshipBoardSize ?? 10,
+        creditEveryCorrectAnswers: creditEveryCorrectAnswers ?? 1,
       },
     });
   }
 
-  async update(id: number, { randomizeQuestionOrder, theme, defaultTimerSeconds, matchingPairCount, battleshipBoardSize }: UpdateQuizDto) {
+  async update(id: number, { randomizeQuestionOrder, theme, defaultTimerSeconds, matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers }: UpdateQuizDto) {
     await this.findOne(id);
     return this.prisma.quiz.update({
       where: { id },
-      data: { randomizeQuestionOrder, theme, defaultTimerSeconds, matchingPairCount, battleshipBoardSize },
+      data: { randomizeQuestionOrder, theme, defaultTimerSeconds, matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers },
     });
   }
 
@@ -110,6 +112,32 @@ export class QuizzesService {
     });
   }
 
+  async addText(quizId: number, textItem: CreateTextDto) {
+    await this.findOne(quizId);
+    const text = textItem.text.trim();
+    if (!text) throw new BadRequestException('Text cannot be blank');
+    const { _max } = await this.prisma.question.aggregate({ where: { quizId }, _max: { position: true } });
+    return this.prisma.question.create({
+      data: {
+        quizId,
+        position: (_max.position ?? -1) + 1,
+        itemType: 'text',
+        text,
+        // These fields remain required for the shared timeline table.
+        correctAnswer: '',
+        options: [],
+      },
+    });
+  }
+
+  async updateText(quizId: number, textId: number, textItem: CreateTextDto) {
+    const existing = await this.prisma.question.findFirst({ where: { id: textId, quizId, itemType: 'text' } });
+    if (!existing) throw new NotFoundException(`Text item ${textId} was not found in quiz ${quizId}`);
+    const text = textItem.text.trim();
+    if (!text) throw new BadRequestException('Text cannot be blank');
+    return this.prisma.question.update({ where: { id: textId }, data: { text } });
+  }
+
   async updateQuestion(quizId: number, questionId: number, question: CreateQuestionDto) {
     const existing = await this.prisma.question.findFirst({ where: { id: questionId, quizId } });
     if (!existing) throw new NotFoundException(`Question ${questionId} was not found in quiz ${quizId}`);
@@ -124,6 +152,13 @@ export class QuizzesService {
     const existing = await this.prisma.question.findFirst({ where: { id: questionId, quizId } });
     if (!existing) throw new NotFoundException(`Question ${questionId} was not found in quiz ${quizId}`);
     await this.prisma.question.update({ where: { id: questionId }, data: { isEnabled } });
+    return this.findOne(quizId);
+  }
+
+  async deleteItem(quizId: number, itemId: number) {
+    const item = await this.prisma.question.findFirst({ where: { id: itemId, quizId } });
+    if (!item) throw new NotFoundException(`Quiz item ${itemId} was not found in quiz ${quizId}`);
+    await this.prisma.question.delete({ where: { id: itemId } });
     return this.findOne(quizId);
   }
 

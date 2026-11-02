@@ -92,6 +92,13 @@
 .end-quiz-button { padding: 10px 14px; border: 1px solid #e5c7d0; border-radius: 9px; background: #fff7f8; color: #a13f57; font-size: .85rem; font-weight: 700; }
 .end-quiz-button:hover:not(:disabled) { background: #ffecef; border-color: #dca4b2; }
 .end-quiz-button:disabled { cursor: wait; opacity: .6; }
+.confirm-dialog-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 20px; background: #17132c99; }
+.confirm-dialog { width: min(100%, 430px); padding: 26px; border: 1px solid #e6d8e2; border-radius: 18px; background: #fff; box-shadow: 0 24px 65px #17132c66; }
+.confirm-dialog h2 { margin: 7px 0 10px; color: #30243c; font-size: 1.55rem; letter-spacing: -.04em; }
+.confirm-dialog > p:not(.eyebrow) { margin: 0; color: #716779; line-height: 1.55; }
+.confirm-dialog > div { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-top: 24px; }
+.confirm-danger-button { border: 0; border-radius: 10px; padding: 11px 15px; color: #fff; background: #a13f57; font-weight: 700; }
+.confirm-danger-button:hover { background: #863249; }
 .restart-quiz-control { display: grid; gap: 14px; margin-top: 22px; padding-top: 20px; border-top: 1px solid #e7e5f4; }
 .restart-quiz-control label { display: grid; grid-template-columns: 1fr minmax(130px, 180px); align-items: center; gap: 14px; color: #403b64; }
 .restart-quiz-control label > span { display: grid; gap: 3px; }

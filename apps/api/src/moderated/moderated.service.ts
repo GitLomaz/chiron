@@ -5,7 +5,7 @@ import { randomInt, randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReportModeratedGameScoreDto, SubmitModeratedAnswerDto } from './dto/moderated-session.dto';
 
-type SessionQuestion = { id: string; text: string; itemType: 'question' | 'game'; gameType: string | null; options: string[]; correctAnswer: string; timerSeconds: number | null; special?: SpecialQuestion | null };
+type SessionQuestion = { id: string; text: string; itemType: 'question' | 'game' | 'text'; gameType: string | null; options: string[]; correctAnswer: string; timerSeconds: number | null; special?: SpecialQuestion | null };
 // Credits and a first selection are personal; the board itself is shared by
 // everyone in a live matching session.
 type MatchingGame = { credits: number; selectedCard: number | null };
@@ -30,7 +30,7 @@ type ModeratedSession = {
   scoringEnabled: boolean;
   currentRoundIndex: number;
   randomizeQuestionOrder: boolean;
-  quiz: { title: string; description: string | null; theme: string; matchingPairCount: number; battleshipBoardSize: number; questions: SessionQuestion[] };
+  quiz: { title: string; description: string | null; theme: string; matchingPairCount: number; battleshipBoardSize: number; creditEveryCorrectAnswers: number; questions: SessionQuestion[] };
   phase: 'lobby' | 'question' | 'complete';
   endedByTeacher: boolean;
   expired: boolean;
@@ -71,7 +71,7 @@ export class ModeratedService {
     if (endless && mode === 'facilitated') throw new BadRequestException('Endless mode is not available for facilitated tests');
     const quiz = await this.prisma.quiz.findUnique({
       where: { id: quizId },
-      include: { questions: { where: { isEnabled: true, OR: [{ itemType: 'question' }, { itemType: 'game', gameType: { in: ['coin_catch', 'match_pairs', 'tower_stack'] } }] }, orderBy: { position: 'asc' } } },
+      include: { questions: { where: { isEnabled: true, OR: [{ itemType: 'question' }, { itemType: 'text' }, { itemType: 'game', gameType: { in: ['coin_catch', 'match_pairs', 'tower_stack'] } }] }, orderBy: { position: 'asc' } } },
     });
     if (!quiz) throw new NotFoundException(`Quiz ${quizId} was not found`);
     if (!quiz.questions.length) throw new BadRequestException('Enable at least one question before creating a moderated test');
@@ -81,6 +81,7 @@ export class ModeratedService {
     const pin = this.createPin();
     const authoredQuestions = quiz.questions.map((question) => {
       if (question.itemType === 'game') return { id: String(question.id), text: question.text, itemType: 'game' as const, gameType: question.gameType, correctAnswer: '', options: [], timerSeconds: question.gameDurationSeconds ?? 20 };
+      if (question.itemType === 'text') return { id: String(question.id), text: question.text, itemType: 'text' as const, gameType: null, correctAnswer: '', options: [], timerSeconds: null };
       const special = specialQuestion(question.options);
       const options = Array.isArray(question.options) ? question.options.filter((value): value is string => typeof value === 'string') : [];
       const wrongAnswers = [...new Set(options.filter((option) => option !== question.correctAnswer))];
@@ -101,9 +102,10 @@ export class ModeratedService {
     const matchingPairCount = quiz.matchingPairCount ?? 6;
     const [matchingColumns, matchingRows] = this.matchingGridDimensions(matchingPairCount);
     const battleshipBoardSize = quiz.battleshipBoardSize ?? 10;
+    const creditEveryCorrectAnswers = quiz.creditEveryCorrectAnswers ?? 1;
     const session = {
       id, pin, facilitatorToken, mode, endless, scoringEnabled, currentRoundIndex: -1, randomizeQuestionOrder: quiz.randomizeQuestionOrder,
-      quiz: { title: quiz.title, description: quiz.description, theme: quiz.theme, matchingPairCount, battleshipBoardSize, questions: authoredQuestions },
+      quiz: { title: quiz.title, description: quiz.description, theme: quiz.theme, matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers, questions: authoredQuestions },
       phase: 'lobby', endedByTeacher: false, expired: false, durationSeconds, endsAt: null, lobbyLocked: false, presentationMode: mode === 'matching' ? 'matching' : mode === 'battleship' ? 'battleship' : mode === 'treasure_map' ? 'treasure_map' : mode === 'archery' ? 'archery' : 'scores',
       matching: mode === 'matching' ? { cards: this.shuffle([...MATCHING_SYMBOLS.slice(0, matchingPairCount), ...MATCHING_SYMBOLS.slice(0, matchingPairCount)], id), columns: matchingColumns, rows: matchingRows, matchedCards: new Set<number>(), attempt: null, completionId: null } : null,
       battleship: mode === 'battleship' ? this.newBattleshipGame(battleshipBoardSize, id) : null,
@@ -336,21 +338,21 @@ export class ModeratedService {
     if (participant.answers.has(question.id)) throw new BadRequestException('You have already answered this question');
     participant.answers.set(question.id, body.answer);
     this.awardPoints(session, participant, question, body.answer === question.correctAnswer);
+    const earnsCredit = body.answer === question.correctAnswer && this.score(session, participant).correct % session.quiz.creditEveryCorrectAnswers === 0;
     if (participant.matching) {
-      const correct = this.score(session, participant).correct;
-      if (body.answer === question.correctAnswer && (correct === 1 || correct % 3 === 0)) participant.matching.credits += 1;
+      if (earnsCredit) participant.matching.credits += 1;
       participant.betweenQuestions = true;
       this.clearParticipantTimer(participant);
     } else if (participant.battleship) {
-      if (body.answer === question.correctAnswer) participant.battleship.tokens += 1;
+      if (earnsCredit) participant.battleship.tokens += 1;
       participant.betweenQuestions = true;
       this.clearParticipantTimer(participant);
     } else if (participant.treasureMap) {
-      if (body.answer === question.correctAnswer) participant.treasureMap.tokens += 1;
+      if (earnsCredit) participant.treasureMap.tokens += 1;
       participant.betweenQuestions = true;
       this.clearParticipantTimer(participant);
     } else if (participant.archery) {
-      if (body.answer === question.correctAnswer) participant.archery.arrows += 1;
+      if (earnsCredit) participant.archery.arrows += 1;
       participant.betweenQuestions = true;
       this.clearParticipantTimer(participant);
     } else if (session.mode !== 'facilitated') {
@@ -483,7 +485,7 @@ export class ModeratedService {
     const participant = session.participants.get(participantId);
     if (session.phase !== 'question' || session.mode === 'facilitated' || !participant || participant.completedAt) throw new BadRequestException('There is no next question to start');
     const question = participant.questions[participant.currentQuestionIndex];
-    if (!question || (!participant.answers.has(question.id) && !this.hasTimedOut(participant, question))) throw new BadRequestException('Answer the current question before moving on');
+    if (!question || (question.itemType === 'question' && !participant.answers.has(question.id) && !this.hasTimedOut(participant, question))) throw new BadRequestException('Answer the current question before moving on');
     return this.advanceParticipant(session, participant);
   }
 
