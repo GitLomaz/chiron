@@ -48,6 +48,7 @@ $tag = (Get-Date).ToUniversalTime().ToString('yyyyMMddHHmmss')
 $registry = "$Region-docker.pkg.dev/$ProjectId/$Repository"
 $apiImage = "$registry/trivia-api:$tag"
 $studentImage = "$registry/trivia-student:$tag"
+$studentRedirectImage = "$registry/trivia-student-redirect:$tag"
 $teacherImage = "$registry/trivia-teacher:$tag"
 
 Invoke-Gcloud builds submit --project=$ProjectId --config=deploy/cloudbuild.api.yaml --substitutions="_IMAGE=$apiImage"
@@ -63,13 +64,22 @@ Invoke-Gcloud run jobs execute trivia-migrate --project=$ProjectId --region=$Reg
 Invoke-Gcloud run deploy trivia-api --project=$ProjectId --region=$Region --image=$apiImage --service-account=$runtimeServiceAccount --set-secrets="DATABASE_URL=$DatabaseSecret:latest" --set-env-vars='CLIENT_ORIGIN=https://placeholder.invalid' --min-instances=1 --max-instances=1 --allow-unauthenticated
 $apiUrl = Get-RunUrl 'trivia-api'
 
-Invoke-Gcloud builds submit --project=$ProjectId --config=deploy/cloudbuild.frontend.yaml --substitutions="_IMAGE=$studentImage,_APP=student,_VITE_API_URL=$apiUrl,_VITE_STUDENT_APP_URL=https://placeholder.invalid"
+& gcloud run services describe trivia-teacher --project=$ProjectId --region=$Region *> $null
+$previousTeacherUrl = if ($LASTEXITCODE -eq 0) { Get-RunUrl 'trivia-teacher' } else { 'https://placeholder.invalid' }
+
+Invoke-Gcloud builds submit --project=$ProjectId --config=deploy/cloudbuild.frontend.yaml --substitutions="_IMAGE=$studentImage,_APP=student,_VITE_API_URL=$apiUrl,_VITE_STUDENT_APP_URL=https://placeholder.invalid,_VITE_TEACHER_APP_URL=$previousTeacherUrl"
 Invoke-Gcloud run deploy trivia-student --project=$ProjectId --region=$Region --image=$studentImage --allow-unauthenticated
 $studentUrl = Get-RunUrl 'trivia-student'
 
-Invoke-Gcloud builds submit --project=$ProjectId --config=deploy/cloudbuild.frontend.yaml --substitutions="_IMAGE=$teacherImage,_APP=web,_VITE_API_URL=$apiUrl,_VITE_STUDENT_APP_URL=$studentUrl"
+Invoke-Gcloud builds submit --project=$ProjectId --config=deploy/cloudbuild.frontend.yaml --substitutions="_IMAGE=$teacherImage,_APP=web,_VITE_API_URL=$apiUrl,_VITE_STUDENT_APP_URL=$studentUrl,_VITE_TEACHER_APP_URL=https://placeholder.invalid"
 Invoke-Gcloud run deploy trivia-teacher --project=$ProjectId --region=$Region --image=$teacherImage --allow-unauthenticated
 $teacherUrl = Get-RunUrl 'trivia-teacher'
+
+if ($previousTeacherUrl -eq 'https://placeholder.invalid') {
+  # A brand-new deployment needs one final student build now that the teacher URL exists.
+  Invoke-Gcloud builds submit --project=$ProjectId --config=deploy/cloudbuild.frontend.yaml --substitutions="_IMAGE=$studentRedirectImage,_APP=student,_VITE_API_URL=$apiUrl,_VITE_STUDENT_APP_URL=https://placeholder.invalid,_VITE_TEACHER_APP_URL=$teacherUrl"
+  Invoke-Gcloud run deploy trivia-student --project=$ProjectId --region=$Region --image=$studentRedirectImage --allow-unauthenticated
+}
 
 # Use @ as the gcloud list delimiter because the CORS value itself contains a comma.
 Invoke-Gcloud run services update trivia-api --project=$ProjectId --region=$Region --update-env-vars="^@^CLIENT_ORIGIN=$teacherUrl,$studentUrl"

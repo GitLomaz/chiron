@@ -521,6 +521,43 @@
 .dark-mode .source-tabs button { color: #aebed5; }
 .dark-mode .source-tabs button.selected { color: #a9ccff; background: #263958; box-shadow: none; }
 .dark-mode .quiz-row, .dark-mode .question-select, .dark-mode .library-card, .dark-mode .pool-card, .dark-mode .common-card, .dark-mode .game-catalog-card { border-color: #2b3950; background: #182235; color: #e7effc; }
+.dark-mode .facilitator-page { color: #dbe5f5; }
+.dark-mode .facilitator-page .brand, .dark-mode .facilitator-page h1, .dark-mode .facilitator-page h2, .dark-mode .facilitator-page strong { color: #f5f8ff; }
+.dark-mode .facilitator-page .question-card, .dark-mode .facilitator-page .participant-panel { border-color: #2b3950; background: #182235; box-shadow: 0 16px 36px #060b143d; }
+.dark-mode .facilitator-page .lede, .dark-mode .facilitator-page .participant-panel > p, .dark-mode .facilitator-page .participant-panel li, .dark-mode .facilitator-page .homework-participant-progress strong { color: #b8c6dc; }
+.dark-mode .facilitator-page .score-so-far, .dark-mode .facilitator-page .student-access { border-color: #33435f; background: #202e45; }
+.dark-mode .facilitator-page .score-so-far span, .dark-mode .facilitator-page .score-so-far small, .dark-mode .facilitator-page .participant-panel small, .dark-mode .facilitator-page .session-duration-control small { color: #9fb0ca; }
+.dark-mode .facilitator-page .participant-panel li, .dark-mode .facilitator-page .session-duration-control { border-color: #2b3950; }
+.dark-mode .facilitator-page .session-duration-control label { color: #c8d5e8; }
+.dark-mode .facilitator-page .session-duration-control input { color-scheme: dark; border-color: #405371; background: #111827; color: #f5f8ff; }
+.dark-mode .facilitator-page .text-button { color: #a9ccff; }
+.dark-mode .facilitator-page .student-access { border-radius: 14px; padding: 16px; }
+.dark-mode .facilitator-page .student-access p { color: #b8c6dc; }
+.dark-mode .facilitator-page .student-access .student-link { color: #a9ccff; }
+.dark-mode .facilitator-page .student-access-actions .text-button, .dark-mode .facilitator-page .student-access-actions .projector-link { border: 1px solid #405371; border-radius: 9px; background: #111827; color: #a9ccff; }
+.dark-mode .facilitator-page .student-access-actions .text-button:hover, .dark-mode .facilitator-page .student-access-actions .projector-link:hover { border-color: #6e9bd7; background: #263958; color: #e8f1ff; }
+.dark-mode .facilitator-page .end-quiz-button { border-color: #7b3f54; background: #351d2a; color: #ffb7c6; }
+.dark-mode .homework-report-page .report-heading, .dark-mode .homework-report-page .report-card { border-color: #2b3950; background: #182235; box-shadow: 0 16px 36px #060b143d; }
+.dark-mode .homework-report-page .report-heading h1, .dark-mode .homework-report-page .report-heading dd, .dark-mode .homework-report-page .report-card h2, .dark-mode .homework-report-page .report-table td strong { color: #f5f8ff; }
+.dark-mode .homework-report-page .report-heading p:last-child, .dark-mode .homework-report-page .report-heading dt, .dark-mode .homework-report-page .report-card-head span, .dark-mode .homework-report-page .report-empty, .dark-mode .homework-report-page .report-table td small { color: #9fb0ca; }
+.dark-mode .homework-report-page .report-heading dl { background: #33435f; }.dark-mode .homework-report-page .report-heading dl div, .dark-mode .homework-report-page .report-table th { background: #202e45; }
+.dark-mode .homework-report-page .report-card-head, .dark-mode .homework-report-page .report-table td { border-color: #2b3950; }.dark-mode .homework-report-page .report-table { color: #c8d5e8; }
+.dark-mode .facilitator-page .homework-archery-leaderboard { border-color: #2b3950; }
+.dark-mode .facilitator-page .homework-archery-leaderboard li { background: #202e45; color: #dbe5f5; }
+.dark-mode .facilitator-page .homework-archery-leaderboard li strong { color: #f5f8ff; }
+.dark-mode .facilitator-page .homework-archery-leaderboard li small { color: #9fb0ca; }
+.dark-mode .facilitator-page .homework-archery-leaderboard li em { color: #ffb29f; }
+.dark-mode .facilitator-page .homework-archery-leaderboard li > b { background: #b85037; }
+.dark-mode .homework-report-page .report-archery li { background: #202e45; color: #dbe5f5; }
+.dark-mode .homework-report-page .report-archery li strong { color: #f5f8ff; }
+.dark-mode .homework-report-page .report-archery li small { color: #9fb0ca; }
+.dark-mode .homework-report-page .report-archery li em { color: #ffb29f; }
+.dark-mode .homework-report-page .report-archery li > b { background: #b85037; }
+.dark-mode .subtle-button { border-color: #405371; background: #202e45; color: #c8d5e8; box-shadow: inset 0 1px #ffffff0a; }
+.dark-mode .subtle-button:hover:not(:disabled) { border-color: #6e9bd7; background: #263958; color: #f5f8ff; }
+.dark-mode .subtle-button:focus-visible { outline: 2px solid #8bb8ff; outline-offset: 2px; }
+.dark-mode .running-session-actions .subtle-button { background: #1a2a43; color: #b9d3ff; }
+.dark-mode .running-session-actions .subtle-button:hover:not(:disabled) { background: #2a4670; color: #fff; }
 .dark-mode .quiz-row:hover, .dark-mode .question-select:hover, .dark-mode .quiz-item-question .question-select, .dark-mode .quiz-item-question .question-select:hover { background: #202e45; }
 .dark-mode .quiz-item-game .question-select, .dark-mode .quiz-item-game .question-select:hover { background: #1b302a; }
 .dark-mode .quiz-item-text .question-select, .dark-mode .quiz-item-text .question-select:hover { background: #342b20; }
@@ -748,3 +785,8 @@ body:has(.dark-mode) { background: #111827; }
 :is(.preview-theme-christmas, .preview-theme-halloween) .preview-card h3 { color: var(--season-ink); }
 :is(.preview-theme-christmas, .preview-theme-halloween) .preview-option { border: 2px solid var(--season-border); background: var(--season-light); color: var(--season-ink); }
 :is(.preview-theme-christmas, .preview-theme-halloween) .preview-option span { background: #fff; color: var(--season-ink); }
+.session-history { margin-top: 24px; }
+.running-session-row { min-height: 72px; }
+.running-session-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-left: auto; }
+.running-session-actions .subtle-button { padding: 7px 10px; }
+@media (max-width: 720px) { .running-session-row { align-items: flex-start; flex-wrap: wrap; } .running-session-actions { width: 100%; margin-left: 48px; justify-content: flex-start; } }

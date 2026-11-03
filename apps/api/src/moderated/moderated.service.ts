@@ -106,7 +106,7 @@ export class ModeratedService {
     const session = {
       id, pin, facilitatorToken, mode, endless, scoringEnabled, currentRoundIndex: -1, randomizeQuestionOrder: quiz.randomizeQuestionOrder,
       quiz: { title: quiz.title, description: quiz.description, theme: quiz.theme, matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers, questions: authoredQuestions },
-      phase: 'lobby', endedByTeacher: false, expired: false, durationSeconds, endsAt: null, lobbyLocked: false, presentationMode: mode === 'matching' ? 'matching' : mode === 'battleship' ? 'battleship' : mode === 'treasure_map' ? 'treasure_map' : mode === 'archery' ? 'archery' : 'scores',
+      phase: 'lobby', endedByTeacher: false, expired: false, durationSeconds, endsAt: new Date(Date.now() + durationSeconds * 1000), lobbyLocked: false, presentationMode: mode === 'matching' ? 'matching' : mode === 'battleship' ? 'battleship' : mode === 'treasure_map' ? 'treasure_map' : mode === 'archery' ? 'archery' : 'scores',
       matching: mode === 'matching' ? { cards: this.shuffle([...MATCHING_SYMBOLS.slice(0, matchingPairCount), ...MATCHING_SYMBOLS.slice(0, matchingPairCount)], id), columns: matchingColumns, rows: matchingRows, matchedCards: new Set<number>(), attempt: null, completionId: null } : null,
       battleship: mode === 'battleship' ? this.newBattleshipGame(battleshipBoardSize, id) : null,
       treasureMap: mode === 'treasure_map' ? this.newTreasureMap(id) : null,
@@ -190,8 +190,8 @@ export class ModeratedService {
   start(sessionId: string, token: string) {
     const session = this.authorize(sessionId, token);
     if (session.phase !== 'lobby') throw new BadRequestException('This test has already started');
+    if (!session.endsAt || Date.now() >= session.endsAt.getTime()) throw new BadRequestException('This test has reached its end date');
     session.phase = 'question';
-    session.endsAt = new Date(Date.now() + session.durationSeconds * 1000);
     session.currentRoundIndex = 0;
     for (const participant of session.participants.values()) this.openParticipantQuestion(session, participant);
     return this.facilitatorState(sessionId, token);
@@ -546,12 +546,25 @@ export class ModeratedService {
   }
 
   private archeryState(game: SharedArcheryGame, player?: Participant, includeNames = false) {
+    const byScore = (a: ArcheryArrow, b: ArcheryArrow) => b.score - a.score || a.participantName.localeCompare(b.participantName);
+    const playerAttempts = player
+      ? game.arrows.filter((arrow) => arrow.participantId === player.id)
+      : [];
+    const sharedBestAttempts = includeNames
+      ? [...game.arrows.reduce((byParticipant, arrow) => {
+          const attempts = byParticipant.get(arrow.participantId) ?? [];
+          attempts.push(arrow);
+          byParticipant.set(arrow.participantId, attempts);
+          return byParticipant;
+        }, new Map<string, ArcheryArrow[]>()).values()]
+          .flatMap((attempts) => attempts.sort(byScore).slice(0, 3))
+          .sort(byScore)
+      : [];
     return {
       arrows: player?.archery?.arrows ?? null,
       lastShot: player?.archery?.lastShot ? { id: player.archery.lastShot.id, x: player.archery.lastShot.x, y: player.archery.lastShot.y, score: player.archery.lastShot.score } : null,
-      attempts: game.arrows
-        .sort((a, b) => b.score - a.score || a.participantName.localeCompare(b.participantName))
-        .slice(0, 12)
+      attempts: (player ? playerAttempts : sharedBestAttempts)
+        .sort(byScore)
         .map((arrow) => ({ id: arrow.id, x: arrow.x, y: arrow.y, score: arrow.score, participantName: includeNames ? arrow.participantName : undefined })),
     };
   }

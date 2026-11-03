@@ -1,15 +1,29 @@
-import { IsInt, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 export class CreateHomeworkSessionDto {
   @IsInt()
   @Min(300)
   @Max(604800)
   durationSeconds!: number;
+
+  @IsOptional()
+  @IsIn(['classic', 'archery'])
+  mode?: 'classic' | 'archery';
 }
 
 export class EndHomeworkSessionDto {
   @IsUUID('4')
   facilitatorToken!: string;
+}
+
+export class UpdateHomeworkDurationDto {
+  @IsUUID('4')
+  facilitatorToken!: string;
+
+  @IsInt()
+  @Min(300)
+  @Max(604800)
+  durationSeconds!: number;
 }
 
 export class JoinHomeworkSessionDto {
@@ -39,4 +53,24 @@ export class CompleteHomeworkItemDto {
   @IsString()
   @MinLength(1)
   questionId!: string;
+}
+
+export class RestartHomeworkDto {
+  @IsUUID('4')
+  participantId!: string;
+}
+
+export class ShootHomeworkArcheryDto {
+  @IsUUID('4')
+  participantId!: string;
+
+  @IsNumber()
+  @Min(-100)
+  @Max(100)
+  x!: number;
+
+  @IsNumber()
+  @Min(-100)
+  @Max(100)
+  y!: number;
 }

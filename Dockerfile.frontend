@@ -4,6 +4,7 @@ FROM node:20-bookworm-slim AS build
 ARG APP
 ARG VITE_API_URL
 ARG VITE_STUDENT_APP_URL
+ARG VITE_TEACHER_APP_URL
 
 WORKDIR /app
 
@@ -16,6 +17,7 @@ RUN npm ci
 COPY apps ./apps
 ENV VITE_API_URL=${VITE_API_URL}
 ENV VITE_STUDENT_APP_URL=${VITE_STUDENT_APP_URL}
+ENV VITE_TEACHER_APP_URL=${VITE_TEACHER_APP_URL}
 RUN npm run build --workspace=@trivia/${APP}
 
 FROM nginx:1.27-alpine

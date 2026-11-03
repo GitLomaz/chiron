@@ -50,6 +50,7 @@ TAG="$(date -u +%Y%m%d%H%M%S)"
 REGISTRY="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}"
 API_IMAGE="${REGISTRY}/trivia-api:${TAG}"
 STUDENT_IMAGE="${REGISTRY}/trivia-student:${TAG}"
+STUDENT_REDIRECT_IMAGE="${REGISTRY}/trivia-student-redirect:${TAG}"
 TEACHER_IMAGE="${REGISTRY}/trivia-teacher:${TAG}"
 
 run builds submit --project="$PROJECT_ID" --config=deploy/cloudbuild.api.yaml --substitutions="_IMAGE=${API_IMAGE}"
@@ -82,19 +83,34 @@ run run deploy trivia-api \
   --allow-unauthenticated
 API_URL="$(service_url trivia-api)"
 
+if gcloud run services describe trivia-teacher --project="$PROJECT_ID" --region="$REGION" >/dev/null 2>&1; then
+  PREVIOUS_TEACHER_URL="$(service_url trivia-teacher)"
+else
+  PREVIOUS_TEACHER_URL='https://placeholder.invalid'
+fi
+
 run builds submit \
   --project="$PROJECT_ID" \
   --config=deploy/cloudbuild.frontend.yaml \
-  --substitutions="_IMAGE=${STUDENT_IMAGE},_APP=student,_VITE_API_URL=${API_URL},_VITE_STUDENT_APP_URL=https://placeholder.invalid"
+  --substitutions="_IMAGE=${STUDENT_IMAGE},_APP=student,_VITE_API_URL=${API_URL},_VITE_STUDENT_APP_URL=https://placeholder.invalid,_VITE_TEACHER_APP_URL=${PREVIOUS_TEACHER_URL}"
 run run deploy trivia-student --project="$PROJECT_ID" --region="$REGION" --image="$STUDENT_IMAGE" --allow-unauthenticated
 STUDENT_URL="$(service_url trivia-student)"
 
 run builds submit \
   --project="$PROJECT_ID" \
   --config=deploy/cloudbuild.frontend.yaml \
-  --substitutions="_IMAGE=${TEACHER_IMAGE},_APP=web,_VITE_API_URL=${API_URL},_VITE_STUDENT_APP_URL=${STUDENT_URL}"
+  --substitutions="_IMAGE=${TEACHER_IMAGE},_APP=web,_VITE_API_URL=${API_URL},_VITE_STUDENT_APP_URL=${STUDENT_URL},_VITE_TEACHER_APP_URL=https://placeholder.invalid"
 run run deploy trivia-teacher --project="$PROJECT_ID" --region="$REGION" --image="$TEACHER_IMAGE" --allow-unauthenticated
 TEACHER_URL="$(service_url trivia-teacher)"
+
+if [[ "$PREVIOUS_TEACHER_URL" == 'https://placeholder.invalid' ]]; then
+  # A brand-new deployment needs one final student build now that the teacher URL exists.
+  run builds submit \
+    --project="$PROJECT_ID" \
+    --config=deploy/cloudbuild.frontend.yaml \
+    --substitutions="_IMAGE=${STUDENT_REDIRECT_IMAGE},_APP=student,_VITE_API_URL=${API_URL},_VITE_STUDENT_APP_URL=https://placeholder.invalid,_VITE_TEACHER_APP_URL=${TEACHER_URL}"
+  run run deploy trivia-student --project="$PROJECT_ID" --region="$REGION" --image="$STUDENT_REDIRECT_IMAGE" --allow-unauthenticated
+fi
 
 # @ avoids gcloud interpreting the CORS comma as the separator between flags.
 run run services update trivia-api \

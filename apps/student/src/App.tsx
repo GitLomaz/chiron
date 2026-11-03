@@ -18,6 +18,8 @@ type QuizQuestion = {
   options: unknown;
   special?: SpecialQuestion | null;
   matchProgress?: MatchProgress | null;
+  answer?: string | null;
+  completed?: boolean;
   correctAnswer: string;
   answerCount: number | null;
   timerSeconds: number | null;
@@ -317,10 +319,23 @@ function participantClientId(pin: string) {
   localStorage.setItem(key, clientId);
   return clientId;
 }
-function moderatedStudentUrl(pin: string) { return `${window.location.origin}/moderated/${pin}`; }
-function projectorUrl(sessionId: string, token: string) { return `${window.location.origin}/projector/${sessionId}?token=${encodeURIComponent(token)}`; }
+function studentAppUrl() {
+  const configuredUrl = import.meta.env.VITE_STUDENT_APP_URL;
+  if (configuredUrl && configuredUrl !== 'https://placeholder.invalid') return configuredUrl.replace(/\/$/, '');
+  return ['localhost', '127.0.0.1'].includes(window.location.hostname)
+    ? `${window.location.protocol}//${window.location.hostname}:5174`
+    : window.location.origin;
+}
+function moderatedStudentUrl(pin: string) { return `${studentAppUrl()}/moderated/${pin}`; }
+function teacherAppUrl() {
+  const configuredUrl = import.meta.env.VITE_TEACHER_APP_URL;
+  return (configuredUrl && configuredUrl !== 'https://placeholder.invalid' ? configuredUrl : 'http://localhost:5173').replace(/\/$/, '');
+}
+function projectorUrl(sessionId: string, token: string) { return `${teacherAppUrl()}/teacher/projector/${sessionId}?token=${encodeURIComponent(token)}`; }
 function homeworkStorageKey(sessionId: string) { return `quizboard-homework-${sessionId}`; }
-function homeworkStudentUrl(sessionId: string) { return `${window.location.origin}/homework/${sessionId}`; }
+function homeworkStudentUrl(sessionId: string) { return `${studentAppUrl()}/homework/${sessionId}`; }
+function dateTimeLocalValue(value: string) { const date = new Date(value); return new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().slice(0, 16); }
+function LegacyTeacherRedirect({ path }: { path: string }) { useEffect(() => { window.location.replace(`${teacherAppUrl()}${path}${window.location.search}`); }, [path]); return <main className="page status-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><div className="loader" /><p>Opening teacher controls…</p></main>; }
 
 function ModeratedCoinCatch({ pin, participantId, question, theme, facilitated }: { pin: string; participantId: string; question: ModeratedQuestion; theme: 'standard' | 'kids' | 'christmas' | 'halloween'; facilitated: boolean }) {
   const [things, setThings] = useState<FallingThing[]>([]); const [score, setScore] = useState(question.gameScore ?? 0);
@@ -473,7 +488,7 @@ function ModeratedPinEntry() {
   return <main className="page welcome-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><section className="welcome-card"><p className="eyebrow">LIVE TEST</p><h1>Join your live test.</h1><p className="lede">Enter the 6-digit PIN shared by your facilitator.</p><form className="join-form" onSubmit={submit} noValidate><label htmlFor="moderated-pin">Test PIN</label><div className="join-row"><input id="moderated-pin" value={pin} onChange={(event) => { setPin(event.target.value.replace(/\D/g, '').slice(0, 6)); setError(''); }} inputMode="numeric" autoComplete="one-time-code" placeholder="123456" maxLength={6} autoFocus aria-describedby={error ? 'moderated-pin-error' : undefined} /><button className="primary-button" type="submit">Join test</button></div>{error && <p className="form-error" id="moderated-pin-error">{error}</p>}</form></section></main>;
 }
 
-function Facilitator({ sessionId, token, projector = false }: { sessionId: string; token: string; projector?: boolean }) {
+export function Facilitator({ sessionId, token, projector = false, metrics = false }: { sessionId: string; token: string; projector?: boolean; metrics?: boolean }) {
   const [state, setState] = useState<FacilitatorState | null>(null);
   const [error, setError] = useState('');
   const [acting, setActing] = useState(false);
@@ -544,7 +559,13 @@ function Facilitator({ sessionId, token, projector = false }: { sessionId: strin
     const mostAnsweredPlayers = leaderboard.filter((player) => player.answered === mostAnswered && mostAnswered > 0);
     return <main className={`projector-scoreboard${complete ? ' projector-final-scoreboard' : ''}`} aria-live="polite"><section className="projector-scoreboard-content"><header><div className="projector-title"><p>{complete ? 'QUIZ OVER' : 'LIVE LEADERBOARD'}</p><h1>{complete ? 'High scores' : showingScores ? 'Scores' : 'Correct answers'}</h1><span>{state.title}</span></div>{!complete && <div className="projector-metric-toggle" aria-label="Leaderboard display"><button className={showingScores ? 'selected' : ''} disabled={!scoring} onClick={() => setProjectorMetric('scores')} title={scoring ? 'Show point scores' : 'Point scoring is not enabled for this session'}>Scores</button><button className={!showingScores ? 'selected' : ''} onClick={() => setProjectorMetric('correct')}>Correct</button></div>}</header>{leaderboard.length ? <div className="projector-leaderboard"><ol className="projector-podium">{leaderboard.slice(0, 3).map((player, index) => <li key={player.id} className={`podium-place podium-${index + 1}`}><span className="projector-rank">{index + 1}</span><strong title={player.name}>{player.name}</strong><em>{value(player)}<small>{unit}</small></em></li>)}</ol>{leaderboard.length > 3 && <ol className="projector-top-five">{leaderboard.slice(3, 5).map((player, index) => <li key={player.id}><span className="projector-rank">{index + 4}</span><strong title={player.name}>{player.name}</strong><em>{value(player)}<small>{unit}</small></em></li>)}</ol>}{complete && <section className="projector-honours" aria-label="Honourable mentions"><h2>Honourable mentions</h2><div>{longestStreakPlayers.length > 0 && <p><span>Longest streak{longestStreakPlayers.length > 1 ? 's' : ''}</span><strong>{longestStreakPlayers.map((player) => player.name).join(', ')}</strong><em>{longestStreak} in a row</em></p>}{mostAnsweredPlayers.length > 0 && <p><span>Most questions answered</span><strong>{mostAnsweredPlayers.map((player) => player.name).join(', ')}</strong><em>{mostAnswered} answered</em></p>}</div></section>}{leaderboard.length > 5 && <section className="projector-more"><h2>More players</h2><ol>{leaderboard.slice(5).map((player, index) => <li key={player.id}><span>{index + 6}</span><strong title={player.name}>{player.name}</strong><em>{value(player)}</em></li>)}</ol></section>}</div> : <p className="projector-empty">{complete ? 'No scores were recorded for this quiz.' : 'Scores will appear here as participants answer questions.'}</p>}</section></main>;
   }
+  if (metrics) return <LiveMetricsView state={state} />;
   return <LiveFacilitatorView state={state} sessionId={sessionId} token={token} acting={acting} updatingLobby={updatingLobby} removingParticipantId={removingParticipantId} error={error} onStart={start} onNext={next} onEnd={end} onRestart={restart} onResetBoard={resetBoard} onBoardAutoReset={updateBoardAutoReset} onLobbyLock={updateLobbyLock} onPresentationMode={updatePresentationMode} onRemoveParticipant={removeParticipant} />;
+}
+
+function LiveMetricsView({ state }: { state: FacilitatorState }) {
+  const leaderboard = [...state.scoreLeaderboard].sort((a, b) => (state.scoringEnabled ? b.score - a.score : b.correct - a.correct) || a.name.localeCompare(b.name));
+  return <main className="page facilitator-page"><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">LIVE METRICS</span></header><section className="facilitator-grid"><div className="question-card control-card"><p className="eyebrow">SESSION PERFORMANCE</p><h1>{state.title}</h1><p className="lede">Live completion, answer, and game performance update automatically.</p><div className="score-so-far"><span>Completed</span><strong>{state.completedCount} / {state.participants.length}</strong><small>{state.phase === 'lobby' ? 'Waiting to start' : state.endless ? 'Endless questions' : `${state.questionCount} quiz items per participant`}</small></div>{state.archery && <section className="homework-archery-leaderboard"><p className="eyebrow">BEST ARCHERY SCORES</p>{state.archery.attempts.length ? <ol>{state.archery.attempts.slice(0, 5).map((attempt, index) => <li key={attempt.id}><b>{index + 1}</b><span><strong>{attempt.participantName ?? 'Player'}</strong><small>Archery attempt</small></span><em>{attempt.score} pts</em></li>)}</ol> : <p className="lede">No Archery scores recorded yet.</p>}</section>}</div><aside className="participant-panel homework-participant-panel"><div><p className="eyebrow">LEADERBOARD</p><h2>{leaderboard.length} participant{leaderboard.length === 1 ? '' : 's'}</h2></div>{leaderboard.length ? <ul>{leaderboard.map((player, index) => <li className="homework-participant" key={player.id}><span className="homework-participant-progress"><strong>{index + 1}. {player.name}</strong><small>{player.correct} correct · {player.answered} answered</small></span><span className="homework-participant-score"><strong>{state.scoringEnabled ? `${player.score} pts` : `${player.correct} / ${player.answered}`}</strong><small>{player.longestStreak ? `${player.longestStreak} streak` : 'No streak yet'}</small></span></li>)}</ul> : <p>No responses yet.</p>}</aside></section></main>;
 }
 
 function LiveFacilitatorView({ state, sessionId, token, acting, updatingLobby, removingParticipantId, error, onStart, onNext, onEnd, onRestart, onResetBoard, onBoardAutoReset, onLobbyLock, onPresentationMode, onRemoveParticipant }: { state: FacilitatorState; sessionId: string; token: string; acting: boolean; updatingLobby: boolean; removingParticipantId: string | null; error: string; onStart: () => Promise<void>; onNext: () => Promise<void>; onEnd: () => Promise<void>; onRestart: (mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery') => Promise<void>; onResetBoard: () => Promise<void>; onBoardAutoReset: (autoReset: boolean) => Promise<void>; onLobbyLock: (locked: boolean) => Promise<void>; onPresentationMode: (mode: 'scores' | 'matching' | 'battleship' | 'treasure_map' | 'archery') => Promise<void>; onRemoveParticipant: (participantId: string) => Promise<void> }) {
@@ -607,11 +628,12 @@ type HomeworkStudentState = {
   title: string;
   description: string | null;
   theme: 'standard' | 'kids' | 'christmas' | 'halloween';
+  mode: 'classic' | 'archery';
   ended: boolean;
   expired: boolean;
   endsAt: string;
   questions: QuizQuestion[];
-  participant: { id: string; name: string; completed: boolean; score: { correct: number; answered: number; total: number } } | null;
+  participant: { id: string; name: string; completed: boolean; score: { correct: number; answered: number; total: number }; archery: (ArcheryState & { shootingScore: number }) | null } | null;
 };
 type HomeworkTeacherState = {
   sessionId: string;
@@ -622,8 +644,23 @@ type HomeworkTeacherState = {
   endsAt: string;
   questionCount: number;
   itemCount: number;
-  participants: { id: string; name: string; completed: boolean; completedAt: string | null; completedItems: number; score: { correct: number; answered: number; total: number } }[];
+  mode: 'classic' | 'archery';
+  participants: { id: string; name: string; attemptNumber: number; joinedAt: string; completed: boolean; completedAt: string | null; completedItems: number; score: { correct: number; answered: number; total: number }; shootingScore: number | null }[];
+  questionStats: { id: string; text: string; answered: number; correct: number; correctRate: number }[];
+  archeryLeaderboard: { name: string; attempts: number; bestScore: number }[];
 };
+
+function ReportQuestionTable({ title, questions }: { title: string; questions: HomeworkTeacherState['questionStats'] }) {
+  return <section className="report-card"><div className="report-card-head"><p className="eyebrow">QUESTION PERFORMANCE</p><h2>{title}</h2></div>{questions.length ? <div className="report-table-wrap"><table className="report-table"><thead><tr><th>Question</th><th>Correct</th><th>Rate</th></tr></thead><tbody>{questions.map((question) => <tr key={question.id}><td title={question.text}>{question.text}</td><td>{question.correct} / {question.answered}</td><td><strong>{question.correctRate}%</strong></td></tr>)}</tbody></table></div> : <p className="report-empty">No answered questions yet.</p>}</section>;
+}
+
+function HomeworkReport({ state, onManage }: { state: HomeworkTeacherState; onManage: () => void }) {
+  const completed = state.participants.filter((participant) => participant.completed).length;
+  const averageRate = state.participants.length ? Math.round((state.participants.reduce((total, participant) => total + participant.score.correct, 0) / Math.max(1, state.participants.reduce((total, participant) => total + participant.score.total, 0))) * 100) : 0;
+  const strongest = [...state.questionStats].sort((a, b) => b.correctRate - a.correctRate || b.answered - a.answered || a.text.localeCompare(b.text)).slice(0, 5);
+  const weakest = [...state.questionStats].sort((a, b) => a.correctRate - b.correctRate || b.answered - a.answered || a.text.localeCompare(b.text)).slice(0, 5);
+  return <main className="page facilitator-page homework-report-page"><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">HOMEWORK REPORT</span><button className="text-button" onClick={onManage}>Back to management</button></header><section className="report-heading"><div><p className="eyebrow">HOMEWORK ANALYTICS</p><h1>{state.title}</h1><p>Attempt history, student outcomes, and question-level performance.</p></div><dl><div><dt>Attempts</dt><dd>{state.participants.length}</dd></div><div><dt>Completed</dt><dd>{completed}</dd></div><div><dt>Average score</dt><dd>{averageRate}%</dd></div></dl></section>{state.mode === 'archery' && <section className="report-card report-archery"><div className="report-card-head"><p className="eyebrow">GAME PERFORMANCE</p><h2>Archery leaderboard</h2></div>{state.archeryLeaderboard.length ? <ol>{state.archeryLeaderboard.map((player, index) => <li key={player.name}><b>{index + 1}</b><span><strong>{player.name}</strong><small>{player.attempts} attempt{player.attempts === 1 ? '' : 's'}</small></span><em>{player.bestScore} pts</em></li>)}</ol> : <p className="report-empty">No Archery scores recorded yet.</p>}</section>}<section className="report-question-grid"><ReportQuestionTable title="Most correct" questions={strongest} /><ReportQuestionTable title="Least correct" questions={weakest} /></section><section className="report-card report-attempts"><div className="report-card-head"><p className="eyebrow">STUDENT ATTEMPTS</p><h2>Completion history</h2><span>{state.participants.length} recorded attempt{state.participants.length === 1 ? '' : 's'}</span></div>{state.participants.length ? <div className="report-table-wrap"><table className="report-table"><thead><tr><th>Student</th><th>Attempt</th><th>Started</th><th>Status</th><th>Quiz score</th>{state.mode === 'archery' && <th>Archery</th>}</tr></thead><tbody>{state.participants.map((participant) => <tr key={participant.id}><td><strong>{participant.name}</strong></td><td>#{participant.attemptNumber}</td><td>{new Date(participant.joinedAt).toLocaleString()}</td><td>{participant.completed ? participant.completedAt ? `Completed ${new Date(participant.completedAt).toLocaleString()}` : 'Completed' : `${participant.completedItems} / ${state.itemCount} items`}</td><td><strong>{participant.score.correct} / {participant.score.total}</strong><small>{participant.score.answered} answered</small></td>{state.mode === 'archery' && <td><strong>{participant.shootingScore ?? 0} pts</strong></td>}</tr>)}</tbody></table></div> : <p className="report-empty">No attempts yet.</p>}</section></main>;
+}
 
 function HomeworkStudent({ sessionId }: { sessionId: string }) {
   const playerStarted = useRef(false);
@@ -650,41 +687,68 @@ function HomeworkStudent({ sessionId }: { sessionId: string }) {
     finally { setJoining(false); }
   }
 
+  async function restart() {
+    try {
+      const result = await homeworkRequest<{ participantId: string }>(`/${sessionId}/restart`, { method: 'POST', body: JSON.stringify({ participantId }) });
+      localStorage.setItem(homeworkStorageKey(sessionId), result.participantId);
+      playerStarted.current = false;
+      setPlayerFinished(false);
+      setParticipantId(result.participantId);
+    } catch (err) { setError(err instanceof Error ? err.message : 'Could not start another attempt'); }
+  }
+
   if (error && !state) return <main className="page status-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><section className="error-card"><p className="eyebrow">HOMEWORK UNAVAILABLE</p><h1>We couldn’t open this homework.</h1><p>{error}</p></section></main>;
   if (!state) return <main className="page status-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><div className="loader" /></main>;
   if (state.ended) return <QuizEnded theme={state.theme} title={state.title} score={state.participant?.score} expired={state.expired} />;
   if (!participantId || !state.participant) return <main className={`page quiz-page theme-${state.theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="intro-card moderated-join-card"><p className="eyebrow">HOMEWORK</p><p>Closes: {new Date(state.endsAt).toLocaleString()}</p><h1>{state.title}</h1><p className="lede">Enter your name so your teacher can see your completed work and score.</p><form className="join-form moderated-join-form" onSubmit={join}><label>Your name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Enter your name" maxLength={100} required /></label><button className="primary-button" disabled={joining}>{joining ? 'Starting…' : 'Start homework'}</button></form>{error && <p className="form-error">{error}</p>}</section></main>;
-  if (state.participant.completed && !playerStarted.current) return <main className={`page quiz-page theme-${state.theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="results-card"><p className="eyebrow">HOMEWORK COMPLETE</p><h1>Nice work, {state.participant.name}!</h1><p className="score-copy">Your teacher has your score: <strong>{state.participant.score.correct} of {state.participant.score.total}</strong>.</p></section></main>;
+  const hasPendingArcheryShot = state.mode === 'archery' && (state.participant.archery?.arrows ?? 0) > 0;
+  if (state.participant.completed && !playerStarted.current && !hasPendingArcheryShot) return <main className={`page quiz-page theme-${state.theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="results-card"><p className="eyebrow">HOMEWORK COMPLETE</p><h1>Nice work, {state.participant.name}!</h1><p className="score-copy">Your teacher has your score: <strong>{state.participant.score.correct} of {state.participant.score.total}</strong>{state.mode === 'archery' ? <> · <strong>{state.participant.archery?.shootingScore ?? 0}</strong> archery points</> : null}.</p><div className="results-actions"><button className="primary-button" onClick={() => void restart()}>Take quiz again</button></div>{error && <p className="form-error">{error}</p>}</section></main>;
   playerStarted.current = true;
   const quiz: Quiz = { guid: sessionId, title: state.title, description: state.description, theme: state.theme, defaultTimerSeconds: -1, questions: state.questions };
   const submitAnswer = (questionId: string, answer: string) => homeworkRequest(`/${sessionId}/answers`, { method: 'POST', body: JSON.stringify({ participantId, questionId, answer }) });
   const completeItem = (questionId: string) => homeworkRequest(`/${sessionId}/items/complete`, { method: 'POST', body: JSON.stringify({ participantId, questionId }) });
-  return <div className={`student-app theme-${state.theme}`}>{!playerFinished && <RunDeadline endsAt={state.endsAt} />}<Player key={participantId} quiz={quiz} studentName={state.participant.name} onSubmitAnswer={submitAnswer} onCompleteItem={completeItem} onFinished={() => setPlayerFinished(true)} allowRestart={false} /></div>;
+  const shootArchery = (x: number, y: number) => homeworkRequest<ArcheryState & { shootingScore: number }>(`/${sessionId}/archery/shoot`, { method: 'POST', body: JSON.stringify({ participantId, x, y }) });
+  return <div className={`student-app theme-${state.theme}`}>{!playerFinished && <RunDeadline endsAt={state.endsAt} />}<Player key={participantId} quiz={quiz} studentName={state.participant.name} onSubmitAnswer={submitAnswer} onCompleteItem={completeItem} onFinished={() => setPlayerFinished(true)} onRestart={() => void restart()} archery={state.participant.archery ?? undefined} onShootArchery={state.mode === 'archery' ? shootArchery : undefined} /></div>;
 }
 
-function HomeworkTeacher({ sessionId, token }: { sessionId: string; token: string }) {
+export function HomeworkTeacher({ sessionId, token, initialView = 'manage' }: { sessionId: string; token: string; initialView?: 'manage' | 'report' }) {
   const [state, setState] = useState<HomeworkTeacherState | null>(null);
+  const [view, setView] = useState<'manage' | 'report'>(initialView);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [ending, setEnding] = useState(false);
+  const [endDate, setEndDate] = useState('');
+  const [updatingDuration, setUpdatingDuration] = useState(false);
   const load = useCallback(async () => {
     try { const next = await homeworkRequest<HomeworkTeacherState>(`/${sessionId}/teacher?token=${encodeURIComponent(token)}`); setState((current) => current?.sessionId === next.sessionId && current.ended && !next.ended ? current : next); setError(''); }
     catch (err) { setError(err instanceof Error ? err.message : 'Could not load homework results'); }
   }, [sessionId, token]);
   useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 2000); return () => window.clearInterval(timer); }, [load]);
+  useEffect(() => { if (state?.sessionId) setEndDate(dateTimeLocalValue(state.endsAt)); }, [state?.sessionId]);
   async function copyStudentLink() { try { await navigator.clipboard.writeText(homeworkStudentUrl(sessionId)); setCopied(true); window.setTimeout(() => setCopied(false), 2000); } catch { setError('Could not copy the student link.'); } }
   function end() { confirmAction({ title: 'End homework?', copy: 'Students will no longer be able to answer or join.', confirmLabel: 'End homework', onConfirm: endNow }); }
   async function endNow() { setEnding(true); setError(''); try { setState(await homeworkRequest<HomeworkTeacherState>(`/${sessionId}/end`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not end the homework'); } finally { setEnding(false); } }
+  async function updateDuration() {
+    const durationSeconds = Math.ceil((new Date(endDate).getTime() - Date.now()) / 1000);
+    if (!endDate || !Number.isFinite(durationSeconds) || durationSeconds < 300 || durationSeconds > 604800) { setError('Choose an end date between 5 minutes and 7 days from now.'); return; }
+    setUpdatingDuration(true); setError('');
+    try { setState(await homeworkRequest<HomeworkTeacherState>(`/${sessionId}/duration`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token, durationSeconds }) })); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Could not update the homework deadline'); }
+    finally { setUpdatingDuration(false); }
+  }
   if (!state) return <main className="page status-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div>{error ? <section className="error-card"><h1>Teacher access unavailable.</h1><p>{error}</p></section> : <div className="loader" />}</main>;
   const completed = state.participants.filter((participant) => participant.completed).length;
   const studentUrl = homeworkStudentUrl(sessionId);
+  if (view === 'report') return <HomeworkReport state={state} onManage={() => setView('manage')} />;
   return <main className="page facilitator-page">
-    <header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">HOMEWORK RESULTS</span></header>
+    <header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">HOMEWORK MANAGEMENT</span><button className="text-button" onClick={() => setView('report')}>Open report</button></header>
     <section className="facilitator-grid">
       <div className="question-card control-card">
         <p className="eyebrow">{state.ended ? 'HOMEWORK ENDED' : 'HOMEWORK RUN'}</p><h1>{state.title}</h1><p>{state.expired ? 'Time expired' : 'Closes'}: {new Date(state.endsAt).toLocaleString()}</p>
         <p className="lede">{state.ended ? 'This homework has ended. Recorded work remains available below.' : 'Students work independently. This page updates as they join and complete the assignment.'}</p>
         <div className="score-so-far"><span>Completed</span><strong>{completed} / {state.participants.length}</strong><small>{state.questionCount} scored question{state.questionCount === 1 ? '' : 's'} per attempt</small></div>
+        {!state.ended && <section className="session-duration-control"><p className="eyebrow">SESSION CONTROLS</p><label>End date and time<input type="datetime-local" value={endDate} disabled={updatingDuration} onChange={(event) => setEndDate(event.target.value)} /></label><button className="primary-button" disabled={updatingDuration} onClick={() => void updateDuration()}>{updatingDuration ? 'Updating…' : 'Update deadline'}</button><small>Students will no longer be able to work after this time.</small></section>}
+        {state.mode === 'archery' && state.archeryLeaderboard.length > 0 && <section className="homework-archery-leaderboard"><p className="eyebrow">BEST ARCHERY SCORES</p><ol>{state.archeryLeaderboard.map((player, index) => <li key={player.name}><b>{index + 1}</b><span><strong>{player.name}</strong><small>{player.attempts} attempt{player.attempts === 1 ? '' : 's'}</small></span><em>{player.bestScore} pts</em></li>)}</ol></section>}
         {!state.ended && <div className="end-quiz-control"><button className="end-quiz-button" disabled={ending} onClick={() => void end()}>{ending ? 'Ending…' : 'End quiz'}</button><small>Stop homework for all participants.</small></div>}
         {error && <p className="form-error">{error}</p>}
       </div>
@@ -695,10 +759,37 @@ function HomeworkTeacher({ sessionId, token }: { sessionId: string; token: strin
           <div className="student-access-actions"><button className="text-button" onClick={() => void copyStudentLink()}>{copied ? 'Student link copied' : 'Copy student link'}</button></div>
         </div>
         <div><p className="eyebrow">PARTICIPANTS</p><h2>{state.participants.length} started <span>·</span> {completed} completed</h2></div>
-        {state.participants.length ? <ul>{state.participants.map((participant) => <li className="homework-participant" key={participant.id}><span className="homework-participant-progress"><strong>{participant.name}</strong><small>{participant.completed ? 'Completed' : `${participant.completedItems} / ${state.itemCount} items`}</small></span><span className="homework-participant-score"><strong>{participant.score.correct} / {participant.score.total}</strong><small>{participant.completed ? 'Final score' : `${participant.score.answered} answered`}</small></span></li>)}</ul> : <p>No one has started yet.</p>}
+        {state.participants.length ? <ul>{state.participants.map((participant) => <li className="homework-participant" key={participant.id}><span className="homework-participant-progress"><strong>{participant.name}</strong><small>{participant.completed ? 'Completed' : `${participant.completedItems} / ${state.itemCount} items`}</small></span><span className="homework-participant-score"><strong>{participant.score.correct} / {participant.score.total}</strong><small>{state.mode === 'archery' ? `${participant.shootingScore ?? 0} archery pts` : participant.completed ? 'Final score' : `${participant.score.answered} answered`}</small></span></li>)}</ul> : <p>No one has started yet.</p>}
       </aside>
     </section>
   </main>;
+}
+
+export function HomeworkProjector({ sessionId, token }: { sessionId: string; token: string }) {
+  const [state, setState] = useState<HomeworkTeacherState | null>(null);
+  const [error, setError] = useState('');
+  const load = useCallback(async () => {
+    try { setState(await homeworkRequest<HomeworkTeacherState>(`/${sessionId}/teacher?token=${encodeURIComponent(token)}`)); setError(''); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Could not load homework results'); }
+  }, [sessionId, token]);
+  useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 2000); return () => window.clearInterval(timer); }, [load]);
+  if (!state) return <main className="projector-scoreboard"><section className="projector-scoreboard-content">{error ? <p className="projector-empty">{error}</p> : <p className="projector-empty">Loading homework results…</p>}</section></main>;
+  const classicScores = new Map<string, { name: string; attempts: number; correct: number; total: number }>();
+  for (const participant of state.participants) {
+    const name = participant.name.trim() || 'Student';
+    const existing = classicScores.get(name);
+    if (!existing) classicScores.set(name, { name, attempts: 1, correct: participant.score.correct, total: participant.score.total });
+    else {
+      existing.attempts += 1;
+      if (participant.score.correct > existing.correct || (participant.score.correct === existing.correct && participant.score.total > existing.total)) { existing.correct = participant.score.correct; existing.total = participant.score.total; }
+    }
+  }
+  const standings = state.mode === 'archery'
+    ? state.archeryLeaderboard.map((player) => ({ name: player.name, score: player.bestScore, detail: `${player.attempts} attempt${player.attempts === 1 ? '' : 's'}` }))
+    : [...classicScores.values()].map((player) => ({ name: player.name, score: player.correct, detail: `${player.correct} / ${player.total} correct${player.attempts > 1 ? ` · ${player.attempts} attempts` : ''}` }));
+  standings.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+  const scoreLabel = state.mode === 'archery' ? 'PTS' : 'CORRECT';
+  return <main className="projector-scoreboard" aria-live="polite"><section className="projector-scoreboard-content"><header><div className="projector-title"><p>{state.mode === 'archery' ? 'ARCHERY HOMEWORK' : 'HOMEWORK RESULTS'}</p><h1>{state.mode === 'archery' ? 'Top scores' : 'Completion standings'}</h1><span>{state.title}</span></div><div className="projector-joined-count"><span>COMPLETED</span><strong>{state.participants.filter((participant) => participant.completed).length} / {state.participants.length}</strong></div></header>{standings.length ? <div className="projector-leaderboard"><ol className="projector-podium">{standings.slice(0, 3).map((player, index) => <li key={player.name} className={`podium-place podium-${index + 1}`}><span className="projector-rank">{index + 1}</span><strong title={player.name}>{player.name}</strong><em>{player.score}<small>{scoreLabel}</small></em></li>)}</ol>{standings.length > 3 && <ol className="projector-top-five">{standings.slice(3, 5).map((player, index) => <li key={player.name}><span className="projector-rank">{index + 4}</span><strong title={player.name}>{player.name}</strong><em>{player.score}<small>{scoreLabel}</small></em></li>)}</ol>}{standings.length > 5 && <section className="projector-more"><h2>More students</h2><ol>{standings.slice(5).map((player, index) => <li key={player.name}><span>{index + 6}</span><strong title={player.name}>{player.name}</strong><em>{player.score}</em></li>)}</ol></section>}<p className="projector-homework-note">{state.mode === 'archery' ? 'Each student’s best Archery attempt is shown.' : 'Each student’s best completed quiz attempt is shown.'}</p></div> : <p className="projector-empty">No homework attempts have been recorded yet.</p>}</section></main>;
 }
 
 function Results({ quiz, answers, onRestart, onLeave }: { quiz: Quiz; answers: Record<string, string>; onRestart?: () => void; onLeave: () => void }) {
@@ -1124,16 +1215,21 @@ function TowerStackGame({ title, durationSeconds, onComplete }: { title: string;
   </section>;
 }
 
-function Player({ quiz, onSubmitAnswer, onCompleteItem, onFinished, allowRestart = true, studentName }: { quiz: Quiz; onSubmitAnswer?: (questionId: string, answer: string) => Promise<unknown>; onCompleteItem?: (questionId: string) => Promise<unknown>; onFinished?: () => void; allowRestart?: boolean; studentName?: string }) {
-  const [screen, setScreen] = useState<Screen>(quiz.questions.length ? 'intro' : 'results');
-  const [current, setCurrent] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [revealedQuestionIds, setRevealedQuestionIds] = useState<Set<string | number>>(() => new Set());
+function Player({ quiz, onSubmitAnswer, onCompleteItem, onFinished, allowRestart = true, onRestart, studentName, archery, onShootArchery }: { quiz: Quiz; onSubmitAnswer?: (questionId: string, answer: string) => Promise<unknown>; onCompleteItem?: (questionId: string) => Promise<unknown>; onFinished?: () => void; allowRestart?: boolean; onRestart?: () => void; studentName?: string; archery?: ArcheryState & { shootingScore?: number }; onShootArchery?: (x: number, y: number) => Promise<ArcheryState & { shootingScore?: number }> }) {
+  const savedProgress = quiz.questions.some((item) => item.completed);
+  const firstUnfinishedItem = quiz.questions.findIndex((item) => !item.completed);
+  const resumeItem = firstUnfinishedItem === -1 ? Math.max(0, quiz.questions.length - 1) : firstUnfinishedItem;
+  const [screen, setScreen] = useState<Screen>(() => quiz.questions.length ? savedProgress ? 'question' : 'intro' : 'results');
+  const [current, setCurrent] = useState(() => resumeItem);
+  const [answers, setAnswers] = useState<Record<string, string>>(() => Object.fromEntries(quiz.questions.flatMap((item) => item.answer === null || item.answer === undefined ? [] : [[String(item.id), item.answer]])));
+  const [revealedQuestionIds, setRevealedQuestionIds] = useState<Set<string | number>>(() => new Set(quiz.questions.filter((item) => item.answer !== null && item.answer !== undefined).map((item) => item.id)));
   const [timedOutQuestionIds, setTimedOutQuestionIds] = useState<Set<string | number>>(() => new Set());
   const [submitting, setSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState('');
   const [remainingMilliseconds, setRemainingMilliseconds] = useState<number | null>(null);
   const [matchingProgress, setMatchingProgress] = useState<Record<string, MatchProgress>>({});
+  const [archeryState, setArcheryState] = useState<(ArcheryState & { shootingScore?: number }) | undefined>(archery);
+  const [playingHomeworkArchery, setPlayingHomeworkArchery] = useState(false);
   const questionDeadline = useRef<{ id: string | number; endsAt: number } | null>(null);
   const question = quiz.questions[current];
   const options = useMemo(() => question ? questionOptions(question, quiz.guid) : [], [question, quiz.guid]);
@@ -1143,10 +1239,10 @@ function Player({ quiz, onSubmitAnswer, onCompleteItem, onFinished, allowRestart
   const isFinalQuestion = current === quiz.questions.length - 1;
 
   useEffect(() => {
-    if (screen !== 'question' || !question || question.itemType !== 'question' || !revealed || submitting) return;
+    if (screen !== 'question' || !question || question.itemType !== 'question' || !revealed || submitting || (archeryState && onShootArchery)) return;
     const timer = window.setTimeout(() => void checkOrAdvance(), 5000);
     return () => window.clearTimeout(timer);
-  }, [screen, question, revealed, submitting, current]);
+  }, [screen, question, revealed, submitting, current, archeryState, onShootArchery]);
 
   useEffect(() => {
     if (screen !== 'question' || !question || timerSeconds === null || revealedQuestionIds.has(question.id) || submitting) {
@@ -1169,6 +1265,9 @@ function Player({ quiz, onSubmitAnswer, onCompleteItem, onFinished, allowRestart
     animationFrame = window.requestAnimationFrame(animate);
     return () => window.cancelAnimationFrame(animationFrame);
   }, [question, revealedQuestionIds, screen, timerSeconds, submitting]);
+
+  useEffect(() => { setArcheryState(archery); }, [archery]);
+  useEffect(() => { setPlayingHomeworkArchery(false); }, [question?.id]);
 
   function restart() {
     setAnswers({});
@@ -1194,15 +1293,24 @@ function Player({ quiz, onSubmitAnswer, onCompleteItem, onFinished, allowRestart
     setSubmissionError(''); setSubmitting(true);
     setAnswers((currentAnswers) => ({ ...currentAnswers, [question.id]: answer }));
     try {
-      const result = await onSubmitAnswer?.(String(question.id), answer) as { answered?: boolean; matchProgress?: MatchProgress; isCorrect?: boolean } | undefined;
+      const result = await onSubmitAnswer?.(String(question.id), answer) as { answered?: boolean; matchProgress?: MatchProgress; isCorrect?: boolean; archery?: ArcheryState & { shootingScore?: number } } | undefined;
       if (question.special?.kind === 'matching' && result?.matchProgress) setMatchingProgress((current) => ({ ...current, [question.id]: result.matchProgress! }));
       if (question.special?.kind === 'matching' && result?.answered === false && result.matchProgress) { setAnswers((current) => { const next = { ...current }; delete next[question.id]; return next; }); return; }
       if (question.special?.kind === 'matching') setAnswers((current) => ({ ...current, [question.id]: result?.isCorrect ? 'Matched' : 'Not matched' }));
+      if (result?.archery) setArcheryState(result.archery);
       setRevealedQuestionIds((ids) => new Set(ids).add(question.id));
     } catch (error) {
       setAnswers((currentAnswers) => { const updated = { ...currentAnswers }; delete updated[question.id]; return updated; });
       setSubmissionError(error instanceof Error ? error.message : 'Could not save your answer');
     } finally { setSubmitting(false); }
+  }
+
+  async function shootArrow(x: number, y: number) {
+    if (!onShootArchery) return;
+    setSubmissionError(''); setSubmitting(true);
+    try { setArcheryState(await onShootArchery(x, y)); }
+    catch (error) { setSubmissionError(error instanceof Error ? error.message : 'Could not save your shot'); }
+    finally { setSubmitting(false); }
   }
 
   async function checkOrAdvance() {
@@ -1214,7 +1322,7 @@ function Player({ quiz, onSubmitAnswer, onCompleteItem, onFinished, allowRestart
     finally { setSubmitting(false); }
   }
 
-  if (screen === 'results') return <Results quiz={quiz} answers={answers} onRestart={allowRestart ? restart : undefined} onLeave={() => goToQuiz('')} />;
+  if (screen === 'results') return <Results quiz={quiz} answers={answers} onRestart={onRestart ?? (allowRestart ? restart : undefined)} onLeave={() => goToQuiz('')} />;
 
   if (screen === 'intro') return <main className="page quiz-page">
     <header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header>
@@ -1240,6 +1348,14 @@ function Player({ quiz, onSubmitAnswer, onCompleteItem, onFinished, allowRestart
     <div className="progress" aria-hidden="true"><span style={{ width: `${((current + 1) / quiz.questions.length) * 100}%` }} /></div>
     <section className="intro-card text-item-card"><p className="eyebrow">A NOTE FOR YOU</p><h1>{personalizeText(question.text, studentName)}</h1><button className="primary-button" disabled={submitting} onClick={() => void finishGame()}>{submitting ? 'Saving…' : isFinalQuestion ? 'Finish quiz' : 'Continue'} <span aria-hidden="true">→</span></button>{submissionError && <p className="form-error">{submissionError}</p>}</section>
   </main>;
+  if (revealed && archeryState && onShootArchery && playingHomeworkArchery) return <main className={`page quiz-page archery-player-page theme-${quiz.theme}`}>
+    <header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">ARCHERY BREAK</span></header>
+    <section className="game-card archery-game-card"><div className="game-heading"><div><p className="eyebrow">HOMEWORK ARCHERY</p><h1>Aim your arrow</h1><p>Watch the lower bar, then tap the target to lock it. Repeat for the side bar.</p></div><div className="game-stats"><span>Arrows <strong>{archeryState.arrows}</strong></span><span>Score <strong>{archeryState.shootingScore ?? 0}</strong></span></div></div><ArcheryAim archery={archeryState} disabled={submitting || (archeryState.arrows ?? 0) < 1} hideControls={(archeryState.arrows ?? 0) < 1} onShoot={(x, y) => void shootArrow(x, y)} /><p className={`game-tip archery-token-tip${(archeryState.arrows ?? 0) > 0 ? ' is-reserved' : ''}`}>Answer more questions correctly to earn another arrow.</p>{submissionError && <p className="form-error">{submissionError}</p>}<div className="matching-game-actions"><button className="matching-secondary-button" disabled={submitting} onClick={() => void checkOrAdvance()}>{submitting ? 'Saving…' : isFinalQuestion ? 'See my score' : 'Next question →'}</button></div></section>
+  </main>;
+  if (revealed && archeryState && onShootArchery) {
+    const canPlay = (archeryState.arrows ?? 0) > 0;
+    return <main className={`page quiz-page theme-${quiz.theme}`}><KidsConfetti active={quiz.theme === 'kids' && !timedOut && selected === question.correctAnswer} /><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">ARCHERY BREAK</span></header><section className="intro-card waiting-card matching-break-card"><p className="eyebrow">QUESTION {String(current + 1).padStart(2, '0')}</p><h1 data-confetti-origin={selected === question.correctAnswer && !timedOut ? '' : undefined}>{timedOut ? "Time's up." : selected === question.correctAnswer ? 'Correct!' : 'Not quite.'}</h1>{selected !== question.correctAnswer && <p className="matching-answer">The correct answer was <strong>{question.correctAnswer}</strong>.</p>}<div className="matching-credit-summary"><span>YOUR ARROWS</span><strong>{archeryState.arrows}</strong><small>{canPlay ? 'Ready to aim for the bullseye' : 'Answer more questions correctly to earn an arrow'}</small></div><div className="matching-actions">{canPlay && <button className="matching-secondary-button" onClick={() => setPlayingHomeworkArchery(true)}>Take a shot</button>}<button className="primary-button" disabled={submitting} onClick={() => void checkOrAdvance()}>{submitting ? 'Saving…' : isFinalQuestion ? 'See my score' : 'Next question'} <span aria-hidden="true">→</span></button></div>{submissionError && <p className="form-error">{submissionError}</p>}</section></main>;
+  }
   return <main className="page quiz-page">
     <KidsConfetti active={quiz.theme === 'kids' && revealed && !timedOut && selected === question.correctAnswer} />
     <header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-header-meta"><span className="question-label">Question {current + 1} of {quiz.questions.length}</span>{remainingSeconds !== null && <TimerBadge seconds={remainingSeconds} expired={remainingSeconds === 0} />}</span></header>
@@ -1259,6 +1375,9 @@ function Player({ quiz, onSubmitAnswer, onCompleteItem, onFinished, allowRestart
     </section>
   </main>;
 }
+
+export function TeacherFacilitatorScreen(props: { sessionId: string; token: string; projector?: boolean }) { return <><Facilitator {...props} /><ConfirmDialogHost /></>; }
+export function TeacherHomeworkScreen(props: { sessionId: string; token: string }) { return <><HomeworkTeacher {...props} /><ConfirmDialogHost /></>; }
 
 function AppContent() {
   const [path, setPath] = useState(window.location.pathname);
@@ -1289,9 +1408,9 @@ function AppContent() {
   const facilitatorToken = new URLSearchParams(window.location.search).get('token') ?? '';
   if (moderatedPin) return <><VolumeControl /><ModeratedStudent key={moderatedPin} pin={moderatedPin} /></>;
   if (homeworkSessionId) return <><VolumeControl /><HomeworkStudent key={homeworkSessionId} sessionId={homeworkSessionId} /></>;
-  if (homeworkTeacherId) return <HomeworkTeacher key={`${homeworkTeacherId}-${facilitatorToken}`} sessionId={homeworkTeacherId} token={facilitatorToken} />;
-  if (projectorId) return <Facilitator key={`projector-${projectorId}-${facilitatorToken}`} sessionId={projectorId} token={facilitatorToken} projector />;
-  if (facilitatorId) return <Facilitator key={`${facilitatorId}-${facilitatorToken}`} sessionId={facilitatorId} token={facilitatorToken} />;
+  if (homeworkTeacherId) return <LegacyTeacherRedirect path={`/teacher/homework/${homeworkTeacherId}`} />;
+  if (projectorId) return <LegacyTeacherRedirect path={`/teacher/projector/${projectorId}`} />;
+  if (facilitatorId) return <LegacyTeacherRedirect path={`/teacher/live/${facilitatorId}`} />;
   if (path === '/moderated') return <ModeratedPinEntry />;
   if (!guid) return <ModeratedPinEntry />;
   if (loading) return <main className="page status-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><div className="loader" aria-label="Loading quiz" /><p>Loading your quiz…</p></main>;

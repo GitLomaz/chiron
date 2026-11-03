@@ -33,3 +33,37 @@ test('archery rewards arrows and retains each attempt on the shared target', asy
   assert.equal(facilitator.presentationMode, 'archery');
   assert.equal(facilitator.archery.attempts[0].participantName, 'Archer');
 });
+
+test('archery keeps player targets private and limits the shared target to each player\'s best three shots', async () => {
+  const service = new ModeratedService(prisma);
+  const run = await service.create(1, 'archery', 300);
+  const archer = service.join(run.pin, 'Archer', randomUUID());
+  const ranger = service.join(run.pin, 'Ranger', randomUUID());
+  service.start(run.sessionId, run.facilitatorToken);
+  const session = service.sessions.get(run.sessionId);
+
+  for (const participant of [archer, ranger]) {
+    const question = service.studentState(run.pin, participant.participantId).currentQuestion;
+    service.submitAnswer(run.pin, { participantId: participant.participantId, questionId: question.id, answer: 'Yes' });
+    session.participants.get(participant.participantId).archery.arrows = 4;
+  }
+
+  for (const x of [40, 30, 20, 10]) service.shootArchery(run.pin, archer.participantId, x, 0);
+  for (const x of [35, 25, 15, 5]) service.shootArchery(run.pin, ranger.participantId, x, 0);
+
+  const archerState = service.studentState(run.pin, archer.participantId).archery;
+  assert.equal(archerState.attempts.length, 4);
+  assert.deepEqual(archerState.attempts.map((attempt) => attempt.score), [900, 800, 700, 600]);
+  assert.ok(archerState.attempts.every((attempt) => attempt.participantName === undefined));
+
+  const facilitator = service.facilitatorState(run.sessionId, run.facilitatorToken);
+  assert.equal(facilitator.archery.attempts.length, 6);
+  assert.deepEqual(
+    facilitator.archery.attempts.filter((attempt) => attempt.participantName === 'Archer').map((attempt) => attempt.score),
+    [900, 800, 700],
+  );
+  assert.deepEqual(
+    facilitator.archery.attempts.filter((attempt) => attempt.participantName === 'Ranger').map((attempt) => attempt.score),
+    [950, 850, 750],
+  );
+});

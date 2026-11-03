@@ -30,6 +30,38 @@ model Quiz {
   questions   Question[]
 }
 
+model HomeworkSession {
+  id               String                @id @default(uuid()) @db.Uuid
+  facilitatorToken String                @unique @db.Uuid
+  mode             String                @default("classic")
+  quizSnapshot     Json
+  ended            Boolean               @default(false)
+  expired          Boolean               @default(false)
+  endsAt           DateTime
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  participants     HomeworkParticipant[]
+
+  @@index([ended, endsAt])
+}
+
+model HomeworkParticipant {
+  id                String          @id @default(uuid()) @db.Uuid
+  homeworkSessionId String          @db.Uuid
+  name              String
+  answers           Json            @default("{}")
+  matchProgress     Json            @default("{}")
+  completedItems    Json            @default("[]")
+  archeryArrows     Int             @default(0)
+  archeryShots      Json            @default("[]")
+  shootingScore     Int             @default(0)
+  joinedAt          DateTime        @default(now())
+  completedAt       DateTime?
+  homeworkSession   HomeworkSession @relation(fields: [homeworkSessionId], references: [id], onDelete: Cascade)
+
+  @@index([homeworkSessionId, joinedAt])
+}
+
 model Question {
   id           Int         @id @default(autoincrement())
   quizId       Int

@@ -6,6 +6,7 @@ steps:
       - --build-arg=APP=$_APP
       - --build-arg=VITE_API_URL=$_VITE_API_URL
       - --build-arg=VITE_STUDENT_APP_URL=$_VITE_STUDENT_APP_URL
+      - --build-arg=VITE_TEACHER_APP_URL=$_VITE_TEACHER_APP_URL
       - --tag=$_IMAGE
       - .
 images:
