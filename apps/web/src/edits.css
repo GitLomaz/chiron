@@ -542,6 +542,8 @@
 .dark-mode .homework-report-page .report-heading p:last-child, .dark-mode .homework-report-page .report-heading dt, .dark-mode .homework-report-page .report-card-head span, .dark-mode .homework-report-page .report-empty, .dark-mode .homework-report-page .report-table td small { color: #9fb0ca; }
 .dark-mode .homework-report-page .report-heading dl { background: #33435f; }.dark-mode .homework-report-page .report-heading dl div, .dark-mode .homework-report-page .report-table th { background: #202e45; }
 .dark-mode .homework-report-page .report-card-head, .dark-mode .homework-report-page .report-table td { border-color: #2b3950; }.dark-mode .homework-report-page .report-table { color: #c8d5e8; }
+.dark-mode .homework-report-page .report-filter-toggle { color: #c8d5e8; }.dark-mode .homework-report-page .report-filter-toggle i { background: #405371; }.dark-mode .homework-report-page .report-filter-toggle input:checked + i { background: #4d7ec2; }.dark-mode .homework-report-page .report-filter-toggle i::after { background: #f5f8ff; }
+.dark-mode .facilitator-page .participant-summary-toggle { color: #c8d5e8; }.dark-mode .facilitator-page .participant-summary-toggle i { background: #405371; }.dark-mode .facilitator-page .participant-summary-toggle input:checked + i { background: #4d7ec2; }.dark-mode .facilitator-page .participant-summary-toggle i::after { background: #f5f8ff; }
 .dark-mode .facilitator-page .homework-archery-leaderboard { border-color: #2b3950; }
 .dark-mode .facilitator-page .homework-archery-leaderboard li { background: #202e45; color: #dbe5f5; }
 .dark-mode .facilitator-page .homework-archery-leaderboard li strong { color: #f5f8ff; }

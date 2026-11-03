@@ -127,6 +127,14 @@
 .report-card-head .eyebrow { margin: 0 auto 0 0; }
 .report-card-head h2 { margin: 0; color: #302b5c; font-size: 1.05rem; }
 .report-card-head span { margin-left: auto; color: #817b9d; font-size: .72rem; }
+.report-filter-toggle { display: flex; align-items: center; gap: 8px; color: #5c5779; font-size: .74rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.report-filter-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.report-filter-toggle i { position: relative; width: 34px; height: 20px; border-radius: 999px; background: #d8d5e9; transition: background .15s; }
+.report-filter-toggle i::after { position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #302b5c44; content: ''; transition: transform .15s; }
+.report-filter-toggle input:checked + i { background: #635bca; }.report-filter-toggle input:checked + i::after { transform: translateX(14px); }.report-filter-toggle input:focus-visible + i { outline: 2px solid #7169e9; outline-offset: 3px; }
+.participant-summary-heading { display: flex; align-items: end; justify-content: space-between; gap: 14px; margin-bottom: 4px; }
+.participant-summary-toggle { display: flex; align-items: center; gap: 7px; color: #5c5779; font-size: .7rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.participant-summary-toggle input { position: absolute; opacity: 0; pointer-events: none; }.participant-summary-toggle i { position: relative; width: 30px; height: 18px; border-radius: 999px; background: #d8d5e9; transition: background .15s; }.participant-summary-toggle i::after { position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #302b5c44; content: ''; transition: transform .15s; }.participant-summary-toggle input:checked + i { background: #635bca; }.participant-summary-toggle input:checked + i::after { transform: translateX(12px); }.participant-summary-toggle input:focus-visible + i { outline: 2px solid #7169e9; outline-offset: 3px; }
 .report-table-wrap { overflow-x: auto; }
 .report-table { width: 100%; border-collapse: collapse; color: #4a456d; font-size: .8rem; }
 .report-table th { padding: 11px 14px; background: #f8f7ff; color: #77718f; font: 500 .62rem 'DM Mono', monospace; letter-spacing: .07em; text-align: left; text-transform: uppercase; white-space: nowrap; }
@@ -141,7 +149,7 @@
 .report-archery li { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 9px; background: #fff7ee; color: #6e4438; }
 .report-archery li > b { display: grid; width: 22px; height: 22px; place-items: center; border-radius: 50%; background: #c85b3d; color: #fff; font: 700 .65rem 'DM Mono', monospace; }
 .report-archery li span { display: grid; gap: 2px; }.report-archery li small { color: #8a7066; font-size: .68rem; }.report-archery li em { color: #9a3e2b; font: 700 .78rem 'DM Mono', monospace; font-style: normal; }
-@media (max-width: 760px) { .report-heading { display: grid; padding: 22px; }.report-heading dl { width: 100%; }.report-question-grid { grid-template-columns: 1fr; }.report-card-head { align-items: start; flex-wrap: wrap; }.report-card-head .eyebrow { width: 100%; }.report-card-head span { margin-left: 0; } }
+@media (max-width: 760px) { .report-heading { display: grid; padding: 22px; }.report-heading dl { width: 100%; }.report-question-grid { grid-template-columns: 1fr; }.report-card-head { align-items: start; flex-wrap: wrap; }.report-card-head .eyebrow { width: 100%; }.report-card-head span { margin-left: 0; }.report-filter-toggle { margin-left: auto; }.participant-summary-heading { align-items: start; flex-wrap: wrap; }.participant-summary-toggle { width: 100%; } }
 .participant-panel li.homework-participant { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 18px; padding: 15px 0; }
 .homework-participant-progress, .homework-participant-score { display: grid; gap: 4px; }
 .homework-participant-progress strong { color: #403b64; font-size: .92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
