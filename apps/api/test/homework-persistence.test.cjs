@@ -18,6 +18,7 @@ function database() {
       findMany: async () => [...sessions.values()].map((session) => sessionResult(session, true)),
       updateMany: async ({ where, data }) => { let count = 0; for (const [id, session] of sessions) { if (session.ended === where.ended && session.endsAt <= where.endsAt.lte) { sessions.set(id, { ...session, ...data }); count += 1; } } return { count }; },
       update: async ({ where, data, include }) => { const session = { ...sessions.get(where.id), ...data }; sessions.set(where.id, session); return sessionResult(session, include); },
+      delete: async ({ where }) => { const session = sessions.get(where.id); if (!session) throw new Error('Not found'); sessions.delete(where.id); for (const [id, participant] of participants) if (participant.homeworkSessionId === where.id) participants.delete(id); return session; },
     },
     homeworkParticipant: {
       create: async ({ data }) => { const participant = { ...data, answers: {}, matchProgress: {}, completedItems: [], archeryArrows: 0, archeryShots: [], shootingScore: 0, joinedAt: new Date(), completedAt: null }; participants.set(participant.id, participant); return participant; },
@@ -61,13 +62,18 @@ test('homework persists archery scores and preserves completed attempts when a s
   assert.equal(retryAnswer.archery.arrows, 1);
   await restartedService.shootArchery(run.sessionId, retry.participantId, 50, 50);
   const teacher = await restartedService.teacherState(run.sessionId, run.facilitatorToken);
+  await assert.rejects(restartedService.teacherState(run.sessionId, 'not-testing'));
   assert.equal(teacher.participants.length, 2);
   assert.equal(teacher.participants[0].shootingScore, 1000);
   assert.equal(teacher.participants[1].shootingScore, 293);
   assert.deepEqual(teacher.archeryLeaderboard, [{ name: 'Archer', attempts: 2, bestScore: 1000 }]);
+  const attempt = await restartedService.teacherAttempt(run.sessionId, run.facilitatorToken, firstAttempt.participantId);
+  assert.deepEqual(attempt.answers, [{ id: '1', text: 'Ready?', answer: 'Yes', correctAnswer: 'Yes', isCorrect: true }]);
 
   await restartedService.end(run.sessionId, run.facilitatorToken);
   const history = await restartedService.listHistory();
   assert.deepEqual(history.map((session) => session.sessionId), [run.sessionId]);
   assert.equal(history[0].mode, 'archery');
+  await restartedService.remove(run.sessionId, run.facilitatorToken);
+  assert.deepEqual(await restartedService.listHistory(), []);
 });

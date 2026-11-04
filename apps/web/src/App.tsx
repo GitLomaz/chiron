@@ -1,6 +1,7 @@
 import { SpecialQuestionForm } from './SpecialQuestionForm';
 import { DataSetsPage, ImportPage } from './DataSets';
-import { ConfirmDialog, ConfirmDialogHost } from './ConfirmDialog';
+import { confirmAction, ConfirmDialog, ConfirmDialogHost } from './ConfirmDialog';
+import { ConfirmDialogHost as StudentConfirmDialogHost } from '../../student/src/ConfirmDialog';
 import { Facilitator, HomeworkProjector, HomeworkTeacher } from '../../student/src/App';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
@@ -8,7 +9,7 @@ import type { FormEvent, ReactNode } from 'react';
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 type QuizTheme = 'standard' | 'kids' | 'christmas' | 'halloween';
 const themeLabels: Record<QuizTheme, string> = { standard: 'Standard', kids: 'Kid-friendly', christmas: 'Christmas', halloween: 'Halloween' };
-type Quiz = { id: number; guid: string; title: string; description: string | null; randomizeQuestionOrder: boolean; theme: QuizTheme; defaultTimerSeconds: number; matchingPairCount: number; battleshipBoardSize: number; creditEveryCorrectAnswers: number; _count?: { questions: number } };
+type Quiz = { id: number; guid: string; title: string; description: string | null; archivedAt: string | null; randomizeQuestionOrder: boolean; theme: QuizTheme; defaultTimerSeconds: number; matchingPairCount: number; battleshipBoardSize: number; creditEveryCorrectAnswers: number; _count?: { questions: number } };
 type QuizItemType = 'question' | 'game' | 'text';
 type GameType = 'coin_catch' | 'match_pairs' | 'tower_stack';
 type SpecialOptions = { kind: 'true_false'; statement: string } | { kind: 'matching'; pairs: { question: string; answer: string }[] };
@@ -19,8 +20,8 @@ type CommonQuestion = Question & { answerPool?: AnswerPool | null };
 type QuestionData = { questionType?: 'true_false' | 'matching'; statement?: string; pairs?: { question: string; answer: string }[]; text: string; correctAnswer: string; wrongAnswers?: string[]; answerPoolId?: number; answerCount?: number; timerSeconds?: number | null };
 type QuestionPreviewData = { text: string; options: string[]; special?: SpecialOptions };
 type PoolData = { name: string; answers: string[] };
-type ModeratedSession = { sessionId: string; facilitatorToken: string; pin: string; phase: 'lobby' };
-type HomeworkSession = { sessionId: string; facilitatorToken: string };
+type ModeratedSession = { sessionId: string; pin: string; phase: 'lobby' };
+type HomeworkSession = { sessionId: string };
 
 const TIMER_SECONDS = [-1, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180] as const;
 const GAME_DURATION_SECONDS = [10, 15, 20, 30, 45, 60, 90, 120] as const;
@@ -45,27 +46,31 @@ function teacherAppUrl() {
   return (configuredUrl && configuredUrl !== 'https://placeholder.invalid' ? configuredUrl : window.location.origin).replace(/\/$/, '');
 }
 function dateTimeLocalValue(value: Date) { return new Date(value.getTime() - (value.getTimezoneOffset() * 60000)).toISOString().slice(0, 16); }
-function facilitatorSessionUrl(session: HomeworkSession) { return `${teacherAppUrl()}/teacher/live/${session.sessionId}?token=${encodeURIComponent(session.facilitatorToken)}`; }
-function homeworkTeacherUrl(session: HomeworkSession) { return `${teacherAppUrl()}/teacher/homework/${session.sessionId}?token=${encodeURIComponent(session.facilitatorToken)}`; }
-function saveSessionToken(session: HomeworkSession) { try { localStorage.setItem(`quizboard-session-${session.sessionId}`, session.facilitatorToken); } catch { /* The teacher link still works if storage is unavailable. */ } }
-function sessionToken(id: string) { try { return localStorage.getItem(`quizboard-session-${id}`) ?? ''; } catch { return ''; } }
 function useRoute() { const [path, setPath] = useState(window.location.pathname); useEffect(() => { const update = () => setPath(window.location.pathname); window.addEventListener('popstate', update); return () => window.removeEventListener('popstate', update); }, []); const go = (nextPath: string) => { window.history.pushState({}, '', nextPath); setPath(nextPath); }; return { path, go }; }
 
 function AdminShell({ path, go, children }: { path: string; go: (value: string) => void; children: ReactNode }) {
   const items = [{ path: '/quizzes', label: 'Quizzes', icon: '▦' }, { path: '/running', label: 'Running Quizzes', icon: '▶' }, { path: '/games', label: 'Games', icon: '★' }, { path: '/questions', label: 'Common Questions', icon: '?' }, { path: '/answer-pools', label: 'Answer Pools', icon: '◌' }, { path: '/data-sets', label: 'Data Sets', icon: '≡' }, { path: '/import', label: 'Import', icon: '↓' }]; const active = path.startsWith('/quizzes/') ? '/quizzes' : path;
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('quizboard-admin-dark-mode') === 'true');
   useEffect(() => { localStorage.setItem('quizboard-admin-dark-mode', String(darkMode)); }, [darkMode]);
-  return <><div className={`admin-shell${darkMode ? ' dark-mode' : ''}`}><aside className="sidebar"><button className="brand" onClick={() => go('/quizzes')}><span className="brand-mark">Q</span><span>Quizboard<small>ADMIN PORTAL</small></span></button><nav aria-label="Main navigation">{items.map((item) => <button key={item.path} className={active === item.path ? 'nav-link active' : 'nav-link'} onClick={() => go(item.path)}><span>{item.icon}</span>{item.label}</button>)}</nav><div className="sidebar-bottom"><button className="theme-toggle" type="button" aria-pressed={darkMode} onClick={() => setDarkMode((enabled) => !enabled)}><span>{darkMode ? '☀' : '☾'}</span>{darkMode ? 'Light mode' : 'Dark mode'}</button><div className="sidebar-foot"><span className="avatar">AD</span><div><strong>Admin</strong><small>Content manager</small></div></div></div></aside><div className="page-wrap"><header className="topbar"><div><span className="crumb">ADMINISTRATION</span><span className="topbar-title">Quiz management</span></div><button className="help-button" aria-label="Help">?</button></header><div className="content" role="main">{children}</div></div></div><ConfirmDialogHost /></>;
+  return <><div className={`admin-shell${darkMode ? ' dark-mode' : ''}`}><aside className="sidebar"><button className="brand" onClick={() => go('/quizzes')}><span className="brand-mark">Q</span><span>Quizboard<small>ADMIN PORTAL</small></span></button><nav aria-label="Main navigation">{items.map((item) => <button key={item.path} className={active === item.path ? 'nav-link active' : 'nav-link'} onClick={() => go(item.path)}><span>{item.icon}</span>{item.label}</button>)}</nav><div className="sidebar-bottom"><button className="theme-toggle" type="button" aria-pressed={darkMode} onClick={() => setDarkMode((enabled) => !enabled)}><span>{darkMode ? '☀' : '☾'}</span>{darkMode ? 'Light mode' : 'Dark mode'}</button><div className="sidebar-foot"><span className="avatar">AD</span><div><strong>Admin</strong><small>Content manager</small></div></div></div></aside><div className="page-wrap"><header className="topbar"><div><span className="crumb">ADMINISTRATION</span><span className="topbar-title">Quiz management</span></div><button className="help-button" aria-label="Help">?</button></header><div className="content" role="main">{children}</div></div></div><ConfirmDialogHost /><StudentConfirmDialogHost /></>;
 }
 function PageHeading({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: ReactNode }) { return <div className="page-heading"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{description}</p></div>{action}</div>; }
 function Empty({ icon, title, copy }: { icon: string; title: string; copy: string }) { return <div className="empty"><span>{icon}</span><h3>{title}</h3><p>{copy}</p></div>; }
 function Modal({ title, onClose, children, wide = false }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) { return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}><section className={wide ? 'modal modal-wide' : 'modal'} role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><h2>{title}</h2><button className="close-button" onClick={onClose} aria-label="Close">×</button></div>{children}</section></div>; }
 
+const TEMP_TEACHER_PASSWORD = 'testing';
+function TeacherPasswordPrompt({ onUnlock }: { onUnlock: (password: string) => void }) {
+  const [password, setPassword] = useState(''), [error, setError] = useState('');
+  function unlock(event: FormEvent) { event.preventDefault(); if (password !== TEMP_TEACHER_PASSWORD) { setError('Incorrect teacher password'); return; } onUnlock(password); }
+  return <main className="teacher-password-page"><section className="surface teacher-password-card"><p className="eyebrow">TEACHER ACCESS</p><h1>Enter teacher password</h1><p>This area is for teachers only.</p><form onSubmit={unlock}><label>Password<input autoFocus type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>{error && <p className="error">{error}</p>}<button className="primary">Continue</button></form></section></main>;
+}
+
 type RunningSession = { sessionId: string; title: string; participantCount: number; createdAt: string; endsAt: string | null; kind: 'live' | 'homework'; pin?: string; mode?: string; phase?: string; ended?: boolean; expired?: boolean };
 type SessionView = 'details' | 'metrics' | 'presenter';
-function RunningQuizzesPage({ go }: { go: (path: string) => void }) {
+function RunningQuizzesPage({ go, teacherPassword }: { go: (path: string) => void; teacherPassword: string }) {
   const [sessions, setSessions] = useState<RunningSession[]>([]), [homeworkHistory, setHomeworkHistory] = useState<RunningSession[]>([]), [loading, setLoading] = useState(true), [error, setError] = useState('');
-  const [selected, setSelected] = useState<{ session: RunningSession; view: SessionView } | null>(null), [token, setToken] = useState(''), [opening, setOpening] = useState(false);
+  const [opening] = useState(false);
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null), [endingSessionId, setEndingSessionId] = useState<string | null>(null);
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
@@ -75,33 +80,76 @@ function RunningQuizzesPage({ go }: { go: (path: string) => void }) {
     } catch (err) { setError(err instanceof Error ? err.message : 'Could not load running quizzes'); } finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
-  async function openSession(session: RunningSession, accessToken: string, view: SessionView) {
-    setOpening(true); setError('');
-    try {
-      const endpoint = session.kind === 'live' ? 'moderated-sessions' : 'homework-sessions';
-      const accessView = session.kind === 'live' ? 'facilitator' : 'teacher';
-      await request(`/${endpoint}/${session.sessionId}/${accessView}?token=${encodeURIComponent(accessToken)}`);
-      const credentials = { sessionId: session.sessionId, facilitatorToken: accessToken };
-      saveSessionToken(credentials);
-      go(`/running/${session.kind}/${session.sessionId}/${view}`);
-    } catch (err) { setError(err instanceof Error ? err.message : 'Could not open this session'); setOpening(false); }
+  async function openSession(session: RunningSession, view: SessionView) {
+    go(`/running/${session.kind}/${session.sessionId}/${view}`);
   }
   function choose(session: RunningSession, view: SessionView) {
-    const saved = sessionToken(session.sessionId);
-    if (saved) void openSession(session, saved, view);
-    else { setError(''); setToken(''); setSelected({ session, view }); }
+    void openSession(session, view);
+  }
+  async function deleteHistory(session: RunningSession) {
+    setDeletingSessionId(session.sessionId); setError('');
+    try {
+      await request(`/homework-sessions/${session.sessionId}?token=${encodeURIComponent(teacherPassword)}`, { method: 'DELETE' });
+      setHomeworkHistory((current) => current.filter((item) => item.sessionId !== session.sessionId));
+    } catch (err) { setError(err instanceof Error ? err.message : 'Could not delete this homework history item'); }
+    finally { setDeletingSessionId(null); }
+  }
+  async function endSession(session: RunningSession) {
+    setEndingSessionId(session.sessionId); setError('');
+    try {
+      const path = session.kind === 'live' ? `/moderated-sessions/${session.sessionId}/end` : `/homework-sessions/${session.sessionId}/end`;
+      await request(path, { method: 'POST', body: JSON.stringify({ facilitatorToken: teacherPassword }) });
+      await load();
+    } catch (err) { setError(err instanceof Error ? err.message : 'Could not end this session'); }
+    finally { setEndingSessionId(null); }
   }
   function SessionList({ items, history = false }: { items: RunningSession[]; history?: boolean }) {
-    return <div className="data-list">{items.map((session) => <article className="quiz-row running-session-row" key={`${session.kind}-${session.sessionId}`}><span className="list-icon">{session.kind === 'live' ? '▶' : '⌂'}</span><span className="row-main"><strong>{session.title}</strong><small>{session.kind === 'live' ? `Live · ${session.mode} · ${session.phase === 'lobby' ? 'Lobby' : 'In progress'} · PIN ${session.pin}` : `${session.mode === 'archery' ? 'Archery homework' : 'Homework'}${history ? session.expired ? ' · Expired' : ' · Ended' : ''}`} · {session.participantCount} participant{session.participantCount === 1 ? '' : 's'} · Created {new Date(session.createdAt).toLocaleString()}{session.endsAt ? ` · ${history ? 'Closed' : 'Ends'} ${new Date(session.endsAt).toLocaleString()}` : ''}</small></span><span className="running-session-actions"><button className="subtle-button" onClick={() => choose(session, 'details')} disabled={opening}>Details</button><button className="subtle-button" onClick={() => choose(session, 'metrics')} disabled={opening}>Metrics</button><button className="subtle-button" onClick={() => choose(session, 'presenter')} disabled={opening}>Presenter</button></span></article>)}</div>;
+    return <div className="data-list">{items.map((session) => {
+      const isEnding = endingSessionId === session.sessionId;
+      const summary = session.kind === 'live'
+        ? `Live · ${session.mode} · ${session.phase === 'lobby' ? 'Lobby' : 'In progress'} · PIN ${session.pin}`
+        : `${session.mode === 'archery' ? 'Archery homework' : 'Homework'}${history ? session.expired ? ' · Expired' : ' · Ended' : ''}`;
+      return <article className="quiz-row running-session-row" key={`${session.kind}-${session.sessionId}`}>
+        <span className="list-icon">{session.kind === 'live' ? '▶' : '⌂'}</span>
+        <span className="row-main"><strong>{session.title}</strong><small>{summary} · {session.participantCount} participant{session.participantCount === 1 ? '' : 's'} · Created {new Date(session.createdAt).toLocaleString()}{session.endsAt ? ` · ${history ? 'Closed' : 'Ends'} ${new Date(session.endsAt).toLocaleString()}` : ''}</small></span>
+        <span className="running-session-actions">
+          <button className="subtle-button" onClick={() => choose(session, 'details')} disabled={opening}>Details</button>
+          <button className="subtle-button" onClick={() => choose(session, 'metrics')} disabled={opening}>Metrics</button>
+          <button className="subtle-button" onClick={() => choose(session, 'presenter')} disabled={opening}>Presenter</button>
+          {!history && <button className="end-session-button" onClick={() => confirmAction({ title: session.kind === 'live' ? 'End live quiz?' : 'End homework?', message: session.kind === 'live' ? 'Participants will no longer be able to answer this quiz.' : 'Students will no longer be able to answer or join this homework.', confirmLabel: session.kind === 'live' ? 'End quiz' : 'End homework', onConfirm: () => void endSession(session) })} disabled={endingSessionId !== null}>{isEnding ? 'Ending…' : 'End session'}</button>}
+          {history && <button className="history-delete" onClick={() => confirmAction({ title: 'Delete homework history?', message: `Permanently delete “${session.title}” and all saved attempts?`, confirmLabel: 'Delete history', onConfirm: () => void deleteHistory(session) })} disabled={deletingSessionId !== null}>{deletingSessionId === session.sessionId ? 'Deleting…' : 'Delete'}</button>}
+        </span>
+      </article>;
+    })}</div>;
   }
-  return <><PageHeading eyebrow="SESSIONS" title="Running Quizzes" description="Open session details, metrics, and presenter mode from one place." /><section className="surface"><div className="surface-head"><div><h2>Active sessions</h2><p>Live lobbies and quizzes, and homework that has not ended</p></div><button className="subtle-button" onClick={() => void load()} disabled={loading}>Refresh</button></div>{error && <p className="error">{error}</p>}{loading ? <p className="state">Loading sessions...</p> : sessions.length === 0 ? <Empty icon="▶" title="No running quizzes" copy="Launch a live quiz or homework to see it here." /> : <SessionList items={sessions} />}</section>{!loading && homeworkHistory.length > 0 && <section className="surface session-history"><div className="surface-head"><div><h2>Homework history</h2><p>Closed homework remains available with every saved attempt and Archery score.</p></div></div><SessionList items={homeworkHistory} history /></section>}{selected && <Modal title="Open session" onClose={() => setSelected(null)}><form onSubmit={(event) => { event.preventDefault(); void openSession(selected.session, token.trim(), selected.view); }}><p className="modal-intro">This browser does not have the teacher token for {selected.session.title}. Enter the token from its teacher link.</p><label>Teacher token<input autoFocus required value={token} onChange={(event) => setToken(event.target.value)} /></label>{error && <p className="error">{error}</p>}<div className="form-actions"><button type="button" className="subtle-button" onClick={() => setSelected(null)}>Cancel</button><button className="primary" disabled={opening}>{opening ? 'Opening...' : 'Open session'}</button></div></form></Modal>}</>;
+  return <><PageHeading eyebrow="SESSIONS" title="Running Quizzes" description="Open session details, metrics, and presenter mode from one place." /><section className="surface"><div className="surface-head"><div><h2>Active sessions</h2><p>Live lobbies and quizzes, and homework that has not ended</p></div><button className="subtle-button" onClick={() => void load()} disabled={loading}>Refresh</button></div>{error && <p className="error">{error}</p>}{loading ? <p className="state">Loading sessions...</p> : sessions.length === 0 ? <Empty icon="▶" title="No running quizzes" copy="Launch a live quiz or homework to see it here." /> : <SessionList items={sessions} />}</section>{!loading && homeworkHistory.length > 0 && <section className="surface session-history"><div className="surface-head"><div><h2>Homework history</h2><p>Closed homework remains available with every saved attempt and Archery score.</p></div></div><SessionList items={homeworkHistory} history /></section>}</>;
 }
 
 function QuizList({ go }: { go: (path: string) => void }) {
-  const [quizzes, setQuizzes] = useState<Quiz[]>([]), [showCreate, setShowCreate] = useState(false), [title, setTitle] = useState(''), [description, setDescription] = useState(''), [error, setError] = useState(''), [saving, setSaving] = useState(false);
+  const [quizzes, setQuizzes] = useState<Quiz[]>([]), [showCreate, setShowCreate] = useState(false), [title, setTitle] = useState(''), [description, setDescription] = useState(''), [error, setError] = useState(''), [saving, setSaving] = useState(false), [mutatingQuizId, setMutatingQuizId] = useState<number | null>(null);
   const load = useCallback(async () => { try { setQuizzes(await request<Quiz[]>('/quizzes')); } catch (err) { setError(err instanceof Error ? err.message : 'Could not load quizzes'); } }, []); useEffect(() => { void load(); }, [load]);
   async function createQuiz(event: FormEvent) { event.preventDefault(); setSaving(true); setError(''); try { const quiz = await request<Quiz>('/quizzes', { method: 'POST', body: JSON.stringify({ title, description: description || undefined }) }); go(`/quizzes/${quiz.id}`); } catch (err) { setError(err instanceof Error ? err.message : 'Could not create quiz'); } finally { setSaving(false); } }
-  return <><PageHeading eyebrow="QUIZ LIBRARY" title="Quizzes" description="Create, organize and prepare the quizzes your team publishes." action={<button className="primary" onClick={() => setShowCreate(true)}>+ New quiz</button>} />{error && <p className="error">{error}</p>}<section className="surface"><div className="surface-head"><div><h2>All quizzes</h2><p>{quizzes.length} quiz{quizzes.length === 1 ? '' : 'zes'} in your workspace</p></div><button className="subtle-button" onClick={() => void load()}>Refresh</button></div>{quizzes.length === 0 ? <Empty icon="▦" title="No quizzes yet" copy="Create your first quiz to begin building its question set." /> : <div className="data-list">{quizzes.map((quiz) => <button className="quiz-row" key={quiz.id} onClick={() => go(`/quizzes/${quiz.id}`)}><span className="list-icon">▦</span><span className="row-main"><strong>{quiz.title}</strong><small>{quiz.description || 'No description added'}</small></span><span className="question-total">{quiz._count?.questions ?? 0}<small>questions</small></span><span className="chevron">›</span></button>)}</div>}</section>{showCreate && <Modal title="Create a quiz" onClose={() => setShowCreate(false)}><form onSubmit={createQuiz}><label>Quiz title<input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Winter knowledge check" maxLength={200} required /></label><label>Description <span>optional</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={4} placeholder="What should participants expect?" maxLength={2000} /></label><div className="form-actions"><button type="button" className="subtle-button" onClick={() => setShowCreate(false)}>Cancel</button><button className="primary" disabled={saving}>{saving ? 'Creating…' : 'Create quiz'}</button></div></form></Modal>}</>;
+  const activeQuizzes = quizzes.filter((quiz) => !quiz.archivedAt), archivedQuizzes = quizzes.filter((quiz) => quiz.archivedAt);
+  async function updateArchiveState(quiz: Quiz, action: 'archive' | 'restore') {
+    setMutatingQuizId(quiz.id); setError('');
+    try {
+      const updated = await request<Quiz>(`/quizzes/${quiz.id}/${action}`, { method: 'PATCH' });
+      setQuizzes((current) => current.map((item) => item.id === quiz.id ? { ...item, ...updated } : item));
+    } catch (err) { setError(err instanceof Error ? err.message : `Could not ${action} this quiz`); }
+    finally { setMutatingQuizId(null); }
+  }
+  async function deleteQuiz(quiz: Quiz) {
+    setMutatingQuizId(quiz.id); setError('');
+    try {
+      await request(`/quizzes/${quiz.id}`, { method: 'DELETE' });
+      setQuizzes((current) => current.filter((item) => item.id !== quiz.id));
+    } catch (err) { setError(err instanceof Error ? err.message : 'Could not delete this quiz'); }
+    finally { setMutatingQuizId(null); }
+  }
+  function QuizRows({ items, archived = false }: { items: Quiz[]; archived?: boolean }) {
+    return <div className="data-list">{items.map((quiz) => <article className="quiz-row quiz-library-row" key={quiz.id}><button className="quiz-library-open" onClick={() => go(`/quizzes/${quiz.id}`)}><span className="list-icon">▦</span><span className="row-main"><strong>{quiz.title}</strong><small>{quiz.description || 'No description added'}</small></span><span className="question-total">{quiz._count?.questions ?? 0}<small>questions</small></span><span className="chevron">›</span></button><span className="quiz-library-actions">{archived ? <button className="subtle-button" onClick={() => confirmAction({ title: 'Restore quiz?', message: `Move “${quiz.title}” back into the active quiz library?`, confirmLabel: 'Restore quiz', onConfirm: () => void updateArchiveState(quiz, 'restore') })} disabled={mutatingQuizId !== null}>{mutatingQuizId === quiz.id ? 'Restoring…' : 'Restore'}</button> : <button className="subtle-button" onClick={() => confirmAction({ title: 'Archive quiz?', message: `Move “${quiz.title}” out of the active quiz library? You can restore it later.`, confirmLabel: 'Archive quiz', onConfirm: () => void updateArchiveState(quiz, 'archive') })} disabled={mutatingQuizId !== null}>{mutatingQuizId === quiz.id ? 'Archiving…' : 'Archive'}</button>}<button className="quiz-delete-button" onClick={() => confirmAction({ title: 'Delete quiz permanently?', message: `Permanently delete “${quiz.title}” and all of its authored items? Existing homework attempts are retained. This cannot be undone.`, confirmLabel: 'Delete quiz', onConfirm: () => void deleteQuiz(quiz) })} disabled={mutatingQuizId !== null}>{mutatingQuizId === quiz.id ? 'Deleting…' : 'Delete'}</button></span></article>)}</div>;
+  }
+  return <><PageHeading eyebrow="QUIZ LIBRARY" title="Quizzes" description="Create, organize and prepare the quizzes your team publishes." action={<button className="primary" onClick={() => setShowCreate(true)}>+ New quiz</button>} />{error && <p className="error">{error}</p>}<section className="surface"><div className="surface-head"><div><h2>Active quizzes</h2><p>{activeQuizzes.length} active quiz{activeQuizzes.length === 1 ? '' : 'zes'} · {archivedQuizzes.length} archived</p></div><button className="subtle-button" onClick={() => void load()}>Refresh</button></div>{activeQuizzes.length === 0 ? <Empty icon="▦" title="No active quizzes" copy="Create a new quiz or restore one from the archived section." /> : <QuizRows items={activeQuizzes} />}</section>{archivedQuizzes.length > 0 && <section className="surface archived-quizzes"><div className="surface-head"><div><h2>Archived quizzes</h2><p>Hidden from the active library. Restore one whenever you need it again.</p></div></div><QuizRows items={archivedQuizzes} archived /></section>}{showCreate && <Modal title="Create a quiz" onClose={() => setShowCreate(false)}><form onSubmit={createQuiz}><label>Quiz title<input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Winter knowledge check" maxLength={200} required /></label><label>Description <span>optional</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={4} placeholder="What should participants expect?" maxLength={2000} /></label><div className="form-actions"><button type="button" className="subtle-button" onClick={() => setShowCreate(false)}>Cancel</button><button className="primary" disabled={saving}>{saving ? 'Creating…' : 'Create quiz'}</button></div></form></Modal>}</>;
 }
 
 function GamesPage() {
@@ -518,11 +566,9 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
     try {
       if (launchMode === 'live') {
         const session = await request<ModeratedSession>(`/moderated-sessions/quiz/${id}`, { method: 'POST', body: JSON.stringify({ mode: runMode, endless: runMode !== 'facilitated' && endless, scoringEnabled, durationSeconds }) });
-        saveSessionToken(session);
         go('/running');
       } else {
         const session = await request<HomeworkSession>(`/homework-sessions/quiz/${id}`, { method: 'POST', body: JSON.stringify({ durationSeconds, mode: runMode === 'archery' ? 'archery' : 'classic' }) });
-        saveSessionToken(session);
         go('/running');
       }
     } catch (err) {
@@ -545,7 +591,7 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
       </fieldset></div>
       <div className="launch-options"><div className="launch-section launch-option"><h3>Play settings</h3>
       <div className="launch-mode-details"><label htmlFor="run-mode"><strong>{launchMode === 'live' ? 'Live' : 'Homework'} mode</strong><select id="run-mode" value={runMode} disabled={launching} onChange={(event) => setRunMode(event.target.value as typeof runMode)}>{launchMode === 'live' && <option value="facilitated">Facilitated</option>}<option value="classic">Classic</option>{launchMode === 'live' && <option value="matching">Matching</option>}{launchMode === 'live' && <option value="battleship">Battleship</option>}{launchMode === 'live' && <option value="treasure_map">Treasure Map</option>}<option value="archery">Archery</option></select></label><p>{runMode === 'facilitated' ? 'Release one question at a time and follow student progress. Games can appear between rounds.' : runMode === 'matching' ? 'Students answer at their own pace and earn credits to play a matching game. Timeline games are skipped.' : runMode === 'battleship' ? 'Students answer at their own pace and earn attack tokens to fire on a shared Battleship map. Timeline games are skipped.' : runMode === 'treasure_map' ? 'Students earn scout tokens to uncover shared clues and find the class treasure. Timeline games are skipped.' : runMode === 'archery' ? launchMode === 'homework' ? 'Students earn arrows for correct answers, then place their own shots on the target.' : 'Students earn arrows with correct answers, then time their X and Y aim on a shared target. Timeline games are skipped.' : launchMode === 'live' ? 'Students answer at their own pace while you follow their progress. Games can appear between rounds.' : 'Students answer at their own pace. Games can appear between rounds.'}</p></div>
-      {launchMode === 'live' && runMode !== 'facilitated' && <label className="checkbox-label launch-endless"><input type="checkbox" checked={endless} disabled={launching} onChange={(event) => setEndless(event.target.checked)} /><span><strong>Endless questions</strong><small>After the last quiz item, repeat questions in random order until the session ends.</small></span></label>}
+      {launchMode === 'live' && runMode !== 'facilitated' && <label className="checkbox-label launch-endless"><input type="checkbox" checked={endless} disabled={launching} onChange={(event) => setEndless(event.target.checked)} /><span><strong>Endless questions</strong><small>After the last quiz item, repeat questions in random order until the session ends. Wrong answers are repeated twice within the next 10 questions.</small></span></label>}
       {launchMode === 'live' && <label className="checkbox-label launch-endless"><input type="checkbox" checked={scoringEnabled} disabled={launching} onChange={(event) => setScoringEnabled(event.target.checked)} /><span><strong>Enable points scoring</strong><small>Correct answers earn 100 points, a streak bonus, and up to 100 speed points in the first 30 seconds (or the question timer).</small></span></label>}
         {((launchMode === 'live' && ['matching', 'battleship', 'treasure_map', 'archery'].includes(runMode)) || (launchMode === 'homework' && runMode === 'archery')) && <label className="theme-select launch-credit-setting"><span><strong>Credit earning</strong><small>Give one {runMode === 'matching' ? 'credit' : runMode === 'archery' ? 'arrow' : runMode === 'battleship' ? 'attack token' : 'scout token'} for every X correct answers.</small></span><select value={quiz.creditEveryCorrectAnswers} disabled={savingSettings || launching} onChange={(event) => void updateCreditEveryCorrectAnswers(Number(event.target.value))} aria-label="Correct answers per credit">{CREDIT_EARNING_INTERVALS.map((interval) => <option key={interval} value={interval}>{interval}</option>)}</select></label>}
       {launchMode === 'live' && runMode === 'matching' && <label className="theme-select launch-credit-setting"><span><strong>Shared matching board</strong><small>Choose the grid for Matching-mode sessions, up to 10 × 10.</small></span><select value={quiz.matchingPairCount} disabled={savingSettings || launching} onChange={(event) => void updateMatchingPairCount(Number(event.target.value))}>{MATCHING_BOARD_SIZES.map((size) => <option key={size.pairs} value={size.pairs}>{size.label}</option>)}</select></label>}
@@ -605,11 +651,7 @@ function AnswerPoolForm({ initial, onSave, saving }: { initial?: AnswerPool; onS
 }
 
 function RunningSessionPanel({ kind, sessionId, view, token, go }: { kind: 'live' | 'homework'; sessionId: string; view: Exclude<SessionView, 'presenter'>; token: string; go: (path: string) => void }) {
-  if (!token) return <><button className="back-link" onClick={() => go('/running')}>Back to Running Quizzes</button><section className="surface"><Empty icon="!" title="Teacher token required" copy="Open this session from Running Quizzes on the device that launched it, or use its teacher link." /></section></>;
-  const panel = kind === 'live'
-    ? <Facilitator key={`${sessionId}-${view}`} sessionId={sessionId} token={token} metrics={view === 'metrics'} />
-    : <HomeworkTeacher key={`${sessionId}-${view}`} sessionId={sessionId} token={token} initialView={view === 'metrics' ? 'report' : 'manage'} />;
-  return <><button className="back-link" onClick={() => go('/running')}>Back to Running Quizzes</button>{panel}</>;
+  return <><button className="back-link" onClick={() => go('/running')}>Back to Running Quizzes</button>{kind === 'live' ? <Facilitator key={`${sessionId}-${view}`} sessionId={sessionId} token={token} metrics={view === 'metrics'} /> : <HomeworkTeacher key={`${sessionId}-${view}`} sessionId={sessionId} token={token} initialView={view === 'metrics' ? 'report' : 'manage'} />}</>;
 }
 
 function AnswerPoolsPage() {
@@ -622,14 +664,15 @@ function AnswerPoolsPage() {
 
 export default function App() {
   const { path, go } = useRoute();
+  const [teacherPassword, setTeacherPassword] = useState<string | null>(null);
+  if (!teacherPassword) return <TeacherPasswordPrompt onUnlock={setTeacherPassword} />;
   const runningMatch = path.match(/^\/running\/(live|homework)\/([^/]+)\/(details|metrics|presenter)$/);
   const liveMatch = path.match(/^\/teacher\/live\/([^/]+)$/), homeworkMatch = path.match(/^\/teacher\/homework\/([^/]+)$/), projectorMatch = path.match(/^\/teacher\/projector\/([^/]+)$/);
-  const queryToken = new URLSearchParams(window.location.search).get('token') ?? '';
   const projectorSession = runningMatch?.[3] === 'presenter' ? { kind: runningMatch[1] as 'live' | 'homework', sessionId: runningMatch[2] } : projectorMatch ? { kind: 'live' as const, sessionId: projectorMatch[1] } : null;
-  if (projectorSession) return projectorSession.kind === 'live' ? <Facilitator sessionId={projectorSession.sessionId} token={queryToken || sessionToken(projectorSession.sessionId)} projector /> : <HomeworkProjector sessionId={projectorSession.sessionId} token={queryToken || sessionToken(projectorSession.sessionId)} />;
+  if (projectorSession) return projectorSession.kind === 'live' ? <Facilitator sessionId={projectorSession.sessionId} token={teacherPassword} projector /> : <HomeworkProjector sessionId={projectorSession.sessionId} token={teacherPassword} />;
   const legacySession = liveMatch ? { kind: 'live' as const, sessionId: liveMatch[1], view: 'details' as const } : homeworkMatch ? { kind: 'homework' as const, sessionId: homeworkMatch[1], view: 'details' as const } : runningMatch && runningMatch[3] !== 'presenter' ? { kind: runningMatch[1] as 'live' | 'homework', sessionId: runningMatch[2], view: runningMatch[3] as Exclude<SessionView, 'presenter'> } : null;
   const quizMatch = path.match(/^\/quizzes\/(\d+)$/);
-  const page = legacySession ? <RunningSessionPanel {...legacySession} token={queryToken || sessionToken(legacySession.sessionId)} go={go} /> : quizMatch ? <QuizPage id={Number(quizMatch[1])} go={go} /> : path === '/running' ? <RunningQuizzesPage go={go} /> : path === '/data-sets' ? <DataSetsPage go={go} /> : path === '/import' ? <ImportPage go={go} /> : path === '/games' ? <GamesPage /> : path === '/questions' ? <CommonQuestionsPage /> : path === '/answer-pools' ? <AnswerPoolsPage /> : <QuizList go={go} />;
+  const page = legacySession ? <RunningSessionPanel {...legacySession} token={teacherPassword} go={go} /> : quizMatch ? <QuizPage id={Number(quizMatch[1])} go={go} /> : path === '/running' ? <RunningQuizzesPage go={go} teacherPassword={teacherPassword} /> : path === '/data-sets' ? <DataSetsPage go={go} /> : path === '/import' ? <ImportPage go={go} /> : path === '/games' ? <GamesPage /> : path === '/questions' ? <CommonQuestionsPage /> : path === '/answer-pools' ? <AnswerPoolsPage /> : <QuizList go={go} />;
   return <AdminShell path={path} go={go}>{page}</AdminShell>;
 }
 

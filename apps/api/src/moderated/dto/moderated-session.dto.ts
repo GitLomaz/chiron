@@ -45,7 +45,9 @@ export class SubmitModeratedAnswerDto {
 }
 
 export class FacilitatorActionDto {
-  @IsUUID('4')
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
   facilitatorToken!: string;
 }
 

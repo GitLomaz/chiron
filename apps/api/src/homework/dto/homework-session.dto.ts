@@ -12,12 +12,16 @@ export class CreateHomeworkSessionDto {
 }
 
 export class EndHomeworkSessionDto {
-  @IsUUID('4')
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
   facilitatorToken!: string;
 }
 
 export class UpdateHomeworkDurationDto {
-  @IsUUID('4')
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
   facilitatorToken!: string;
 
   @IsInt()

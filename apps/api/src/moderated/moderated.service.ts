@@ -19,6 +19,7 @@ type ArcheryPlayer = { arrows: number; lastShot: ArcheryArrow | null };
 type ArcheryArrow = { id: string; participantId: string; participantName: string; x: number; y: number; score: number };
 type SharedArcheryGame = { arrows: ArcheryArrow[] };
 const MATCHING_SYMBOLS = ['🍎', '🍌', '🍇', '🍓', '🍍', '🍉', '🍒', '🥝', '🍑', '🍐', '🍋', '🍊', '🍈', '🥭', '🍅', '🥕', '🌽', '🥑', '🥦', '🥥', '🍄', '🌶️', '🫐', '🍓‍❄️', '🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁', '🐮', '🐷', '🐸', '🐵', '🦄', '🐝', '🦋', '🐢', '🐬', '🐳', '🦉', '🦜', '🦖', '🌈', '⭐'];
+const TEACHER_PASSWORD = 'testing';
 type PointScore = { points: number; streak: number; maxStreak: number; lastAward: { base: number; streak: number; speed: number; total: number } | null };
 type Participant = { id: string; clientId: string; name: string; questions: SessionQuestion[]; answers: Map<string, string>; matchProgress: Map<string, MatchProgress>; gameScores: Map<string, number>; pointScore: PointScore; matching: MatchingGame | null; battleship: BattleshipPlayer | null; treasureMap: TreasureMapPlayer | null; archery: ArcheryPlayer | null; betweenQuestions: boolean; joinedAt: Date; currentQuestionIndex: number; currentQuestionOpenedAt: Date | null; autoAdvanceTimer: NodeJS.Timeout | null; completedAt: Date | null };
 type ModeratedSession = {
@@ -77,7 +78,7 @@ export class ModeratedService {
     if (!quiz.questions.length) throw new BadRequestException('Enable at least one question before creating a moderated test');
 
     const id = randomUUID();
-    const facilitatorToken = randomUUID();
+    const facilitatorToken = TEACHER_PASSWORD;
     const pin = this.createPin();
     const authoredQuestions = quiz.questions.map((question) => {
       if (question.itemType === 'game') return { id: String(question.id), text: question.text, itemType: 'game' as const, gameType: question.gameType, correctAnswer: '', options: [], timerSeconds: question.gameDurationSeconds ?? 20 };
@@ -337,8 +338,10 @@ export class ModeratedService {
     } else if (!question.options.includes(body.answer)) throw new BadRequestException('Choose one of the available answers');
     if (participant.answers.has(question.id)) throw new BadRequestException('You have already answered this question');
     participant.answers.set(question.id, body.answer);
-    this.awardPoints(session, participant, question, body.answer === question.correctAnswer);
-    const earnsCredit = body.answer === question.correctAnswer && this.score(session, participant).correct % session.quiz.creditEveryCorrectAnswers === 0;
+    const isCorrect = body.answer === question.correctAnswer;
+    this.awardPoints(session, participant, question, isCorrect);
+    if (session.endless && !isCorrect) this.queueEndlessReinforcement(session, participant, question);
+    const earnsCredit = isCorrect && this.score(session, participant).correct % session.quiz.creditEveryCorrectAnswers === 0;
     if (participant.matching) {
       if (earnsCredit) participant.matching.credits += 1;
       participant.betweenQuestions = true;
@@ -762,7 +765,7 @@ export class ModeratedService {
 
   private authorize(sessionId: string, token: string) {
     const session = this.get(sessionId);
-    if (!token || session.facilitatorToken !== token) throw new ForbiddenException('That facilitator code is not valid');
+    if (token !== TEACHER_PASSWORD) throw new ForbiddenException('That teacher password is not valid');
     return session;
   }
 
@@ -848,6 +851,27 @@ export class ModeratedService {
       this.onParticipantQuestionTimedOut(session, participant, question);
     };
     participant.autoAdvanceTimer = setTimeout(run, Math.max(0, endsAt.getTime() - Date.now()) + 10);
+  }
+
+  private queueEndlessReinforcement(session: ModeratedSession, participant: Participant, question: SessionQuestion) {
+    const questionPool = session.quiz.questions.filter((item) => item.itemType === 'question');
+    const futureQuestions = () => participant.questions.slice(participant.currentQuestionIndex + 1).filter((item) => item.itemType === 'question');
+
+    // Keep enough upcoming questions in the personal queue that both review
+    // attempts can be placed within the next ten questions, even for a
+    // one-question quiz.
+    while (futureQuestions().length < 10) {
+      participant.questions.push(...this.shuffle(questionPool, randomUUID()).map((item) => ({ ...item, id: randomUUID() })));
+    }
+
+    const positions = new Set<number>();
+    while (positions.size < 2) positions.add(randomInt(10));
+    for (const position of [...positions].sort((left, right) => left - right)) {
+      const upcoming = futureQuestions();
+      const before = upcoming[position];
+      const insertAt = participant.questions.indexOf(before, participant.currentQuestionIndex + 1);
+      participant.questions.splice(insertAt, 0, { ...question, id: randomUUID() });
+    }
   }
 
   private clearParticipantTimer(participant: Participant) {

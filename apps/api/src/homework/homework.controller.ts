@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { CompleteHomeworkItemDto, CreateHomeworkSessionDto, EndHomeworkSessionDto, JoinHomeworkSessionDto, RestartHomeworkDto, ShootHomeworkArcheryDto, SubmitHomeworkAnswerDto, UpdateHomeworkDurationDto } from './dto/homework-session.dto';
 import { HomeworkService } from './homework.service';
 
@@ -21,6 +21,9 @@ export class HomeworkController {
   @Get(':sessionId')
   studentState(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Query('participantId') participantId?: string) { return this.homeworkService.studentState(sessionId, participantId); }
 
+  @Get(':sessionId/participants/:participantId')
+  teacherAttempt(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Param('participantId', new ParseUUIDPipe({ version: '4' })) participantId: string, @Query('token') token: string) { return this.homeworkService.teacherAttempt(sessionId, token, participantId); }
+
   @Post(':sessionId/answers')
   submitAnswer(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: SubmitHomeworkAnswerDto) { return this.homeworkService.submitAnswer(sessionId, body.participantId, body.questionId, body.answer); }
 
@@ -41,4 +44,7 @@ export class HomeworkController {
 
   @Post(':sessionId/duration')
   updateDuration(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: UpdateHomeworkDurationDto) { return this.homeworkService.updateDuration(sessionId, body.facilitatorToken, body.durationSeconds); }
+
+  @Delete(':sessionId')
+  remove(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Query('token') token: string) { return this.homeworkService.remove(sessionId, token); }
 }

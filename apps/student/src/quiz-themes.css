@@ -245,8 +245,19 @@
 .matching-option:focus-visible { outline: 3px solid #7770e8; outline-offset: 2px; }
 .matching-option.is-selected { border-color: #6158dc; background: #f1efff; box-shadow: inset 0 0 0 1px #6158dc; }
 .matching-option.is-matched { border-color: #addfc5; background: #f0faf4; color: #276849; opacity: 1; }
+.matching-option.is-wrong { border-color: #db3f56; background: #fff1f3; box-shadow: inset 0 0 0 1px #db3f56; animation: matching-wrong-flash .7s ease-in-out; }
 .matching-option:disabled { cursor: default; }
 .matching-option-check { flex: 0 0 auto; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #d8f2e3; color: #248459; font-size: .8rem; font-weight: 700; }
+@keyframes matching-wrong-flash { 0%, 100% { border-color: #e3e1f0; box-shadow: inset 0 0 0 0 #db3f56; } 18%, 72% { border-color: #db3f56; box-shadow: inset 0 0 0 2px #db3f56, 0 0 0 4px #db3f5626; } 45% { border-color: #f29aaa; box-shadow: inset 0 0 0 1px #f29aaa; } }
+.matching-solution { overflow: hidden; border: 1px solid #b8dec6; border-radius: 14px; background: #f4fcf6; }
+.matching-solution header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px 20px; padding: 14px 16px; border-bottom: 1px solid #d5ecdc; background: #eaf8ee; }
+.matching-solution h2 { margin: 0; color: #226544; font-size: .88rem; }
+.matching-solution header p { margin: 0; color: #4f7a60; font-size: .76rem; }
+.matching-solution ol { display: grid; gap: 1px; padding: 0; margin: 0; list-style: none; background: #dceee2; }
+.matching-solution li { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; padding: 13px 16px; background: #f9fef9; color: #28513a; font-size: .92rem; line-height: 1.4; }
+.matching-solution li span, .matching-solution li strong { min-width: 0; overflow-wrap: anywhere; }
+.matching-solution li b { color: #3d9a60; font-size: 1.15rem; }
+.matching-solution li strong { color: #1e6540; }
 .student-app .matching-question-card .answer-feedback, .matching-question-card .answer-feedback { flex: 0 0 auto; margin: 24px 0 16px; }
 .theme-kids .matching-option { border-width: 2px; background: #fff; color: #253560; }
 .theme-kids .matching-option.is-selected { border-color: #635bdf; background: #f1efff; }
@@ -257,7 +268,11 @@
   .matching-intro { margin-bottom: 16px; }
   .matching-columns { gap: 10px; }
   .matching-option { min-height: 52px; padding: 10px; font-size: .85rem; }
+  .matching-solution header { display: block; }
+  .matching-solution header p { margin-top: 4px; }
+  .matching-solution li { gap: 8px; padding: 11px 12px; font-size: .84rem; }
 }
+@media (prefers-reduced-motion: reduce) { .matching-option.is-wrong { animation: none; } }
 
 /* Seasonal themes share the quiz layout while giving each occasion its own palette. */
 .theme-christmas { --season-ink: #163f32; --season-accent: #a82432; --season-border: #80b09a; --season-light: #edf7ef; --season-track: #cce4d2; }

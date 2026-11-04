@@ -4,6 +4,8 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 
+const TEACHER_PASSWORD = 'testing';
+
 type HomeworkQuestion = { id: string; text: string; itemType: 'question' | 'game' | 'text'; gameType: 'coin_catch' | 'match_pairs' | 'tower_stack' | null; gameDurationSeconds: number | null; options: string[]; correctAnswer: string; timerSeconds: number | null; special?: SpecialQuestion | null };
 type HomeworkQuiz = { title: string; description: string | null; theme: string; creditEveryCorrectAnswers: number; questions: HomeworkQuestion[] };
 type ArcheryShot = { id: string; x: number; y: number; score: number };
@@ -41,7 +43,7 @@ export class HomeworkService {
     const questions = quiz.randomizeQuestionOrder ? this.shuffleQuestionsInPlace(authoredQuestions) : authoredQuestions;
     const createdAt = new Date();
     const session = await (this.prisma as any).homeworkSession.create({ data: { id: randomUUID(), facilitatorToken: randomUUID(), mode, quizSnapshot: { title: quiz.title, description: quiz.description, theme: quiz.theme, creditEveryCorrectAnswers: quiz.creditEveryCorrectAnswers ?? 1, questions }, endsAt: new Date(createdAt.getTime() + durationSeconds * 1000), createdAt } });
-    return { sessionId: session.id, facilitatorToken: session.facilitatorToken };
+    return { sessionId: session.id, facilitatorToken: TEACHER_PASSWORD };
   }
 
   async join(sessionId: string, name: string) {
@@ -106,7 +108,7 @@ export class HomeworkService {
   }
 
   async teacherState(sessionId: string, token: string) {
-    const session = await this.get(sessionId); if (!token || session.facilitatorToken !== token) throw new ForbiddenException('That teacher code is not valid');
+    const session = await this.get(sessionId); this.authorizeTeacher(token);
     const questionCount = session.quiz.questions.filter((question) => question.itemType === 'question').length;
     const attemptsByStudent = new Map<string, number>();
     const participants = session.participants.map((participant) => {
@@ -118,7 +120,8 @@ export class HomeworkService {
     const questionStats = session.quiz.questions.filter((question) => question.itemType === 'question').map((question) => {
       const answered = session.participants.filter((participant) => Object.hasOwn(participant.answers, question.id));
       const correct = answered.filter((participant) => participant.answers[question.id] === question.correctAnswer).length;
-      return { id: question.id, text: question.text, answered: answered.length, correct, correctRate: answered.length ? Math.round((correct / answered.length) * 100) : 0 };
+      const matchingPairs = question.special?.kind === 'matching' ? question.special.pairs : undefined;
+      return { id: question.id, text: question.text, ...(matchingPairs ? { matchingPairs } : {}), answered: answered.length, correct, correctRate: answered.length ? Math.round((correct / answered.length) * 100) : 0 };
     });
     const archeryLeaderboard = session.mode === 'archery' ? [...session.participants.reduce((leaders, participant) => {
       const key = participant.name.trim().toLocaleLowerCase();
@@ -129,14 +132,44 @@ export class HomeworkService {
     return { sessionId: session.id, title: session.quiz.title, description: session.quiz.description, mode: session.mode, ended: session.ended, expired: session.expired, endsAt: session.endsAt.toISOString(), questionCount, itemCount: session.quiz.questions.length, createdAt: session.createdAt.toISOString(), participants, questionStats, archeryLeaderboard };
   }
 
-  async end(sessionId: string, token: string) { const session = await this.get(sessionId); if (!token || session.facilitatorToken !== token) throw new ForbiddenException('That teacher code is not valid'); await (this.prisma as any).homeworkSession.update({ where: { id: session.id }, data: { ended: true } }); return this.teacherState(sessionId, token); }
+  async teacherAttempt(sessionId: string, token: string, participantId: string) {
+    const session = await this.get(sessionId);
+    this.authorizeTeacher(token);
+    const participant = session.participants.find((item) => item.id === participantId);
+    if (!participant) throw new NotFoundException('That homework attempt could not be found');
+    return {
+      id: participant.id,
+      name: participant.name,
+      joinedAt: participant.joinedAt.toISOString(),
+      completedAt: participant.completedAt?.toISOString() ?? null,
+      completed: participant.completedAt !== null,
+      completedItems: participant.completedItems.length,
+      score: this.score(session, participant),
+      shootingScore: session.mode === 'archery' ? participant.shootingScore : null,
+      answers: session.quiz.questions.filter((question) => question.itemType === 'question').map((question) => {
+        const answer = participant.answers[question.id];
+        const matchingPairs = question.special?.kind === 'matching' ? question.special.pairs : undefined;
+        return { id: question.id, text: question.text, ...(matchingPairs ? { matchingPairs } : {}), answer: answer ?? null, correctAnswer: question.correctAnswer, isCorrect: answer === undefined ? null : answer === question.correctAnswer };
+      }),
+    };
+  }
+
+  async end(sessionId: string, token: string) { const session = await this.get(sessionId); this.authorizeTeacher(token); await (this.prisma as any).homeworkSession.update({ where: { id: session.id }, data: { ended: true } }); return this.teacherState(sessionId, token); }
 
   async updateDuration(sessionId: string, token: string, durationSeconds: number) {
     const session = await this.get(sessionId);
-    if (!token || session.facilitatorToken !== token) throw new ForbiddenException('That teacher code is not valid');
+    this.authorizeTeacher(token);
     this.assertOpen(session);
     await (this.prisma as any).homeworkSession.update({ where: { id: session.id }, data: { endsAt: new Date(Date.now() + durationSeconds * 1000), expired: false } });
     return this.teacherState(sessionId, token);
+  }
+
+  async remove(sessionId: string, token: string) {
+    const session = await this.get(sessionId);
+    this.authorizeTeacher(token);
+    if (!session.ended) throw new BadRequestException('Only closed homework sessions can be deleted');
+    await (this.prisma as any).homeworkSession.delete({ where: { id: session.id } });
+    return { deleted: true };
   }
 
   private async get(sessionId: string): Promise<HomeworkSession> {
@@ -148,6 +181,7 @@ export class HomeworkService {
   }
 
   private async participant(sessionId: string, participantId: string) { const session = await this.get(sessionId), participant = session.participants.find((item) => item.id === participantId); if (!participant) throw new NotFoundException('Your homework attempt could not be found. Please begin again.'); return { session, participant }; }
+  private authorizeTeacher(password: string) { if (password !== TEACHER_PASSWORD) throw new ForbiddenException('That teacher password is not valid'); }
   private assertOpen(session: HomeworkSession) { if (session.ended) throw new BadRequestException('This homework has ended'); }
   private assertActiveAttempt(session: HomeworkSession, participant: HomeworkParticipant) { this.assertOpen(session); if (participant.completedAt) throw new BadRequestException('This homework attempt is already complete'); }
   private saveParticipant(id: string, data: Record<string, unknown>) { return (this.prisma as any).homeworkParticipant.update({ where: { id }, data }); }

@@ -8,6 +8,8 @@ const prisma = { quiz: { findUnique: async () => quiz } };
 for (const mode of ['classic', 'matching']) test(`${mode} endless repeats questions and counts each attempt`, async () => {
   const service = new ModeratedService(prisma);
   const run = await service.create(1, mode, 300, true);
+  assert.equal(run.facilitatorToken, 'testing');
+  assert.throws(() => service.facilitatorState(run.sessionId, 'not-testing'));
   const student = service.join(run.pin, 'Student', randomUUID());
   service.start(run.sessionId, run.facilitatorToken);
   const session = service.sessions.get(run.sessionId), participant = session.participants.get(student.participantId);
@@ -28,6 +30,45 @@ for (const mode of ['classic', 'matching']) test(`${mode} endless repeats questi
 });
 test('facilitated mode rejects endless', async () => {
   await assert.rejects(new ModeratedService(prisma).create(1, 'facilitated', 300, true));
+});
+
+test('live teacher access uses the shared temporary password', async () => {
+  const service = new ModeratedService(prisma);
+  const run = await service.create(1, 'classic', 300);
+  assert.equal(run.facilitatorToken, 'testing');
+  assert.throws(() => service.facilitatorState(run.sessionId, 'not-testing'));
+  assert.doesNotThrow(() => service.facilitatorState(run.sessionId, 'testing'));
+});
+
+test('endless mode repeats an incorrect question twice within the next ten questions', async () => {
+  const reinforcementQuiz = {
+    ...quiz,
+    questions: Array.from({ length: 12 }, (_, index) => ({
+      id: index + 1, text: `Question ${index + 1}`, itemType: 'question', gameType: null,
+      options: ['Yes', 'No'], correctAnswer: 'Yes', answerCount: null, timerSeconds: null,
+    })),
+  };
+  const service = new ModeratedService({ quiz: { findUnique: async () => reinforcementQuiz } });
+  const run = await service.create(1, 'classic', 300, true);
+  const student = service.join(run.pin, 'Student', randomUUID());
+  service.start(run.sessionId, run.facilitatorToken);
+  const session = service.sessions.get(run.sessionId);
+  const participant = session.participants.get(student.participantId);
+
+  let state = service.studentState(run.pin, student.participantId);
+  assert.equal(state.currentQuestion.text, 'Question 1');
+  service.submitAnswer(run.pin, { participantId: student.participantId, questionId: state.currentQuestion.id, answer: 'No' });
+
+  const nextTen = [];
+  for (let index = 0; index < 10; index += 1) {
+    service.openParticipantQuestion(session, participant);
+    state = service.studentState(run.pin, student.participantId);
+    nextTen.push(state.currentQuestion.text);
+    service.submitAnswer(run.pin, { participantId: student.participantId, questionId: state.currentQuestion.id, answer: 'Yes' });
+  }
+
+  assert.equal(nextTen.filter((text) => text === 'Question 1').length, 2);
+  service.end(run.sessionId, run.facilitatorToken);
 });
 
 test('classic live participants can manually advance after answering', async () => {

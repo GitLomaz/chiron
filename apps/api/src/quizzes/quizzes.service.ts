@@ -14,9 +14,25 @@ export class QuizzesService {
 
   findAll() {
     return this.prisma.quiz.findMany({
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ archivedAt: 'asc' }, { createdAt: 'desc' }],
       include: { _count: { select: { questions: true } } },
     });
+  }
+
+  async archive(id: number) {
+    await this.findOne(id);
+    return this.prisma.quiz.update({ where: { id }, data: { archivedAt: new Date() } });
+  }
+
+  async restore(id: number) {
+    await this.findOne(id);
+    return this.prisma.quiz.update({ where: { id }, data: { archivedAt: null } });
+  }
+
+  async remove(id: number) {
+    await this.findOne(id);
+    await this.prisma.quiz.delete({ where: { id } });
+    return { deleted: true };
   }
 
   async findOne(id: number) {

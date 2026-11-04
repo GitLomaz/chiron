@@ -63,6 +63,21 @@ export class QuizzesController {
     return this.quizzesService.update(id, updateQuizDto);
   }
 
+  @Patch(':id/archive')
+  archive(@Param('id', ParseIntPipe) id: number) {
+    return this.quizzesService.archive(id);
+  }
+
+  @Patch(':id/restore')
+  restore(@Param('id', ParseIntPipe) id: number) {
+    return this.quizzesService.restore(id);
+  }
+
+  @Delete(':id')
+  remove(@Param('id', ParseIntPipe) id: number) {
+    return this.quizzesService.remove(id);
+  }
+
   @Post(':id/questions')
   addQuestion(
     @Param('id', ParseIntPipe) id: number,
