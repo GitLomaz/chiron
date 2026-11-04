@@ -5,7 +5,7 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  const origins = (process.env.CLIENT_ORIGIN ?? 'http://localhost:5173')
+  const origins = (process.env.CLIENT_ORIGIN ?? 'http://localhost:5173,http://localhost:5174')
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);

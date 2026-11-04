@@ -1,0 +1,43 @@
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { BATTLESHIP_BOARD_SIZES, CREDIT_EARNING_INTERVALS, MATCHING_PAIR_COUNTS, QUIZ_THEMES, QuizTheme, TIMER_SECONDS } from './create-quiz.dto';
+
+export class UpdateQuizDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  description?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  randomizeQuestionOrder?: boolean;
+
+  @IsOptional()
+  @IsIn(QUIZ_THEMES)
+  theme?: QuizTheme;
+
+  @IsOptional()
+  @IsInt()
+  @IsIn(TIMER_SECONDS)
+  defaultTimerSeconds?: number;
+
+  @IsOptional()
+  @IsInt()
+  @IsIn(MATCHING_PAIR_COUNTS)
+  matchingPairCount?: number;
+
+  @IsOptional()
+  @IsInt()
+  @IsIn(BATTLESHIP_BOARD_SIZES)
+  battleshipBoardSize?: number;
+
+  @IsOptional()
+  @IsInt()
+  @IsIn(CREDIT_EARNING_INTERVALS)
+  creditEveryCorrectAnswers?: number;
+}
