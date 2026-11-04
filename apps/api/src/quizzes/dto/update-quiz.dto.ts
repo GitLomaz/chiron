@@ -1,7 +1,18 @@
-import { IsBoolean, IsIn, IsInt, IsOptional } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { BATTLESHIP_BOARD_SIZES, CREDIT_EARNING_INTERVALS, MATCHING_PAIR_COUNTS, QUIZ_THEMES, QuizTheme, TIMER_SECONDS } from './create-quiz.dto';
 
 export class UpdateQuizDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  description?: string;
+
   @IsOptional()
   @IsBoolean()
   randomizeQuestionOrder?: boolean;

@@ -156,6 +156,20 @@ export class HomeworkService {
 
   async end(sessionId: string, token: string) { const session = await this.get(sessionId); this.authorizeTeacher(token); await (this.prisma as any).homeworkSession.update({ where: { id: session.id }, data: { ended: true } }); return this.teacherState(sessionId, token); }
 
+  async anonymize(sessionId: string, token: string) {
+    const session = await this.get(sessionId);
+    this.authorizeTeacher(token);
+    if (!session.ended) throw new BadRequestException('Only closed homework sessions can be anonymized');
+    const aliases = new Map<string, string>();
+    await Promise.all(session.participants.map((participant) => {
+      const nameKey = participant.name.trim().toLocaleLowerCase();
+      let alias = aliases.get(nameKey);
+      if (!alias) { alias = `Student ${aliases.size + 1}`; aliases.set(nameKey, alias); }
+      return (this.prisma as any).homeworkParticipant.update({ where: { id: participant.id }, data: { name: alias } });
+    }));
+    return this.teacherState(sessionId, token);
+  }
+
   async updateDuration(sessionId: string, token: string, durationSeconds: number) {
     const session = await this.get(sessionId);
     this.authorizeTeacher(token);

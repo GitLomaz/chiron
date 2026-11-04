@@ -74,6 +74,8 @@ test('homework persists archery scores and preserves completed attempts when a s
   const history = await restartedService.listHistory();
   assert.deepEqual(history.map((session) => session.sessionId), [run.sessionId]);
   assert.equal(history[0].mode, 'archery');
+  const anonymized = await restartedService.anonymize(run.sessionId, run.facilitatorToken);
+  assert.deepEqual(anonymized.participants.map((participant) => participant.name), ['Student 1', 'Student 1']);
   await restartedService.remove(run.sessionId, run.facilitatorToken);
   assert.deepEqual(await restartedService.listHistory(), []);
 });

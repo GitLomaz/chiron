@@ -70,7 +70,7 @@ type SessionView = 'details' | 'metrics' | 'presenter';
 function RunningQuizzesPage({ go, teacherPassword }: { go: (path: string) => void; teacherPassword: string }) {
   const [sessions, setSessions] = useState<RunningSession[]>([]), [homeworkHistory, setHomeworkHistory] = useState<RunningSession[]>([]), [loading, setLoading] = useState(true), [error, setError] = useState('');
   const [opening] = useState(false);
-  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null), [endingSessionId, setEndingSessionId] = useState<string | null>(null);
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null), [endingSessionId, setEndingSessionId] = useState<string | null>(null), [anonymizingSessionId, setAnonymizingSessionId] = useState<string | null>(null);
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
@@ -94,6 +94,13 @@ function RunningQuizzesPage({ go, teacherPassword }: { go: (path: string) => voi
     } catch (err) { setError(err instanceof Error ? err.message : 'Could not delete this homework history item'); }
     finally { setDeletingSessionId(null); }
   }
+  async function anonymizeHistory(session: RunningSession) {
+    setAnonymizingSessionId(session.sessionId); setError('');
+    try {
+      await request(`/homework-sessions/${session.sessionId}/anonymize`, { method: 'POST', body: JSON.stringify({ facilitatorToken: teacherPassword }) });
+    } catch (err) { setError(err instanceof Error ? err.message : 'Could not anonymize this homework history item'); }
+    finally { setAnonymizingSessionId(null); }
+  }
   async function endSession(session: RunningSession) {
     setEndingSessionId(session.sessionId); setError('');
     try {
@@ -106,6 +113,7 @@ function RunningQuizzesPage({ go, teacherPassword }: { go: (path: string) => voi
   function SessionList({ items, history = false }: { items: RunningSession[]; history?: boolean }) {
     return <div className="data-list">{items.map((session) => {
       const isEnding = endingSessionId === session.sessionId;
+      const isAnonymizing = anonymizingSessionId === session.sessionId;
       const summary = session.kind === 'live'
         ? `Live · ${session.mode} · ${session.phase === 'lobby' ? 'Lobby' : 'In progress'} · PIN ${session.pin}`
         : `${session.mode === 'archery' ? 'Archery homework' : 'Homework'}${history ? session.expired ? ' · Expired' : ' · Ended' : ''}`;
@@ -117,7 +125,8 @@ function RunningQuizzesPage({ go, teacherPassword }: { go: (path: string) => voi
           <button className="subtle-button" onClick={() => choose(session, 'metrics')} disabled={opening}>Metrics</button>
           <button className="subtle-button" onClick={() => choose(session, 'presenter')} disabled={opening}>Presenter</button>
           {!history && <button className="end-session-button" onClick={() => confirmAction({ title: session.kind === 'live' ? 'End live quiz?' : 'End homework?', message: session.kind === 'live' ? 'Participants will no longer be able to answer this quiz.' : 'Students will no longer be able to answer or join this homework.', confirmLabel: session.kind === 'live' ? 'End quiz' : 'End homework', onConfirm: () => void endSession(session) })} disabled={endingSessionId !== null}>{isEnding ? 'Ending…' : 'End session'}</button>}
-          {history && <button className="history-delete" onClick={() => confirmAction({ title: 'Delete homework history?', message: `Permanently delete “${session.title}” and all saved attempts?`, confirmLabel: 'Delete history', onConfirm: () => void deleteHistory(session) })} disabled={deletingSessionId !== null}>{deletingSessionId === session.sessionId ? 'Deleting…' : 'Delete'}</button>}
+          {history && <button className="history-anonymize" onClick={() => confirmAction({ title: 'Anonymize homework history?', message: 'Permanently replace student names with Student 1, Student 2, and so on in saved attempts and reports? This cannot be undone.', confirmLabel: 'Anonymize names', onConfirm: () => void anonymizeHistory(session) })} disabled={deletingSessionId !== null || anonymizingSessionId !== null}>{isAnonymizing ? 'Anonymizing…' : 'Anonymize'}</button>}
+          {history && <button className="history-delete" onClick={() => confirmAction({ title: 'Delete homework history?', message: `Permanently delete “${session.title}” and all saved attempts?`, confirmLabel: 'Delete history', onConfirm: () => void deleteHistory(session) })} disabled={deletingSessionId !== null || anonymizingSessionId !== null}>{deletingSessionId === session.sessionId ? 'Deleting…' : 'Delete'}</button>}
         </span>
       </article>;
     })}</div>;
@@ -245,6 +254,8 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
+  const [quizDetails, setQuizDetails] = useState<{ title: string; description: string } | null>(null);
+  const [savingDetails, setSavingDetails] = useState(false);
   const [launchMode, setLaunchMode] = useState<'live' | 'homework'>('live');
   const [runMode, setRunMode] = useState<'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery'>('classic');
   const [endless, setEndless] = useState(false);
@@ -484,6 +495,18 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
     }
   }
 
+  async function saveQuizDetails(event: FormEvent) {
+    event.preventDefault();
+    if (!quizDetails) return;
+    setSavingDetails(true); setError('');
+    try {
+      const updatedQuiz = await request<Quiz>(`/quizzes/${id}`, { method: 'PUT', body: JSON.stringify(quizDetails) });
+      setQuiz((current) => current ? { ...current, title: updatedQuiz.title, description: updatedQuiz.description } : current);
+      setQuizDetails(null);
+    } catch (err) { setError(err instanceof Error ? err.message : 'Could not update quiz details'); }
+    finally { setSavingDetails(false); }
+  }
+
   async function updateTheme(theme: QuizTheme) {
     setSavingSettings(true);
     setError('');
@@ -582,7 +605,8 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
 
   return <>
     <button className="back-link" onClick={() => go('/quizzes')}>Back to quizzes</button>
-    <PageHeading eyebrow="QUIZ EDITOR" title={quiz.title} description={quiz.description || 'No description has been added to this quiz.'} action={<button className="primary" disabled={launching} onClick={() => void launchQuiz()}>{launching ? 'Launching…' : 'Launch'}</button>} />
+    <PageHeading eyebrow="QUIZ EDITOR" title={quiz.title} description={quiz.description || 'No description has been added to this quiz.'} action={<div className="page-heading-actions"><button className="subtle-button" disabled={launching} onClick={() => setQuizDetails({ title: quiz.title, description: quiz.description ?? '' })}>Edit details</button><button className="primary" disabled={launching} onClick={() => void launchQuiz()}>{launching ? 'Launching…' : 'Launch'}</button></div>} />
+    {quizDetails && <Modal title="Edit quiz details" onClose={() => { if (!savingDetails) setQuizDetails(null); }}><form onSubmit={saveQuizDetails}><label>Quiz title<input autoFocus value={quizDetails.title} onChange={(event) => setQuizDetails((current) => current ? { ...current, title: event.target.value } : current)} maxLength={200} required /></label><label>Description <span>optional</span><textarea value={quizDetails.description} onChange={(event) => setQuizDetails((current) => current ? { ...current, description: event.target.value } : current)} rows={5} maxLength={2000} placeholder="What should participants expect?" /></label><div className="form-actions"><button className="subtle-button" type="button" disabled={savingDetails} onClick={() => setQuizDetails(null)}>Cancel</button><button className="primary" disabled={savingDetails}>{savingDetails ? 'Saving…' : 'Save details'}</button></div></form></Modal>}
     <section className="surface launch-configuration">
       <div className="launch-configuration-heading"><p className="eyebrow">RUN THIS QUIZ</p><h2>Set up your session</h2><p>Choose how students will play and how long the session will run.</p></div>
       <div className="launch-section"><h3>Session type</h3><fieldset className="launch-mode-tabs" disabled={launching}><legend>Session type</legend>

@@ -69,11 +69,12 @@ export class QuizzesService {
     });
   }
 
-  async update(id: number, { randomizeQuestionOrder, theme, defaultTimerSeconds, matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers }: UpdateQuizDto) {
+  async update(id: number, { title, description, randomizeQuestionOrder, theme, defaultTimerSeconds, matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers }: UpdateQuizDto) {
     await this.findOne(id);
+    if (title !== undefined && !title.trim()) throw new BadRequestException('title cannot be blank');
     return this.prisma.quiz.update({
       where: { id },
-      data: { randomizeQuestionOrder, theme, defaultTimerSeconds, matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers },
+      data: { title: title?.trim(), description: description === undefined ? undefined : description.trim() || null, randomizeQuestionOrder, theme, defaultTimerSeconds, matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers },
     });
   }
 

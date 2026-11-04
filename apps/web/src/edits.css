@@ -47,6 +47,7 @@
 .launch-endless { display: grid; margin-top: 18px; padding: 14px; border: 1px solid #e0e7f0; border-radius: 8px; background: #f8fafc; }
 .launch-endless small { line-height: 1.5; }
 .teacher-password-page { display: grid; min-height: 60vh; place-items: center; padding: 40px 0; }.teacher-password-card { width: min(100%, 430px); padding: 32px; }.teacher-password-card h1 { margin: 6px 0 10px; color: #253553; font-size: 1.6rem; letter-spacing: -.04em; }.teacher-password-card > p { margin: 0 0 22px; color: #728098; font-size: .82rem; }.teacher-password-card form { display: grid; gap: 14px; }.teacher-password-card .primary { justify-self: start; }
+.page-heading-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 9px; }
 .launch-credit-setting { grid-template-columns: minmax(0, 1fr) 250px; margin-top: 18px; padding: 14px; border: 1px solid #e0e7f0; border-radius: 8px; background: #f8fafc; }
 .launch-credit-setting select { min-height: 42px; }
 @media (max-width: 600px) {
@@ -817,6 +818,8 @@ body:has(.dark-mode) { background: #111827; }
 .running-session-actions .subtle-button { padding: 7px 10px; }
 .history-delete { border: 1px solid #d87584; border-radius: 7px; background: #fff5f6; color: #a1344d; padding: 7px 10px; font-size: .72rem; font-weight: 800; }.history-delete:hover:not(:disabled) { background: #ffe9ec; }.history-delete:disabled { cursor: wait; opacity: .6; }
 .dark-mode .history-delete { border-color: #874758; background: #3a232e; color: #ffb5c0; }.dark-mode .history-delete:hover:not(:disabled) { background: #512a38; color: #ffd5dc; }
+.history-anonymize { border: 1px solid #92a7cb; border-radius: 7px; background: #f1f5fc; color: #385c96; padding: 7px 10px; font-size: .72rem; font-weight: 800; }.history-anonymize:hover:not(:disabled) { background: #e4edf9; }.history-anonymize:disabled { cursor: wait; opacity: .6; }
+.dark-mode .history-anonymize { border-color: #49638b; background: #1d2d45; color: #b9d4ff; }.dark-mode .history-anonymize:hover:not(:disabled) { background: #263c5c; color: #e6f0ff; }
 .end-session-button { border: 1px solid #d87584; border-radius: 7px; background: #fff5f6; color: #a1344d; padding: 7px 10px; font-size: .72rem; font-weight: 800; }.end-session-button:hover:not(:disabled) { background: #ffe9ec; }.end-session-button:disabled { cursor: wait; opacity: .6; }
 .dark-mode .end-session-button { border-color: #874758; background: #3a232e; color: #ffb5c0; }.dark-mode .end-session-button:hover:not(:disabled) { background: #512a38; color: #ffd5dc; }
 @media (max-width: 720px) { .running-session-row { align-items: flex-start; flex-wrap: wrap; } .running-session-actions { width: 100%; margin-left: 48px; justify-content: flex-start; } }

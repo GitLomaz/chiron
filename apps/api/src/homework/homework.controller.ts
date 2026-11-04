@@ -42,6 +42,9 @@ export class HomeworkController {
   @Post(':sessionId/end')
   end(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: EndHomeworkSessionDto) { return this.homeworkService.end(sessionId, body.facilitatorToken); }
 
+  @Post(':sessionId/anonymize')
+  anonymize(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: EndHomeworkSessionDto) { return this.homeworkService.anonymize(sessionId, body.facilitatorToken); }
+
   @Post(':sessionId/duration')
   updateDuration(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: UpdateHomeworkDurationDto) { return this.homeworkService.updateDuration(sessionId, body.facilitatorToken, body.durationSeconds); }
 
