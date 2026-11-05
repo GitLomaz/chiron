@@ -7,7 +7,7 @@ export class QuestionPairDto {
   @IsString() @MinLength(1) @MaxLength(500) answer!: string;
 }
 export class CreateQuestionDto {
-  @IsOptional() @IsIn(['multiple_choice', 'true_false', 'matching']) questionType?: 'multiple_choice' | 'true_false' | 'matching';
+  @IsOptional() @IsIn(['multiple_choice', 'true_false', 'matching', 'short_answer']) questionType?: 'multiple_choice' | 'true_false' | 'matching' | 'short_answer';
   @IsOptional() @IsString() @MaxLength(500) statement?: string;
   @IsOptional() @IsArray() @ArrayMinSize(2) @ArrayMaxSize(12) @ValidateNested({ each: true }) @Type(() => QuestionPairDto) pairs?: QuestionPairDto[];
 

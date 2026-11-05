@@ -17,9 +17,23 @@
 .removal-card { max-width: 680px; text-align: center; }
 .removal-card .lede { max-width: 480px; margin-left: auto; margin-right: auto; }
 .removal-card .lede strong { color: #373158; }
-.answer-summary { display: grid; gap: 7px; max-width: 500px; margin: 24px auto 0; padding: 17px 20px; border: 1px solid; border-radius: 16px; text-align: left; }
+.answer-summary { display: grid; gap: 14px; max-width: 560px; margin: 24px auto 0; padding: 20px 22px; border: 1px solid; border-radius: 16px; text-align: left; }
 .answer-summary strong { font-size: 1rem; }
-.answer-summary span { font-size: .88rem; line-height: 1.45; }
+.answer-summary-question { display: grid; gap: 4px; padding-bottom: 14px; border-bottom: 1px solid currentColor; }
+.answer-summary-question span,
+.answer-summary dt { font: 600 .68rem 'DM Mono', monospace; letter-spacing: .08em; text-transform: uppercase; opacity: .72; }
+.answer-summary-question p { margin: 0; font-size: .98rem; font-weight: 600; line-height: 1.45; }
+.answer-summary dl { display: grid; gap: 11px; margin: 0; }
+.answer-summary dl > div { display: grid; gap: 3px; }
+.answer-summary dt { margin: 0; }
+.answer-summary dd { margin: 0; font-size: .96rem; line-height: 1.45; }
+.matching-answer-summary > section { display: grid; gap: 7px; }
+.matching-answer-summary > section > span { font: 600 .68rem 'DM Mono', monospace; letter-spacing: .08em; text-transform: uppercase; opacity: .72; }
+.matching-answer-summary ol { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.matching-answer-summary li { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px; align-items: center; padding: 9px 10px; border-radius: 9px; background: #ffffff80; font-size: .88rem; }
+.matching-answer-summary li b { font-weight: 600; overflow-wrap: anywhere; }
+.matching-answer-summary li i { font-style: normal; opacity: .6; }
+.matching-answer-summary li em { font-style: normal; overflow-wrap: anywhere; }
 .answer-summary.correct { background: #effbf5; border-color: #bde8cf; color: #176a42; }
 .answer-summary.incorrect { background: #fff4f5; border-color: #f2c5ce; color: #922e42; }
 .score-so-far { display: grid; grid-template-columns: 1fr auto; align-items: center; max-width: 500px; margin: 18px auto 0; padding: 15px 18px; border: 1px solid #e3e1f2; border-radius: 14px; color: #5f597f; text-align: left; }

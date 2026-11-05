@@ -50,7 +50,7 @@ export class QuizzesService {
     return quiz;
   }
 
-  create({ title, description, randomizeQuestionOrder, theme, defaultTimerSeconds, matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers }: CreateQuizDto) {
+  create({ title, description, randomizeQuestionOrder, theme, answerMatching, defaultTimerSeconds, matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers }: CreateQuizDto) {
     if (!title.trim()) {
       throw new BadRequestException('title cannot be blank');
     }
@@ -61,6 +61,7 @@ export class QuizzesService {
         description: description?.trim() || null,
         randomizeQuestionOrder: randomizeQuestionOrder ?? false,
         theme: theme ?? 'standard',
+        answerMatching: answerMatching ?? 'close',
         defaultTimerSeconds: defaultTimerSeconds ?? -1,
         matchingPairCount: matchingPairCount ?? 6,
         battleshipBoardSize: battleshipBoardSize ?? 10,
@@ -69,12 +70,12 @@ export class QuizzesService {
     });
   }
 
-  async update(id: number, { title, description, randomizeQuestionOrder, theme, defaultTimerSeconds, matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers }: UpdateQuizDto) {
+  async update(id: number, { title, description, randomizeQuestionOrder, theme, answerMatching, defaultTimerSeconds, matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers }: UpdateQuizDto) {
     await this.findOne(id);
     if (title !== undefined && !title.trim()) throw new BadRequestException('title cannot be blank');
     return this.prisma.quiz.update({
       where: { id },
-      data: { title: title?.trim(), description: description === undefined ? undefined : description.trim() || null, randomizeQuestionOrder, theme, defaultTimerSeconds, matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers },
+      data: { title: title?.trim(), description: description === undefined ? undefined : description.trim() || null, randomizeQuestionOrder, theme, answerMatching, defaultTimerSeconds, matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers },
     });
   }
 
@@ -295,6 +296,9 @@ export class QuizzesService {
       if (pairs.length < 2 || pairs.some((pair) => !pair.question || !pair.answer)) throw new BadRequestException('Provide at least two complete pairs');
       if (new Set(pairs.map((pair) => pair.question)).size !== pairs.length || new Set(pairs.map((pair) => pair.answer)).size !== pairs.length) throw new BadRequestException('Questions and answers must be unique within a matching question');
       return { text, correctAnswer: 'Matched', options: { kind: 'matching', pairs }, answerPoolId: null, answerCount: null };
+    }
+    if (question.questionType === 'short_answer') {
+      return { text, correctAnswer, options: { kind: 'short_answer', pairs: [] }, answerPoolId: null, answerCount: null };
     }
 
     let wrongAnswers = this.cleanUnique(question.wrongAnswers ?? []).filter((answer) => answer !== correctAnswer);

@@ -1,4 +1,5 @@
 import { specialQuestion, matchAttempt, SpecialQuestion } from '../question-types/special';
+import { answersMatch, AnswerMatching } from '../question-types/answer-matching';
 import { MatchProgress } from '../question-types/matching';
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
@@ -7,7 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 const TEACHER_PASSWORD = 'testing';
 
 type HomeworkQuestion = { id: string; text: string; itemType: 'question' | 'game' | 'text'; gameType: 'coin_catch' | 'match_pairs' | 'tower_stack' | null; gameDurationSeconds: number | null; options: string[]; correctAnswer: string; timerSeconds: number | null; special?: SpecialQuestion | null };
-type HomeworkQuiz = { title: string; description: string | null; theme: string; creditEveryCorrectAnswers: number; questions: HomeworkQuestion[] };
+type HomeworkQuiz = { title: string; description: string | null; theme: string; answerMatching?: AnswerMatching; creditEveryCorrectAnswers: number; questions: HomeworkQuestion[] };
 type ArcheryShot = { id: string; x: number; y: number; score: number };
 type HomeworkParticipant = { id: string; name: string; answers: Record<string, string>; matchProgress: Record<string, MatchProgress>; completedItems: string[]; archeryArrows: number; archeryShots: ArcheryShot[]; shootingScore: number; joinedAt: Date; completedAt: Date | null };
 type HomeworkSession = { id: string; facilitatorToken: string; mode: 'classic' | 'archery'; quiz: HomeworkQuiz; participants: HomeworkParticipant[]; ended: boolean; expired: boolean; endsAt: Date; createdAt: Date };
@@ -38,11 +39,11 @@ export class HomeworkService {
       const storedOptions = Array.isArray(question.options) ? question.options.filter((value): value is string => typeof value === 'string') : [];
       const wrongAnswers = [...new Set(storedOptions.filter((option) => option !== question.correctAnswer))];
       const optionCount = Math.min(question.answerCount ?? wrongAnswers.length + 1, wrongAnswers.length + 1);
-      return { id: String(question.id), text: question.text, itemType, special, gameType: question.gameType === 'coin_catch' || question.gameType === 'match_pairs' || question.gameType === 'tower_stack' ? question.gameType : null, gameDurationSeconds: question.gameDurationSeconds, options: itemType !== 'question' || special?.kind === 'matching' ? [] : special?.kind === 'true_false' ? ['True', 'False'] : this.shuffle([question.correctAnswer, ...this.shuffle(wrongAnswers).slice(0, optionCount - 1)]), correctAnswer: question.correctAnswer, timerSeconds: this.effectiveTimer(question.timerSeconds, quiz.defaultTimerSeconds) };
+      return { id: String(question.id), text: question.text, itemType, special, gameType: question.gameType === 'coin_catch' || question.gameType === 'match_pairs' || question.gameType === 'tower_stack' ? question.gameType : null, gameDurationSeconds: question.gameDurationSeconds, options: itemType !== 'question' || special?.kind === 'matching' || special?.kind === 'short_answer' ? [] : special?.kind === 'true_false' ? ['True', 'False'] : this.shuffle([question.correctAnswer, ...this.shuffle(wrongAnswers).slice(0, optionCount - 1)]), correctAnswer: question.correctAnswer, timerSeconds: this.effectiveTimer(question.timerSeconds, quiz.defaultTimerSeconds) };
     });
     const questions = quiz.randomizeQuestionOrder ? this.shuffleQuestionsInPlace(authoredQuestions) : authoredQuestions;
     const createdAt = new Date();
-    const session = await (this.prisma as any).homeworkSession.create({ data: { id: randomUUID(), facilitatorToken: randomUUID(), mode, quizSnapshot: { title: quiz.title, description: quiz.description, theme: quiz.theme, creditEveryCorrectAnswers: quiz.creditEveryCorrectAnswers ?? 1, questions }, endsAt: new Date(createdAt.getTime() + durationSeconds * 1000), createdAt } });
+    const session = await (this.prisma as any).homeworkSession.create({ data: { id: randomUUID(), facilitatorToken: randomUUID(), mode, quizSnapshot: { title: quiz.title, description: quiz.description, theme: quiz.theme, answerMatching: quiz.answerMatching === 'exact' ? 'exact' : 'close', creditEveryCorrectAnswers: quiz.creditEveryCorrectAnswers ?? 1, questions }, endsAt: new Date(createdAt.getTime() + durationSeconds * 1000), createdAt } });
     return { sessionId: session.id, facilitatorToken: TEACHER_PASSWORD };
   }
 
@@ -62,7 +63,7 @@ export class HomeworkService {
 
   async studentState(sessionId: string, participantId?: string) {
     const session = await this.get(sessionId), participant = participantId ? session.participants.find((item) => item.id === participantId) : undefined;
-    return { sessionId: session.id, title: session.quiz.title, description: session.quiz.description, theme: session.quiz.theme, mode: session.mode, ended: session.ended, expired: session.expired, endsAt: session.endsAt.toISOString(), questions: session.quiz.questions.map((question) => ({ ...question, answer: participant?.answers[question.id] ?? null, completed: participant?.completedItems.includes(question.id) ?? false, matchProgress: participant?.matchProgress[question.id] ?? null })), participant: participant ? { id: participant.id, name: participant.name, score: this.score(session, participant), archery: session.mode === 'archery' ? this.archeryState(participant) : null, completed: participant.completedAt !== null } : null };
+    return { sessionId: session.id, title: session.quiz.title, description: session.quiz.description, theme: session.quiz.theme, answerMatching: session.quiz.answerMatching ?? 'close', mode: session.mode, ended: session.ended, expired: session.expired, endsAt: session.endsAt.toISOString(), questions: session.quiz.questions.map((question) => ({ ...question, answer: participant?.answers[question.id] ?? null, completed: participant?.completedItems.includes(question.id) ?? false, matchProgress: participant?.matchProgress[question.id] ?? null })), participant: participant ? { id: participant.id, name: participant.name, score: this.score(session, participant), archery: session.mode === 'archery' ? this.archeryState(participant) : null, completed: participant.completedAt !== null } : null };
   }
 
   async submitAnswer(sessionId: string, participantId: string, questionId: string, answer: string) {
@@ -78,6 +79,10 @@ export class HomeworkService {
       matchProgress[questionId] = progress;
       if (progress.mistakes < 3 && progress.matched.length < question.special.pairs.length) { await this.saveParticipant(participant.id, { matchProgress }); return { answered: false, matchProgress: progress }; }
       answer = progress.matched.length === question.special.pairs.length ? 'Matched' : 'Not matched';
+    } else if (question.special?.kind === 'short_answer') {
+      answer = answer.trim();
+      if (!answer) throw new BadRequestException('Enter an answer');
+      if (answersMatch(answer, question.correctAnswer, session.quiz.answerMatching)) answer = question.correctAnswer;
     } else if (!question.options.includes(answer)) throw new BadRequestException('Choose one of the available answers');
     if (answers[questionId]) throw new BadRequestException('That answer has already been submitted');
     answers[questionId] = answer; completedItems.add(questionId);

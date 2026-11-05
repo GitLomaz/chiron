@@ -1,5 +1,6 @@
 import { IsBoolean, IsIn, IsInt, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { BATTLESHIP_BOARD_SIZES, CREDIT_EARNING_INTERVALS, MATCHING_PAIR_COUNTS, QUIZ_THEMES, QuizTheme, TIMER_SECONDS } from './create-quiz.dto';
+import { ANSWER_MATCHING_MODES, AnswerMatching } from '../../question-types/answer-matching';
 
 export class UpdateQuizDto {
   @IsOptional()
@@ -20,6 +21,10 @@ export class UpdateQuizDto {
   @IsOptional()
   @IsIn(QUIZ_THEMES)
   theme?: QuizTheme;
+
+  @IsOptional()
+  @IsIn(ANSWER_MATCHING_MODES)
+  answerMatching?: AnswerMatching;
 
   @IsOptional()
   @IsInt()

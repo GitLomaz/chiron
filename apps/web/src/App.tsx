@@ -8,16 +8,17 @@ import type { FormEvent, ReactNode } from 'react';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 type QuizTheme = 'standard' | 'kids' | 'christmas' | 'halloween';
+type AnswerMatching = 'exact' | 'close';
 const themeLabels: Record<QuizTheme, string> = { standard: 'Standard', kids: 'Kid-friendly', christmas: 'Christmas', halloween: 'Halloween' };
-type Quiz = { id: number; guid: string; title: string; description: string | null; archivedAt: string | null; randomizeQuestionOrder: boolean; theme: QuizTheme; defaultTimerSeconds: number; matchingPairCount: number; battleshipBoardSize: number; creditEveryCorrectAnswers: number; _count?: { questions: number } };
+type Quiz = { id: number; guid: string; title: string; description: string | null; archivedAt: string | null; randomizeQuestionOrder: boolean; theme: QuizTheme; answerMatching: AnswerMatching; defaultTimerSeconds: number; matchingPairCount: number; battleshipBoardSize: number; creditEveryCorrectAnswers: number; _count?: { questions: number } };
 type QuizItemType = 'question' | 'game' | 'text';
 type GameType = 'coin_catch' | 'match_pairs' | 'tower_stack';
-type SpecialOptions = { kind: 'true_false'; statement: string } | { kind: 'matching'; pairs: { question: string; answer: string }[] };
+type SpecialOptions = { kind: 'true_false'; statement: string } | { kind: 'matching'; pairs: { question: string; answer: string }[] } | { kind: 'short_answer'; pairs: { question: string; answer: string }[] };
 type Question = { id: number; text: string; options: string[] | SpecialOptions; correctAnswer: string; isEnabled: boolean; itemType: QuizItemType; gameType?: GameType | null; gameDurationSeconds?: number | null; answerPoolId?: number | null; answerCount?: number | null; timerSeconds: number | null; answerPool?: { name: string } | null };
 type QuizDetail = Quiz & { questions: Question[] };
 type AnswerPool = { id: number; name: string; answers: { id: number; value: string }[]; _count?: { questions: number; commonQuestions: number } };
 type CommonQuestion = Question & { answerPool?: AnswerPool | null };
-type QuestionData = { questionType?: 'true_false' | 'matching'; statement?: string; pairs?: { question: string; answer: string }[]; text: string; correctAnswer: string; wrongAnswers?: string[]; answerPoolId?: number; answerCount?: number; timerSeconds?: number | null };
+type QuestionData = { questionType?: 'true_false' | 'matching' | 'short_answer'; statement?: string; pairs?: { question: string; answer: string }[]; text: string; correctAnswer: string; wrongAnswers?: string[]; answerPoolId?: number; answerCount?: number; timerSeconds?: number | null };
 type QuestionPreviewData = { text: string; options: string[]; special?: SpecialOptions };
 type PoolData = { name: string; answers: string[] };
 type ModeratedSession = { sessionId: string; pin: string; phase: 'lobby' };
@@ -203,12 +204,12 @@ function QuestionForm({ pools, onSave, saving, submitLabel, initial, onPreviewCh
 function QuestionEditor({ draft, theme, editing, pools, mode, onModeChange, commonQuestions, onCreateQuestion, onSaveQuestion, onAddCommonQuestion, saving, onPreviewChange }: { draft: QuestionPreviewData | null; theme: QuizTheme; editing: Question | null; pools: AnswerPool[]; mode: 'new' | 'common'; onModeChange: (mode: 'new' | 'common') => void; commonQuestions: CommonQuestion[]; onCreateQuestion: (data: QuestionData) => Promise<void>; onSaveQuestion: (data: QuestionData) => Promise<void>; onAddCommonQuestion: (questionId: number) => Promise<void>; saving: boolean; onPreviewChange: (preview: QuestionPreviewData) => void }) {
   const hasQuestion = Boolean(draft?.text || draft?.options.length);
   const [activeTab, setActiveTab] = useState<'editor' | 'preview'>('editor');
-  const [questionType, setQuestionType] = useState<'multiple_choice' | 'true_false' | 'matching'>('multiple_choice');
+  const [questionType, setQuestionType] = useState<'multiple_choice' | 'true_false' | 'matching' | 'short_answer'>('multiple_choice');
 
   return <aside className={`surface question-preview-panel${editing ? ' is-editing' : ''}`}>
     <div className="surface-head"><div><h2>{editing ? 'Edit question' : mode === 'new' ? 'Add a question' : 'Common questions'}</h2><p>Student view · {themeLabels[theme]} theme</p></div></div>
     <div className="source-tabs editor-tabs question-editor-tabs"><button type="button" className={activeTab === 'editor' ? 'selected' : ''} onClick={() => setActiveTab('editor')}>{editing ? 'Edit' : 'Add'}</button><button type="button" className={activeTab === 'preview' ? 'selected' : ''} onClick={() => setActiveTab('preview')}>Preview</button></div>
-    <div hidden={activeTab !== 'editor'}>{editing ? <div className="preview-editor"><div className="preview-editor-intro"><h3>Modify this question</h3><p>Your changes are ready to preview at any time.</p></div>{!Array.isArray(editing.options) ? <SpecialQuestionForm key={editing.id} kind={editing.options.kind} initial={editing} onSave={onSaveQuestion} saving={saving} onPreviewChange={onPreviewChange} /> : <QuestionForm key={editing.id} pools={pools} onSave={onSaveQuestion} saving={saving} submitLabel="Save changes" initial={editing} onPreviewChange={onPreviewChange} showTimer />}</div> : <div className="preview-editor">{mode === 'new' ? <><div className="preview-editor-intro preview-editor-intro-with-action"><div><h3>Build a question</h3><p>Open Preview to check the student experience.</p></div><button className="inline-button question-source-action" type="button" onClick={() => onModeChange('common')}>Use a common question</button></div><label className="question-type-select">Question type<select value={questionType} onChange={(e) => setQuestionType(e.target.value as typeof questionType)}><option value="multiple_choice">Multiple choice</option><option value="true_false">True / False</option><option value="matching">Matching</option></select></label>{questionType === 'multiple_choice' ? <QuestionForm pools={pools} onSave={onCreateQuestion} saving={saving} submitLabel="Add to quiz" onPreviewChange={onPreviewChange} showTimer /> : <SpecialQuestionForm key={questionType} kind={questionType} onSave={onCreateQuestion} saving={saving} onPreviewChange={onPreviewChange} />}</> : <div className="common-picker"><div className="preview-editor-intro preview-editor-intro-with-action"><div><h3>Choose a common question</h3><p>Add an approved question from your shared library.</p></div><button className="inline-button question-source-action" type="button" onClick={() => onModeChange('new')}>Create from scratch</button></div>{commonQuestions.length === 0 ? <Empty icon="?" title="Library is empty" copy="Create a common question to reuse it here." /> : commonQuestions.map((question) => <div className="common-card" key={question.id}><strong>{question.text}</strong><small>{question.answerPool ? `Uses ${question.answerPool.name}` : `${(Array.isArray(question.options) ? question.options.length - 1 : 0)} static wrong answers`}</small><button className="secondary" disabled={saving} onClick={() => void onAddCommonQuestion(question.id)}>Add to quiz</button></div>)}</div>}</div>}</div>
+    <div hidden={activeTab !== 'editor'}>{editing ? <div className="preview-editor"><div className="preview-editor-intro"><h3>Modify this question</h3><p>Your changes are ready to preview at any time.</p></div>{!Array.isArray(editing.options) ? <SpecialQuestionForm key={editing.id} kind={editing.options.kind} initial={editing} onSave={onSaveQuestion} saving={saving} onPreviewChange={onPreviewChange} /> : <QuestionForm key={editing.id} pools={pools} onSave={onSaveQuestion} saving={saving} submitLabel="Save changes" initial={editing} onPreviewChange={onPreviewChange} showTimer />}</div> : <div className="preview-editor">{mode === 'new' ? <><div className="preview-editor-intro preview-editor-intro-with-action"><div><h3>Build a question</h3><p>Open Preview to check the student experience.</p></div><button className="inline-button question-source-action" type="button" onClick={() => onModeChange('common')}>Use a common question</button></div><label className="question-type-select">Question type<select value={questionType} onChange={(e) => setQuestionType(e.target.value as typeof questionType)}><option value="multiple_choice">Multiple choice</option><option value="true_false">True / False</option><option value="matching">Matching</option><option value="short_answer">Short answer</option></select></label>{questionType === 'multiple_choice' ? <QuestionForm pools={pools} onSave={onCreateQuestion} saving={saving} submitLabel="Add to quiz" onPreviewChange={onPreviewChange} showTimer /> : <SpecialQuestionForm key={questionType} kind={questionType} onSave={onCreateQuestion} saving={saving} onPreviewChange={onPreviewChange} />}</> : <div className="common-picker"><div className="preview-editor-intro preview-editor-intro-with-action"><div><h3>Choose a common question</h3><p>Add an approved question from your shared library.</p></div><button className="inline-button question-source-action" type="button" onClick={() => onModeChange('new')}>Create from scratch</button></div>{commonQuestions.length === 0 ? <Empty icon="?" title="Library is empty" copy="Create a common question to reuse it here." /> : commonQuestions.map((question) => <div className="common-card" key={question.id}><strong>{question.text}</strong><small>{question.answerPool ? `Uses ${question.answerPool.name}` : `${(Array.isArray(question.options) ? question.options.length - 1 : 0)} static wrong answers`}</small><button className="secondary" disabled={saving} onClick={() => void onAddCommonQuestion(question.id)}>Add to quiz</button></div>)}</div>}</div>}</div>
     <div hidden={activeTab !== 'preview'} className={`student-question-preview preview-theme-${theme}`}>
       {hasQuestion ? <>
         <div className="preview-topline"><span className="preview-brand"><b>Q</b> Quizboard</span><span>Question 1 of 1</span></div>
@@ -523,6 +524,22 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
     }
   }
 
+  async function updateAnswerMatching(answerMatching: AnswerMatching) {
+    setSavingSettings(true);
+    setError('');
+    try {
+      const updatedQuiz = await request<Quiz>(`/quizzes/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ answerMatching }),
+      });
+      setQuiz((current) => current ? { ...current, answerMatching: updatedQuiz.answerMatching } : current);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update quiz settings');
+    } finally {
+      setSavingSettings(false);
+    }
+  }
+
   async function updateDefaultTimer(defaultTimerSeconds: number) {
     setSavingSettings(true);
     setError('');
@@ -623,6 +640,7 @@ function QuizPage({ id, go }: { id: number; go: (path: string) => void }) {
       </div><div className="launch-section launch-option"><h3>End date</h3>
       <div className="launch-mode-details launch-duration"><label htmlFor="run-end-date"><strong>End date and time</strong><input id="run-end-date" type="datetime-local" value={endDate} disabled={launching} onChange={(event) => setEndDate(event.target.value)} /></label><p>Choose a date from 5 minutes to 7 days from now. The run closes for everyone at this time, including a live quiz waiting in the lobby.</p></div>
       <label className="theme-select launch-student-theme"><span><strong>Student theme</strong><small>Choose the visual style students see while taking this quiz.</small></span><select value={quiz.theme} disabled={savingSettings || launching} onChange={(event) => void updateTheme(event.target.value as QuizTheme)}><option value="standard">Standard</option><option value="kids">Kid-friendly</option><option value="christmas">Christmas</option><option value="halloween">Halloween</option></select></label>
+      <label className="theme-select launch-student-theme"><span><strong>Answer matching</strong><small>Close ignores case, accents, extra spaces, and punctuation. Exact only trims the beginning and end.</small></span><select value={quiz.answerMatching} disabled={savingSettings || launching} onChange={(event) => void updateAnswerMatching(event.target.value as AnswerMatching)}><option value="close">Close</option><option value="exact">Exact</option></select></label>
       </div></div>
     </section>
     {error && <p className="error">{error}</p>}

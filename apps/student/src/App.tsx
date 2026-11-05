@@ -9,8 +9,8 @@ const MODERATED_PIN_PATTERN = /^\d{6}$/;
 const NUMBER_FORMATTER = new Intl.NumberFormat('en-US');
 const formatNumber = (value: number) => NUMBER_FORMATTER.format(value);
 
-type SpecialQuestion = { kind: 'true_false'; statement: string } | { kind: 'matching'; pairs: { question: string; answer: string }[] };
-type MatchProgress = { matched: number[]; mistakes: number };
+type SpecialQuestion = { kind: 'true_false'; statement: string } | { kind: 'matching'; pairs: { question: string; answer: string }[] } | { kind: 'short_answer' };
+type MatchProgress = { matched: number[]; mistakes: number; wrongMatches?: { left: number; right: number }[] };
 type QuizQuestion = {
   id: string | number;
   itemType: 'question' | 'game' | 'text';
@@ -32,6 +32,7 @@ type Quiz = {
   title: string;
   description: string | null;
   theme: 'standard' | 'kids' | 'christmas' | 'halloween';
+  answerMatching?: 'exact' | 'close';
   defaultTimerSeconds: number;
   questions: QuizQuestion[];
 };
@@ -41,9 +42,16 @@ type TimedQuestion = { timerSeconds: number | null; timerEndsAt: string | null }
 type Screen = 'welcome' | 'intro' | 'question' | 'results';
 
 const CONFETTI_COLORS = ['#ff5a8a', '#ffcf3f', '#5ac7f2', '#8edb70', '#a981f7', '#ff9e42'];
-const KIDS_SUCCESS_SOUND = `${import.meta.env.BASE_URL}sounds/kids-success.mp3`;
+const CORRECT_SOUND = `${import.meta.env.BASE_URL}sounds/correct.mp3`;
+const INCORRECT_SOUND = `${import.meta.env.BASE_URL}sounds/incorrect.mp3`;
 const VOLUME_STORAGE_KEY = 'quizboard-student-volume';
 const PLAYER_NAME_STORAGE_KEY = 'quizboard-student-name';
+
+function answersMatch(answer: string, correctAnswer: string, mode: 'exact' | 'close' | undefined) {
+  if (mode === 'exact') return answer.trim() === correctAnswer.trim();
+  const normalize = (value: string) => value.trim().normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase().replace(/[’‘`']/gu, '').replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/gu, ' ').trim();
+  return normalize(answer) === normalize(correctAnswer);
+}
 
 type AudioSettings = { volume: number; setVolume: (volume: number) => void };
 const AudioSettingsContext = createContext<AudioSettings | null>(null);
@@ -89,11 +97,45 @@ function VolumeControl() {
   </aside>;
 }
 
-function KidsConfetti({ active }: { active: boolean }) {
+function AnswerFeedbackEffects({ outcome, showConfetti = false }: { outcome?: boolean; showConfetti?: boolean }) {
   const { volume } = useAudioSettings();
+  const sounds = useRef<{ correct: HTMLAudioElement; incorrect: HTMLAudioElement } | null>(null);
+  const playedOutcome = useRef<boolean | null>(null);
+
+  useEffect(() => {
+    const correct = new Audio(CORRECT_SOUND);
+    const incorrect = new Audio(INCORRECT_SOUND);
+    correct.preload = 'auto';
+    incorrect.preload = 'auto';
+    sounds.current = { correct, incorrect };
+    return () => {
+      correct.pause(); correct.removeAttribute('src'); correct.load();
+      incorrect.pause(); incorrect.removeAttribute('src'); incorrect.load();
+      sounds.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!sounds.current) return;
+    sounds.current.correct.volume = volume / 100;
+    sounds.current.incorrect.volume = volume / 100;
+  }, [volume]);
+
+  useEffect(() => {
+    if (outcome === undefined) { playedOutcome.current = null; return; }
+    if (playedOutcome.current === outcome) return;
+    playedOutcome.current = outcome;
+    const audio = sounds.current?.[outcome ? 'correct' : 'incorrect'];
+    if (!audio) return;
+    audio.currentTime = 0;
+    void audio.play().catch(() => { /* Sound is optional if audio playback is unavailable. */ });
+  }, [outcome]);
+
+  return <KidsConfetti active={showConfetti && outcome === true} />;
+}
+
+function KidsConfetti({ active }: { active: boolean }) {
   const [origin, setOrigin] = useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
-  const successSound = useRef<HTMLAudioElement | null>(null);
-  const hasPlayed = useRef(false);
   const shower = useMemo(() => Array.from({ length: 48 }, () => ({
     x: Math.random() * 100,
     delay: Math.random() * 850,
@@ -120,26 +162,6 @@ function KidsConfetti({ active }: { active: boolean }) {
     if (!answer) return;
     const bounds = answer.getBoundingClientRect();
     setOrigin({ x: bounds.left + (bounds.width / 2), y: bounds.top + (bounds.height / 2) });
-  }, [active]);
-
-  useEffect(() => {
-    const audio = new Audio(KIDS_SUCCESS_SOUND);
-    audio.preload = 'auto';
-    audio.volume = volume / 100;
-    successSound.current = audio;
-    return () => { audio.pause(); audio.removeAttribute('src'); audio.load(); successSound.current = null; };
-  }, []);
-
-  useEffect(() => { if (successSound.current) successSound.current.volume = volume / 100; }, [volume]);
-
-  useEffect(() => {
-    if (!active) { hasPlayed.current = false; return; }
-    if (hasPlayed.current) return;
-    hasPlayed.current = true;
-    const audio = successSound.current;
-    if (!audio) return;
-    audio.currentTime = 0;
-    void audio.play().catch(() => { /* Sound is optional if audio playback is unavailable. */ });
   }, [active]);
 
   if (!active) return null;
@@ -423,11 +445,12 @@ function ModeratedStudent({ pin }: { pin: string }) {
   if (state.phase === 'complete') return <WaitingScreen theme={state.theme} title={state.title} name={state.participant.name} copy="The test is complete. Thanks for taking part." score={state.score} scoreLabel="Final score" complete />;
   const question = state.currentQuestion;
   if (!question) return <WaitingScreen theme={state.theme} title={state.title} name={state.participant.name} copy="Waiting for the next question…" />;
+  const timerStyle = timerBorderStyle(question.timerSeconds, remainingMilliseconds);
   if (state.betweenQuestions && state.matching) {
     const allMatched = state.matching.cards.every((card) => card.matched);
     const canPlay = (state.matching.credits ?? 0) > 0 && !allMatched;
     return <main className={`page quiz-page moderated-quiz-page theme-${state.theme}`}>
-      <KidsConfetti active={state.theme === 'kids' && question.result?.isCorrect === true} />
+      <AnswerFeedbackEffects showConfetti={state.theme === 'kids'} outcome={question.result?.isCorrect} />
       <header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">MATCHING BREAK</span></header>
       <section className="intro-card waiting-card matching-break-card">
         <p className="eyebrow">QUESTION {question.number}{!state.endless && <> OF {question.total}</>}</p>
@@ -444,16 +467,16 @@ function ModeratedStudent({ pin }: { pin: string }) {
   }
   if (state.betweenQuestions && state.battleship) {
     const canPlay = (state.battleship.tokens ?? 0) > 0 && state.battleship.hits < state.battleship.shipCells;
-    return <main className={`page quiz-page moderated-quiz-page theme-${state.theme}`}><KidsConfetti active={state.theme === 'kids' && question.result?.isCorrect === true} /><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">BATTLESHIP BREAK</span></header><section className="intro-card waiting-card matching-break-card"><p className="eyebrow">QUESTION {question.number}{!state.endless && <> OF {question.total}</>}</p><h1 data-confetti-origin={question.result?.isCorrect ? '' : undefined}>{question.result ? question.result.isCorrect ? 'Correct!' : 'Not quite.' : 'Time is up.'}</h1>{question.result && !question.result.isCorrect && <p className="matching-answer">The correct answer was <strong>{question.result.correctAnswer}</strong>.</p>}<div className="matching-credit-summary"><span>YOUR ATTACK TOKENS</span><strong>{state.battleship.tokens}</strong><small>{state.battleship.hits === state.battleship.shipCells ? 'The class sank the fleet!' : canPlay ? 'Ready to take a shot' : 'Answer more questions to earn an attack token'}</small></div><div className="matching-actions">{canPlay && <button className="matching-secondary-button" onClick={() => setPlayingBattleship(true)}>Attack the fleet</button>}<button className={`primary-button${question.result && !submitting ? ' advance-timer' : ''}`} disabled={submitting} onClick={() => void nextBattleshipQuestion()}>{question.result && !submitting && <AdvanceTimer />}{submitting ? 'Loading…' : !state.endless && question.number === question.total ? 'Finish test' : 'Next question'} <span aria-hidden="true">→</span></button></div>{error && <p className="form-error">{error}</p>}</section></main>;
+    return <main className={`page quiz-page moderated-quiz-page theme-${state.theme}`}><AnswerFeedbackEffects showConfetti={state.theme === 'kids'} outcome={question.result?.isCorrect} /><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">BATTLESHIP BREAK</span></header><section className="intro-card waiting-card matching-break-card"><p className="eyebrow">QUESTION {question.number}{!state.endless && <> OF {question.total}</>}</p><h1 data-confetti-origin={question.result?.isCorrect ? '' : undefined}>{question.result ? question.result.isCorrect ? 'Correct!' : 'Not quite.' : 'Time is up.'}</h1>{question.result && !question.result.isCorrect && <p className="matching-answer">The correct answer was <strong>{question.result.correctAnswer}</strong>.</p>}<div className="matching-credit-summary"><span>YOUR ATTACK TOKENS</span><strong>{state.battleship.tokens}</strong><small>{state.battleship.hits === state.battleship.shipCells ? 'The class sank the fleet!' : canPlay ? 'Ready to take a shot' : 'Answer more questions to earn an attack token'}</small></div><div className="matching-actions">{canPlay && <button className="matching-secondary-button" onClick={() => setPlayingBattleship(true)}>Attack the fleet</button>}<button className={`primary-button${question.result && !submitting ? ' advance-timer' : ''}`} disabled={submitting} onClick={() => void nextBattleshipQuestion()}>{question.result && !submitting && <AdvanceTimer />}{submitting ? 'Loading…' : !state.endless && question.number === question.total ? 'Finish test' : 'Next question'} <span aria-hidden="true">→</span></button></div>{error && <p className="form-error">{error}</p>}</section></main>;
   }
   if (state.betweenQuestions && state.treasureMap) {
     const canPlay = (state.treasureMap.tokens ?? 0) > 0 && !state.treasureMap.complete;
     const clueCount = state.treasureMap.cells.filter((cell) => cell.result === 'clue').length;
-    return <main className={`page quiz-page moderated-quiz-page theme-${state.theme}`}><KidsConfetti active={state.theme === 'kids' && question.result?.isCorrect === true} /><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">TREASURE MAP BREAK</span></header><section className="intro-card waiting-card matching-break-card"><p className="eyebrow">QUESTION {question.number}{!state.endless && <> OF {question.total}</>}</p><h1 data-confetti-origin={question.result?.isCorrect ? '' : undefined}>{question.result ? question.result.isCorrect ? 'Correct!' : 'Not quite.' : 'Time is up.'}</h1>{question.result && !question.result.isCorrect && <p className="matching-answer">The correct answer was <strong>{question.result.correctAnswer}</strong>.</p>}<div className="matching-credit-summary"><span>YOUR SCOUT TOKENS</span><strong>{state.treasureMap.tokens}</strong><small>{state.treasureMap.complete ? 'The class found the treasure!' : canPlay ? `${clueCount} clue${clueCount === 1 ? '' : 's'} uncovered — ready to scout` : 'Answer more questions to earn a scout token'}</small></div><div className="matching-actions">{canPlay && <button className="matching-secondary-button" onClick={() => setPlayingTreasureMap(true)}>Open the map</button>}<button className={`primary-button${question.result && !submitting ? ' advance-timer' : ''}`} disabled={submitting} onClick={() => void nextTreasureMapQuestion()}>{question.result && !submitting && <AdvanceTimer />}{submitting ? 'Loading…' : !state.endless && question.number === question.total ? 'Finish test' : 'Next question'} <span aria-hidden="true">→</span></button></div>{error && <p className="form-error">{error}</p>}</section></main>;
+    return <main className={`page quiz-page moderated-quiz-page theme-${state.theme}`}><AnswerFeedbackEffects showConfetti={state.theme === 'kids'} outcome={question.result?.isCorrect} /><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">TREASURE MAP BREAK</span></header><section className="intro-card waiting-card matching-break-card"><p className="eyebrow">QUESTION {question.number}{!state.endless && <> OF {question.total}</>}</p><h1 data-confetti-origin={question.result?.isCorrect ? '' : undefined}>{question.result ? question.result.isCorrect ? 'Correct!' : 'Not quite.' : 'Time is up.'}</h1>{question.result && !question.result.isCorrect && <p className="matching-answer">The correct answer was <strong>{question.result.correctAnswer}</strong>.</p>}<div className="matching-credit-summary"><span>YOUR SCOUT TOKENS</span><strong>{state.treasureMap.tokens}</strong><small>{state.treasureMap.complete ? 'The class found the treasure!' : canPlay ? `${clueCount} clue${clueCount === 1 ? '' : 's'} uncovered — ready to scout` : 'Answer more questions to earn a scout token'}</small></div><div className="matching-actions">{canPlay && <button className="matching-secondary-button" onClick={() => setPlayingTreasureMap(true)}>Open the map</button>}<button className={`primary-button${question.result && !submitting ? ' advance-timer' : ''}`} disabled={submitting} onClick={() => void nextTreasureMapQuestion()}>{question.result && !submitting && <AdvanceTimer />}{submitting ? 'Loading…' : !state.endless && question.number === question.total ? 'Finish test' : 'Next question'} <span aria-hidden="true">→</span></button></div>{error && <p className="form-error">{error}</p>}</section></main>;
   }
   if (state.betweenQuestions && state.archery) {
     const canPlay = (state.archery.arrows ?? 0) > 0;
-    return <main className={`page quiz-page moderated-quiz-page theme-${state.theme}`}><KidsConfetti active={state.theme === 'kids' && question.result?.isCorrect === true} /><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">ARCHERY BREAK</span></header><section className="intro-card waiting-card matching-break-card"><p className="eyebrow">QUESTION {question.number}{!state.endless && <> OF {question.total}</>}</p><h1 data-confetti-origin={question.result?.isCorrect ? '' : undefined}>{question.result ? question.result.isCorrect ? 'Correct!' : 'Not quite.' : 'Time is up.'}</h1>{question.result && !question.result.isCorrect && <p className="matching-answer">The correct answer was <strong>{question.result.correctAnswer}</strong>.</p>}<div className="matching-credit-summary"><span>YOUR ARROWS</span><strong>{state.archery.arrows}</strong><small>{canPlay ? 'Ready to aim for the bullseye' : 'Answer more questions to earn an arrow'}</small></div><div className="matching-actions">{canPlay && <button className="matching-secondary-button" onClick={() => setPlayingArchery(true)}>Take a shot</button>}<button className={`primary-button${question.result && !submitting ? ' advance-timer' : ''}`} disabled={submitting} onClick={() => void nextArcheryQuestion()}>{question.result && !submitting && <AdvanceTimer />}{submitting ? 'Loading…' : !state.endless && question.number === question.total ? 'Finish test' : 'Next question'} <span aria-hidden="true">→</span></button></div>{error && <p className="form-error">{error}</p>}</section></main>;
+    return <main className={`page quiz-page moderated-quiz-page theme-${state.theme}`}><AnswerFeedbackEffects showConfetti={state.theme === 'kids'} outcome={question.result?.isCorrect} /><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">ARCHERY BREAK</span></header><section className="intro-card waiting-card matching-break-card"><p className="eyebrow">QUESTION {question.number}{!state.endless && <> OF {question.total}</>}</p><h1 data-confetti-origin={question.result?.isCorrect ? '' : undefined}>{question.result ? question.result.isCorrect ? 'Correct!' : 'Not quite.' : 'Time is up.'}</h1>{question.result && !question.result.isCorrect && <p className="matching-answer">The correct answer was <strong>{question.result.correctAnswer}</strong>.</p>}<div className="matching-credit-summary"><span>YOUR ARROWS</span><strong>{state.archery.arrows}</strong><small>{canPlay ? 'Ready to aim for the bullseye' : 'Answer more questions to earn an arrow'}</small></div><div className="matching-actions">{canPlay && <button className="matching-secondary-button" onClick={() => setPlayingArchery(true)}>Take a shot</button>}<button className={`primary-button${question.result && !submitting ? ' advance-timer' : ''}`} disabled={submitting} onClick={() => void nextArcheryQuestion()}>{question.result && !submitting && <AdvanceTimer />}{submitting ? 'Loading…' : !state.endless && question.number === question.total ? 'Finish test' : 'Next question'} <span aria-hidden="true">→</span></button></div>{error && <p className="form-error">{error}</p>}</section></main>;
   }
   if (state.betweenQuestions) {
     const isFinalQuestion = !state.endless && question.number === question.total;
@@ -464,9 +487,10 @@ function ModeratedStudent({ pin }: { pin: string }) {
   if (question.answered || question.timedOut) {
     const canAdvance = state.mode !== 'facilitated';
     const isFinalQuestion = !state.endless && question.number === question.total;
-    return <WaitingScreen theme={state.theme} title={state.title} name={state.participant.name} copy={state.mode === 'facilitated' ? 'Wait for your facilitator to release the next round.' : question.timedOut ? 'Time is up. Choose next question when you are ready.' : 'Your answer is recorded. Choose next question when you are ready.'} result={question.result} score={state.score} action={canAdvance ? <button className="primary-button" disabled={submitting} onClick={() => void nextQuestion()}>{submitting ? 'Loading…' : isFinalQuestion ? 'Finish test' : 'Next question'} <span aria-hidden="true">→</span></button> : undefined} />;
+    if (question.special?.kind === 'matching' && question.result && !question.result.isCorrect) return <MatchingWaitingScreen theme={state.theme} title={state.title} name={state.participant.name} questionText={question.text} pairs={question.special.pairs} progress={question.matchProgress} score={state.score} action={canAdvance ? <button className="primary-button" disabled={submitting} onClick={() => void nextQuestion()}>{submitting ? 'Loading…' : isFinalQuestion ? 'Finish test' : 'Next question'} <span aria-hidden="true">→</span></button> : undefined} />;
+    return <WaitingScreen theme={state.theme} title={state.title} name={state.participant.name} copy={state.mode === 'facilitated' ? 'Wait for your facilitator to release the next round.' : question.timedOut ? 'Time is up. Choose next question when you are ready.' : 'Your answer is recorded. Choose next question when you are ready.'} questionText={question.text} result={question.result} score={state.score} action={canAdvance ? <button className="primary-button" disabled={submitting} onClick={() => void nextQuestion()}>{submitting ? 'Loading…' : isFinalQuestion ? 'Finish test' : 'Next question'} <span aria-hidden="true">→</span></button> : undefined} />;
   }
-  const timerStyle = timerBorderStyle(question.timerSeconds, remainingMilliseconds);
+  if (question.special?.kind === 'short_answer') return <main className={`page quiz-page moderated-quiz-page theme-${state.theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-header-meta"><span className="question-label">Question {question.number}{!state.endless && <> of {question.total}</>}</span>{remainingSeconds !== null && <TimerBadge seconds={remainingSeconds} expired={remainingSeconds === 0} />}</span></header>{!state.endless && <div className="progress"><span style={{ width: `${(question.number / (question.total ?? 1)) * 100}%` }} /></div>}<section className={`question-card${timerStyle ? ' timed-question' : ''}`} style={timerStyle}><p className="eyebrow">QUESTION {String(question.number).padStart(2, '0')}</p><h1>{question.text}</h1><form className="short-answer-form" onSubmit={(event) => { event.preventDefault(); void submit(selected.trim()); }}><label htmlFor={`short-answer-${question.id}`}>Your answer</label><div><input id={`short-answer-${question.id}`} value={selected} disabled={submitting} onChange={(event) => setSelected(event.target.value)} autoFocus autoComplete="off" maxLength={500} /><button className="primary-button" disabled={!selected.trim() || submitting}>{submitting ? 'Submitting…' : 'Submit answer'}</button></div></form>{error && <p className="form-error">{error}</p>}</section></main>;
   return <main className={`page quiz-page moderated-quiz-page theme-${state.theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-header-meta"><span className="question-label">Question {question.number}{!state.endless && <> of {question.total}</>}</span>{remainingSeconds !== null && <TimerBadge seconds={remainingSeconds} expired={remainingSeconds === 0} />}</span></header>{!state.endless && <div className="progress"><span style={{ width: `${(question.number / (question.total ?? 1)) * 100}%` }} /></div>}<section className={`question-card${question.special?.kind === 'matching' ? ' matching-question-card' : ''}${timerStyle ? ' timed-question' : ''}`} style={timerStyle}><p className="eyebrow">QUESTION {String(question.number).padStart(2, '0')}</p><h1>{question.text}</h1>{question.special?.kind === 'true_false' && <p className="lede">{question.special.statement}</p>}{question.special?.kind === 'matching' ? <MatchingQuestion key={question.id} pairs={question.special.pairs} progress={question.matchProgress ?? null} disabled={submitting} onMatch={(left, right) => void submit(`match:${left}:${right}`)} /> : <div className="options" role="radiogroup">{question.options.map((option, index) => <button key={option} className={`option ${selected === option ? 'selected' : ''}`} role="radio" aria-checked={selected === option} disabled={submitting} onClick={() => state.mode === 'facilitated' ? setSelected(option) : void submit(option)}><span className="option-key">{String.fromCharCode(65 + index)}</span><span>{option}</span></button>)}</div>}{error && <p className="form-error">{error}</p>}{state.mode === 'facilitated' && question.special?.kind !== 'matching' && <div className="question-actions"><span /><button className="primary-button" disabled={!selected || submitting} onClick={() => void submit()}>{submitting ? 'Submitting…' : 'Submit answer'}</button></div>}</section></main>;
   }
   return <>{state?.phase === 'question' && !state.removed && !state.endedByTeacher && state.endsAt && <RunDeadline endsAt={state.endsAt} />}{render()}</>;
@@ -476,7 +500,12 @@ function QuizEnded({ theme, title, score, expired = false }: { theme: 'standard'
   return <main className={`page quiz-page moderated-quiz-page theme-${theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="intro-card waiting-card"><p className="eyebrow">{title}</p><h1>The quiz has ended.</h1><p className="lede">{expired ? 'Time is up for this quiz.' : 'Your teacher has ended this quiz.'}</p>{score && <div className="score-so-far"><span>Your score</span><strong>{score.points === undefined ? `${score.correct} / ${score.answered}` : `${score.points} pts`}</strong><small>{score.points === undefined ? 'correct answers recorded' : `${score.correct} correct answers recorded`}</small></div>}</section></main>;
 }
 
-function WaitingScreen({ theme, title, name, copy, result, score, scoreLabel = 'Score so far', complete = false, action, heading }: { theme: 'standard' | 'kids' | 'christmas' | 'halloween'; title: string; name: string; copy: string; result?: ModeratedAnswerResult | null; score?: ModeratedScore | null; scoreLabel?: string; complete?: boolean; action?: ReactNode; heading?: ReactNode }) { return <main className={`page quiz-page moderated-quiz-page theme-${theme}`}><KidsConfetti active={theme === 'kids' && result?.isCorrect === true} /><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="intro-card waiting-card"><p className="eyebrow">{title}</p><h1 data-confetti-origin={result?.isCorrect ? '' : undefined}>{heading ?? (complete ? `All done, ${name}!` : result ? result.isCorrect ? `Correct, ${name}!` : `Not quite, ${name}.` : `You’re in, ${name}.`)}</h1>{result && <div className={`answer-summary ${result.isCorrect ? 'correct' : 'incorrect'}`}><strong>{result.isCorrect ? 'You got it right.' : 'Here’s the answer.'}</strong><span>Your answer: {result.answer}</span>{!result.isCorrect && <span>Correct answer: {result.correctAnswer}</span>}</div>}<p className="lede">{copy}</p>{score && (complete || score.answered > 0) && <div className="score-so-far"><span>{scoreLabel}</span><strong>{score.points === undefined ? `${score.correct} / ${score.answered}` : `${score.points} pts`}</strong><small>{score.points === undefined ? `correct answer${score.answered === 1 ? '' : 's'}` : `${score.correct} correct${score.streak ? ` · ${score.streak} streak` : ''}`}</small>{score.lastAward && <small>+{score.lastAward.total}: {score.lastAward.base} correct, {score.lastAward.streak} streak, {score.lastAward.speed} speed</small>}</div>}{action ?? (!complete && <div className="loader small-loader" aria-label="Waiting" />)}</section></main>; }
+function WaitingScreen({ theme, title, name, copy, questionText, result, score, scoreLabel = 'Score so far', complete = false, action, heading }: { theme: 'standard' | 'kids' | 'christmas' | 'halloween'; title: string; name: string; copy: string; questionText?: string; result?: ModeratedAnswerResult | null; score?: ModeratedScore | null; scoreLabel?: string; complete?: boolean; action?: ReactNode; heading?: ReactNode }) { return <main className={`page quiz-page moderated-quiz-page theme-${theme}`}><AnswerFeedbackEffects showConfetti={theme === 'kids'} outcome={result?.isCorrect} /><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="intro-card waiting-card"><p className="eyebrow">{title}</p><h1 data-confetti-origin={result?.isCorrect ? '' : undefined}>{heading ?? (complete ? `All done, ${name}!` : result ? result.isCorrect ? `Correct, ${name}!` : `Not quite, ${name}.` : `You’re in, ${name}.`)}</h1>{result && <div className={`answer-summary ${result.isCorrect ? 'correct' : 'incorrect'}`}><strong>{result.isCorrect ? 'You got it right.' : 'Here’s the answer.'}</strong>{!result.isCorrect && questionText && <div className="answer-summary-question"><span>Question</span><p>{questionText}</p></div>}<dl><div><dt>Your answer</dt><dd>{result.answer}</dd></div>{!result.isCorrect && <div><dt>Correct answer</dt><dd>{result.correctAnswer}</dd></div>}</dl></div>}<p className="lede">{copy}</p>{score && (complete || score.answered > 0) && <div className="score-so-far"><span>{scoreLabel}</span><strong>{score.points === undefined ? `${score.correct} / ${score.answered}` : `${score.points} pts`}</strong><small>{score.points === undefined ? `correct answer${score.answered === 1 ? '' : 's'}` : `${score.correct} correct${score.streak ? ` · ${score.streak} streak` : ''}`}</small>{score.lastAward && <small>+{score.lastAward.total}: {score.lastAward.base} correct, {score.lastAward.streak} streak, {score.lastAward.speed} speed</small>}</div>}{action ?? (!complete && <div className="loader small-loader" aria-label="Waiting" />)}</section></main>; }
+
+function MatchingWaitingScreen({ theme, title, name, questionText, pairs, progress, score, action }: { theme: 'standard' | 'kids' | 'christmas' | 'halloween'; title: string; name: string; questionText: string; pairs: { question: string; answer: string }[]; progress: MatchProgress | null | undefined; score: ModeratedScore | null; action?: ReactNode }) {
+  const wrongMatches = progress?.wrongMatches ?? [];
+  return <main className={`page quiz-page moderated-quiz-page theme-${theme}`}><AnswerFeedbackEffects outcome={false} /><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="intro-card waiting-card"><p className="eyebrow">{title}</p><h1>Not quite, {name}.</h1><div className="answer-summary incorrect matching-answer-summary"><strong>Here are the correct matches.</strong><div className="answer-summary-question"><span>Question</span><p>{questionText}</p></div>{wrongMatches.length > 0 && <section><span>Your incorrect match{wrongMatches.length === 1 ? '' : 'es'}</span><ol>{wrongMatches.map(({ left, right }, index) => <li key={`${left}-${right}-${index}`}><b>{pairs[left]?.question}</b><i>→</i><em>{pairs[right]?.answer}</em></li>)}</ol></section>}<section><span>Correct matches</span><ol>{pairs.map((pair, index) => <li key={index}><b>{pair.question}</b><i>→</i><em>{pair.answer}</em></li>)}</ol></section></div><p className="lede">Your answer is recorded. Choose next question when you are ready.</p>{score && score.answered > 0 && <div className="score-so-far"><span>Score so far</span><strong>{score.points === undefined ? `${score.correct} / ${score.answered}` : `${score.points} pts`}</strong><small>{score.points === undefined ? `correct answer${score.answered === 1 ? '' : 's'}` : `${score.correct} correct${score.streak ? ` · ${score.streak} streak` : ''}`}</small>{score.lastAward && <small>+{score.lastAward.total}: {score.lastAward.base} correct, {score.lastAward.streak} streak, {score.lastAward.speed} speed</small>}</div>}{action}</section></main>;
+}
 
 function ModeratedPinEntry() {
   const [pin, setPin] = useState('');
@@ -630,6 +659,7 @@ type HomeworkStudentState = {
   title: string;
   description: string | null;
   theme: 'standard' | 'kids' | 'christmas' | 'halloween';
+  answerMatching?: 'exact' | 'close';
   mode: 'classic' | 'archery';
   ended: boolean;
   expired: boolean;
@@ -742,7 +772,7 @@ function HomeworkStudent({ sessionId }: { sessionId: string }) {
   const hasPendingArcheryShot = state.mode === 'archery' && (state.participant.archery?.arrows ?? 0) > 0;
   if (state.participant.completed && !playerStarted.current && !hasPendingArcheryShot) return <main className={`page quiz-page theme-${state.theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="results-card"><p className="eyebrow">HOMEWORK COMPLETE</p><h1>Nice work, {state.participant.name}!</h1><p className="score-copy">Your teacher has your score: <strong>{state.participant.score.correct} of {state.participant.score.total}</strong>{state.mode === 'archery' ? <> · <strong>{state.participant.archery?.shootingScore ?? 0}</strong> archery points</> : null}.</p><div className="results-actions"><button className="primary-button" onClick={() => void restart()}>Take quiz again</button></div>{error && <p className="form-error">{error}</p>}</section></main>;
   playerStarted.current = true;
-  const quiz: Quiz = { guid: sessionId, title: state.title, description: state.description, theme: state.theme, defaultTimerSeconds: -1, questions: state.questions };
+  const quiz: Quiz = { guid: sessionId, title: state.title, description: state.description, theme: state.theme, answerMatching: state.answerMatching, defaultTimerSeconds: -1, questions: state.questions };
   const submitAnswer = (questionId: string, answer: string) => homeworkRequest(`/${sessionId}/answers`, { method: 'POST', body: JSON.stringify({ participantId, questionId, answer }) });
   const completeItem = (questionId: string) => homeworkRequest(`/${sessionId}/items/complete`, { method: 'POST', body: JSON.stringify({ participantId, questionId }) });
   const shootArchery = (x: number, y: number) => homeworkRequest<ArcheryState & { shootingScore: number }>(`/${sessionId}/archery/shoot`, { method: 'POST', body: JSON.stringify({ participantId, x, y }) });
@@ -1337,10 +1367,13 @@ function Player({ quiz, onSubmitAnswer, onCompleteItem, onFinished, allowRestart
 
   async function lockAnswer(answer: string) {
     if (submitting || revealed) return;
+    const trimmedAnswer = question.special?.kind === 'short_answer' ? answer.trim() : answer;
+    if (!trimmedAnswer) return;
+    const storedAnswer = question.special?.kind === 'short_answer' && answersMatch(trimmedAnswer, question.correctAnswer, quiz.answerMatching) ? question.correctAnswer : trimmedAnswer;
     setSubmissionError(''); setSubmitting(true);
-    setAnswers((currentAnswers) => ({ ...currentAnswers, [question.id]: answer }));
+    setAnswers((currentAnswers) => ({ ...currentAnswers, [question.id]: storedAnswer }));
     try {
-      const result = await onSubmitAnswer?.(String(question.id), answer) as { answered?: boolean; matchProgress?: MatchProgress; isCorrect?: boolean; archery?: ArcheryState & { shootingScore?: number } } | undefined;
+      const result = await onSubmitAnswer?.(String(question.id), storedAnswer) as { answered?: boolean; matchProgress?: MatchProgress; isCorrect?: boolean; archery?: ArcheryState & { shootingScore?: number } } | undefined;
       if (question.special?.kind === 'matching' && result?.matchProgress) setMatchingProgress((current) => ({ ...current, [question.id]: result.matchProgress! }));
       if (question.special?.kind === 'matching' && result?.answered === false && result.matchProgress) { setAnswers((current) => { const next = { ...current }; delete next[question.id]; return next; }); return; }
       if (question.special?.kind === 'matching') setAnswers((current) => ({ ...current, [question.id]: result?.isCorrect ? 'Matched' : 'Not matched' }));
@@ -1401,10 +1434,14 @@ function Player({ quiz, onSubmitAnswer, onCompleteItem, onFinished, allowRestart
   </main>;
   if (revealed && archeryState && onShootArchery) {
     const canPlay = (archeryState.arrows ?? 0) > 0;
-    return <main className={`page quiz-page theme-${quiz.theme}`}><KidsConfetti active={quiz.theme === 'kids' && !timedOut && selected === question.correctAnswer} /><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">ARCHERY BREAK</span></header><section className="intro-card waiting-card matching-break-card"><p className="eyebrow">QUESTION {String(current + 1).padStart(2, '0')}</p><h1 data-confetti-origin={selected === question.correctAnswer && !timedOut ? '' : undefined}>{timedOut ? "Time's up." : selected === question.correctAnswer ? 'Correct!' : 'Not quite.'}</h1>{selected !== question.correctAnswer && <p className="matching-answer">The correct answer was <strong>{question.correctAnswer}</strong>.</p>}<div className="matching-credit-summary"><span>YOUR ARROWS</span><strong>{archeryState.arrows}</strong><small>{canPlay ? 'Ready to aim for the bullseye' : 'Answer more questions correctly to earn an arrow'}</small></div><div className="matching-actions">{canPlay && <button className="matching-secondary-button" onClick={() => setPlayingHomeworkArchery(true)}>Take a shot</button>}<button className="primary-button" disabled={submitting} onClick={() => void checkOrAdvance()}>{submitting ? 'Saving…' : isFinalQuestion ? 'See my score' : 'Next question'} <span aria-hidden="true">→</span></button></div>{submissionError && <p className="form-error">{submissionError}</p>}</section></main>;
+    return <main className={`page quiz-page theme-${quiz.theme}`}><AnswerFeedbackEffects showConfetti={quiz.theme === 'kids'} outcome={!timedOut ? question.special?.kind === 'matching' ? selected === 'Matched' : selected === question.correctAnswer : undefined} /><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">ARCHERY BREAK</span></header><section className="intro-card waiting-card matching-break-card"><p className="eyebrow">QUESTION {String(current + 1).padStart(2, '0')}</p><h1 data-confetti-origin={selected === question.correctAnswer && !timedOut ? '' : undefined}>{timedOut ? "Time's up." : selected === question.correctAnswer ? 'Correct!' : 'Not quite.'}</h1>{selected !== question.correctAnswer && <p className="matching-answer">The correct answer was <strong>{question.correctAnswer}</strong>.</p>}<div className="matching-credit-summary"><span>YOUR ARROWS</span><strong>{archeryState.arrows}</strong><small>{canPlay ? 'Ready to aim for the bullseye' : 'Answer more questions correctly to earn an arrow'}</small></div><div className="matching-actions">{canPlay && <button className="matching-secondary-button" onClick={() => setPlayingHomeworkArchery(true)}>Take a shot</button>}<button className="primary-button" disabled={submitting} onClick={() => void checkOrAdvance()}>{submitting ? 'Saving…' : isFinalQuestion ? 'See my score' : 'Next question'} <span aria-hidden="true">→</span></button></div>{submissionError && <p className="form-error">{submissionError}</p>}</section></main>;
+  }
+  if (question.special?.kind === 'short_answer') {
+    const isCorrect = selected === question.correctAnswer;
+    return <main className="page quiz-page"><AnswerFeedbackEffects showConfetti={quiz.theme === 'kids'} outcome={revealed && !timedOut ? isCorrect : undefined} /><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-header-meta"><span className="question-label">Question {current + 1} of {quiz.questions.length}</span>{remainingSeconds !== null && <TimerBadge seconds={remainingSeconds} expired={remainingSeconds === 0} />}</span></header><div className="progress" aria-hidden="true"><span style={{ width: `${((current + 1) / quiz.questions.length) * 100}%` }} /></div><section className={`question-card${timerStyle ? ' timed-question' : ''}`} style={timerStyle}><p className="eyebrow">QUESTION {String(current + 1).padStart(2, '0')}</p><h1 data-confetti-origin={revealed && isCorrect ? '' : undefined}>{question.text}</h1>{!revealed ? <form className="short-answer-form" onSubmit={(event) => { event.preventDefault(); void lockAnswer((event.currentTarget.elements.namedItem('answer') as HTMLInputElement).value); }}><label htmlFor={`short-answer-${question.id}`}>Your answer</label><div><input id={`short-answer-${question.id}`} name="answer" autoFocus autoComplete="off" maxLength={500} disabled={submitting} /><button className="primary-button" disabled={submitting}>{submitting ? 'Checking…' : 'Check answer'}</button></div></form> : <p className={isCorrect && !timedOut ? 'answer-feedback correct-feedback' : 'answer-feedback incorrect-feedback'} role="status">{timedOut ? "Time's up." : isCorrect ? 'Correct — nice work!' : <>Not quite. The correct answer is {question.correctAnswer}.</>}</p>}{submissionError && <p className="form-error">{submissionError}</p>}<div className="question-actions"><span />{revealed && <button key={question.id} className={`primary-button${!submitting ? ' advance-timer' : ''}`} disabled={submitting} onClick={() => void checkOrAdvance()}>{!submitting && <AdvanceTimer />}{submitting ? 'Saving…' : isFinalQuestion ? 'See my score' : 'Next question'} <span aria-hidden="true">→</span></button>}</div></section></main>;
   }
   return <main className="page quiz-page">
-    <KidsConfetti active={quiz.theme === 'kids' && revealed && !timedOut && selected === question.correctAnswer} />
+    <AnswerFeedbackEffects showConfetti={quiz.theme === 'kids'} outcome={revealed && !timedOut ? question.special?.kind === 'matching' ? selected === 'Matched' : selected === question.correctAnswer : undefined} />
     <header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-header-meta"><span className="question-label">Question {current + 1} of {quiz.questions.length}</span>{remainingSeconds !== null && <TimerBadge seconds={remainingSeconds} expired={remainingSeconds === 0} />}</span></header>
     <div className="progress" aria-hidden="true"><span style={{ width: `${((current + 1) / quiz.questions.length) * 100}%` }} /></div>
     <section className={`question-card${question.special?.kind === 'matching' ? ' matching-question-card' : ''}${timerStyle ? ' timed-question' : ''}`} style={timerStyle}>

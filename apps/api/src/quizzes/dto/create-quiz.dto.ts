@@ -1,4 +1,5 @@
 import { IsBoolean, IsIn, IsInt, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { ANSWER_MATCHING_MODES, AnswerMatching } from '../../question-types/answer-matching';
 
 export const QUIZ_THEMES = ['standard', 'kids', 'christmas', 'halloween'] as const;
 export type QuizTheme = typeof QUIZ_THEMES[number];
@@ -27,6 +28,10 @@ export class CreateQuizDto {
   @IsOptional()
   @IsIn(QUIZ_THEMES)
   theme?: QuizTheme;
+
+  @IsOptional()
+  @IsIn(ANSWER_MATCHING_MODES)
+  answerMatching?: AnswerMatching;
 
   @IsOptional()
   @IsInt()

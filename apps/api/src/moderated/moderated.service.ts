@@ -1,4 +1,5 @@
 import { specialQuestion, matchAttempt, SpecialQuestion } from '../question-types/special';
+import { answersMatch, AnswerMatching } from '../question-types/answer-matching';
 import { MatchProgress } from '../question-types/matching';
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomInt, randomUUID } from 'crypto';
@@ -31,7 +32,7 @@ type ModeratedSession = {
   scoringEnabled: boolean;
   currentRoundIndex: number;
   randomizeQuestionOrder: boolean;
-  quiz: { title: string; description: string | null; theme: string; matchingPairCount: number; battleshipBoardSize: number; creditEveryCorrectAnswers: number; questions: SessionQuestion[] };
+  quiz: { title: string; description: string | null; theme: string; answerMatching: AnswerMatching; matchingPairCount: number; battleshipBoardSize: number; creditEveryCorrectAnswers: number; questions: SessionQuestion[] };
   phase: 'lobby' | 'question' | 'complete';
   endedByTeacher: boolean;
   expired: boolean;
@@ -94,7 +95,7 @@ export class ModeratedService {
         itemType: 'question' as const, gameType: null,
         correctAnswer: question.correctAnswer,
         timerSeconds: this.effectiveTimer(question.timerSeconds, quiz.defaultTimerSeconds),
-        options: special?.kind === 'true_false' ? ['True', 'False'] : special?.kind === 'matching' ? [] : this.shuffle([question.correctAnswer, ...this.shuffle(wrongAnswers, `${id}-${question.id}-wrong`).slice(0, count - 1)], `${id}-${question.id}`),
+        options: special?.kind === 'true_false' ? ['True', 'False'] : special?.kind === 'matching' || special?.kind === 'short_answer' ? [] : this.shuffle([question.correctAnswer, ...this.shuffle(wrongAnswers, `${id}-${question.id}-wrong`).slice(0, count - 1)], `${id}-${question.id}`),
       };
     });
     const activeQuestions = this.questionsForMode(authoredQuestions, mode);
@@ -106,7 +107,7 @@ export class ModeratedService {
     const creditEveryCorrectAnswers = quiz.creditEveryCorrectAnswers ?? 1;
     const session = {
       id, pin, facilitatorToken, mode, endless, scoringEnabled, currentRoundIndex: -1, randomizeQuestionOrder: quiz.randomizeQuestionOrder,
-      quiz: { title: quiz.title, description: quiz.description, theme: quiz.theme, matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers, questions: authoredQuestions },
+      quiz: { title: quiz.title, description: quiz.description, theme: quiz.theme, answerMatching: quiz.answerMatching === 'exact' ? 'exact' : 'close', matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers, questions: authoredQuestions },
       phase: 'lobby', endedByTeacher: false, expired: false, durationSeconds, endsAt: new Date(Date.now() + durationSeconds * 1000), lobbyLocked: false, presentationMode: mode === 'matching' ? 'matching' : mode === 'battleship' ? 'battleship' : mode === 'treasure_map' ? 'treasure_map' : mode === 'archery' ? 'archery' : 'scores',
       matching: mode === 'matching' ? { cards: this.shuffle([...MATCHING_SYMBOLS.slice(0, matchingPairCount), ...MATCHING_SYMBOLS.slice(0, matchingPairCount)], id), columns: matchingColumns, rows: matchingRows, matchedCards: new Set<number>(), attempt: null, completionId: null } : null,
       battleship: mode === 'battleship' ? this.newBattleshipGame(battleshipBoardSize, id) : null,
@@ -335,6 +336,10 @@ export class ModeratedService {
       participant.matchProgress.set(question.id, progress);
       if (progress.mistakes < 3 && progress.matched.length < question.special.pairs.length) return { answered: false, matchProgress: progress };
       body.answer = progress.matched.length === question.special.pairs.length ? 'Matched' : 'Not matched';
+    } else if (question.special?.kind === 'short_answer') {
+      body.answer = body.answer.trim();
+      if (!body.answer) throw new BadRequestException('Enter an answer');
+      if (answersMatch(body.answer, question.correctAnswer, session.quiz.answerMatching)) body.answer = question.correctAnswer;
     } else if (!question.options.includes(body.answer)) throw new BadRequestException('Choose one of the available answers');
     if (participant.answers.has(question.id)) throw new BadRequestException('You have already answered this question');
     participant.answers.set(question.id, body.answer);

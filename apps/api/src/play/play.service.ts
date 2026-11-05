@@ -14,6 +14,7 @@ export class PlayService {
         description: true,
         randomizeQuestionOrder: true,
         theme: true,
+        answerMatching: true,
         defaultTimerSeconds: true,
         questions: {
           where: { isEnabled: true },
