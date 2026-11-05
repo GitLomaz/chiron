@@ -815,6 +815,10 @@ body:has(.dark-mode) { background: #111827; }
 .session-history { margin-top: 24px; }
 .running-session-row { min-height: 72px; }
 .running-session-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-left: auto; }
+.running-session-labels { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; margin-left: auto; }
+.running-session-labels b, .running-session-labels em { border-radius: 999px; padding: 4px 7px; font: 700 .58rem 'DM Mono', monospace; font-style: normal; letter-spacing: .02em; white-space: nowrap; }
+.running-session-labels b { color: #276a56; background: #e8f7ef; }
+.running-session-labels em { color: #3f619a; background: #eaf1fd; }
 .running-session-actions .subtle-button { padding: 7px 10px; }
 .history-delete { border: 1px solid #d87584; border-radius: 7px; background: #fff5f6; color: #a1344d; padding: 7px 10px; font-size: .72rem; font-weight: 800; }.history-delete:hover:not(:disabled) { background: #ffe9ec; }.history-delete:disabled { cursor: wait; opacity: .6; }
 .dark-mode .history-delete { border-color: #874758; background: #3a232e; color: #ffb5c0; }.dark-mode .history-delete:hover:not(:disabled) { background: #512a38; color: #ffd5dc; }
@@ -822,7 +826,7 @@ body:has(.dark-mode) { background: #111827; }
 .dark-mode .history-anonymize { border-color: #49638b; background: #1d2d45; color: #b9d4ff; }.dark-mode .history-anonymize:hover:not(:disabled) { background: #263c5c; color: #e6f0ff; }
 .end-session-button { border: 1px solid #d87584; border-radius: 7px; background: #fff5f6; color: #a1344d; padding: 7px 10px; font-size: .72rem; font-weight: 800; }.end-session-button:hover:not(:disabled) { background: #ffe9ec; }.end-session-button:disabled { cursor: wait; opacity: .6; }
 .dark-mode .end-session-button { border-color: #874758; background: #3a232e; color: #ffb5c0; }.dark-mode .end-session-button:hover:not(:disabled) { background: #512a38; color: #ffd5dc; }
-@media (max-width: 720px) { .running-session-row { align-items: flex-start; flex-wrap: wrap; } .running-session-actions { width: 100%; margin-left: 48px; justify-content: flex-start; } }
+@media (max-width: 720px) { .running-session-row { align-items: flex-start; flex-wrap: wrap; } .running-session-labels { margin-left: 48px; } .running-session-actions { width: 100%; margin-left: 48px; justify-content: flex-start; } }
 .archived-quizzes { margin-top: 24px; }
 .quiz-library-row { gap: 0; padding: 8px 10px; }
 .quiz-library-open { display: flex; align-items: center; min-width: 0; flex: 1; gap: 14px; border: 0; background: transparent; color: inherit; padding: 8px 0; text-align: left; }

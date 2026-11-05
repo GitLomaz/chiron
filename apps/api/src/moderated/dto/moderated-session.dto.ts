@@ -7,8 +7,8 @@ export class CreateModeratedSessionDto {
   durationSeconds!: number;
 
   @IsOptional()
-  @IsIn(['classic', 'facilitated', 'matching', 'battleship', 'treasure_map', 'archery'])
-  mode?: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery';
+  @IsIn(['classic', 'facilitated', 'matching', 'battleship', 'treasure_map', 'archery', 'curling'])
+  mode?: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling';
 
   @IsOptional()
   @IsBoolean()
@@ -57,13 +57,13 @@ export class UpdateLobbyLockDto extends FacilitatorActionDto {
 }
 
 export class UpdatePresentationModeDto extends FacilitatorActionDto {
-  @IsIn(['scores', 'matching', 'battleship', 'treasure_map', 'archery'])
-  presentationMode!: 'scores' | 'matching' | 'battleship' | 'treasure_map' | 'archery';
+  @IsIn(['scores', 'matching', 'battleship', 'treasure_map', 'archery', 'curling'])
+  presentationMode!: 'scores' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling';
 }
 
 export class RestartModeratedSessionDto extends FacilitatorActionDto {
-  @IsIn(['classic', 'facilitated', 'matching', 'battleship', 'treasure_map', 'archery'])
-  mode!: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery';
+  @IsIn(['classic', 'facilitated', 'matching', 'battleship', 'treasure_map', 'archery', 'curling'])
+  mode!: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling';
 }
 
 export class UpdateBoardAutoResetDto extends FacilitatorActionDto {
@@ -131,6 +131,27 @@ export class ArcheryShotDto {
 }
 
 export class ArcheryNextDto {
+  @IsUUID('4')
+  participantId!: string;
+}
+
+export class CurlingReleaseDto {
+  @IsUUID('4')
+  participantId!: string;
+
+  // -100 is hard left, 0 is straight, and 100 is hard right.
+  @IsInt()
+  @Min(-100)
+  @Max(100)
+  direction!: number;
+
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  speed!: number;
+}
+
+export class CurlingNextDto {
   @IsUUID('4')
   participantId!: string;
 }

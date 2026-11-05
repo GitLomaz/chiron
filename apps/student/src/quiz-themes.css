@@ -81,6 +81,38 @@
   padding-top: 16px;
 }
 
+/* Typed responses should not inherit the deliberately large choice-question card. */
+.student-app .short-answer-card {
+  width: min(100%, 860px);
+  min-height: min(520px, calc(100vh - 230px));
+  justify-content: flex-start;
+  padding: clamp(30px, 5vw, 54px);
+}
+
+.student-app .short-answer-card h1 {
+  max-width: 780px;
+  font-size: clamp(1.8rem, 3.3vw, 3rem);
+  line-height: 1.18;
+}
+
+.student-app .short-answer-card .short-answer-form,
+.student-app .short-answer-card .answer-feedback,
+.student-app .short-answer-card .question-actions {
+  width: min(100%, 620px);
+}
+
+.student-app .short-answer-card .short-answer-form {
+  margin: 28px 0 18px;
+}
+
+.student-app .short-answer-card .answer-feedback {
+  margin: 24px 0 16px;
+}
+
+.student-app .short-answer-card .question-actions {
+  margin-top: 22px;
+}
+
 .student-app .question-actions .primary-button,
 .student-app .intro-card .primary-button,
 .student-app .results-card .primary-button {
@@ -204,6 +236,10 @@
 
   .student-app .question-card h1 {
     font-size: clamp(2rem, 9vw, 3rem);
+  }
+
+  .student-app .short-answer-card h1 {
+    font-size: clamp(1.65rem, 7vw, 2.45rem);
   }
 
   .student-app .options {

@@ -48,6 +48,10 @@ export class GenerateQuizService {
         const wrong = this.shuffle(this.alternatives(pair, pairs)).slice(0, 3);
         return { text: pair.question, correctAnswer: pair.answer, options: [pair.answer, ...wrong] };
       }
+      if (type === 'short_answer') {
+        const pair = pool[pairIndex++ % pool.length];
+        return { text: pair.question, correctAnswer: pair.answer, options: { kind: 'short_answer', pairs: [] } };
+      }
       const showFalse = trueFalseIndex++ % 2 === 1 && choicePool.length > 0;
       const pair = showFalse ? choicePool[falseIndex++ % choicePool.length] : pool[pairIndex++ % pool.length];
       const alternatives = this.alternatives(pair, pairs);

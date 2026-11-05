@@ -6,7 +6,7 @@ const { HomeworkService } = require('../dist/homework/homework.service');
 
 const quiz = { title: 'Archery homework', description: null, theme: 'standard', randomizeQuestionOrder: false, defaultTimerSeconds: -1, creditEveryCorrectAnswers: 1, questions: [{ id: 1, text: 'Ready?', itemType: 'question', gameType: null, gameDurationSeconds: null, options: ['Yes', 'No'], correctAnswer: 'Yes', answerCount: 2, timerSeconds: null }] };
 
-function database() {
+function database({ omitCurlingFields = false } = {}) {
   const sessions = new Map(), participants = new Map();
   const participantsFor = (id) => [...participants.values()].filter((participant) => participant.homeworkSessionId === id).sort((a, b) => a.joinedAt - b.joinedAt);
   const sessionResult = (session, include) => include ? { ...session, participants: participantsFor(session.id), _count: { participants: participantsFor(session.id).length } } : { ...session };
@@ -21,7 +21,7 @@ function database() {
       delete: async ({ where }) => { const session = sessions.get(where.id); if (!session) throw new Error('Not found'); sessions.delete(where.id); for (const [id, participant] of participants) if (participant.homeworkSessionId === where.id) participants.delete(id); return session; },
     },
     homeworkParticipant: {
-      create: async ({ data }) => { const participant = { ...data, answers: {}, matchProgress: {}, completedItems: [], archeryArrows: 0, archeryShots: [], shootingScore: 0, joinedAt: new Date(), completedAt: null }; participants.set(participant.id, participant); return participant; },
+      create: async ({ data }) => { const participant = { ...data, answers: {}, matchProgress: {}, completedItems: [], archeryArrows: 0, archeryShots: [], shootingScore: 0, ...(omitCurlingFields ? {} : { curlingStones: 0, curlingShots: [], curlingScore: 0 }), joinedAt: new Date(), completedAt: null }; participants.set(participant.id, participant); return participant; },
       update: async ({ where, data }) => { const participant = { ...participants.get(where.id), ...data }; participants.set(where.id, participant); return participant; },
     },
   };
@@ -42,6 +42,7 @@ test('homework persists archery scores and preserves completed attempts when a s
   const prisma = database();
   const firstService = new HomeworkService(prisma);
   const run = await firstService.create(1, 300, 'archery');
+  assert.equal((await firstService.listActive())[0].mode, 'archery');
   const firstAttempt = await firstService.join(run.sessionId, 'Archer');
   const answer = await firstService.submitAnswer(run.sessionId, firstAttempt.participantId, '1', 'Yes');
   assert.equal(answer.archery.arrows, 1);
@@ -78,4 +79,27 @@ test('homework persists archery scores and preserves completed attempts when a s
   assert.deepEqual(anonymized.participants.map((participant) => participant.name), ['Student 1', 'Student 1']);
   await restartedService.remove(run.sessionId, run.facilitatorToken);
   assert.deepEqual(await restartedService.listHistory(), []);
+});
+
+test('homework persists independently placed curling stones and their scores', async () => {
+  const prisma = database({ omitCurlingFields: true });
+  const service = new HomeworkService(prisma);
+  const run = await service.create(1, 300, 'curling');
+  assert.equal((await service.listActive())[0].mode, 'curling');
+  const player = await service.join(run.sessionId, 'Curler');
+  const joined = await service.studentState(run.sessionId, player.participantId);
+  assert.deepEqual(joined.participant.curling, { stones: 0, lastStone: null, attempts: [], shootingScore: 0 });
+  const answer = await service.submitAnswer(run.sessionId, player.participantId, '1', 'Yes');
+  assert.equal(answer.curling.stones, 1);
+
+  const stone = await service.releaseCurlingStone(run.sessionId, player.participantId, 0, 85);
+  assert.equal(stone.shootingScore, 1000);
+  assert.equal(stone.lastStone.x, 0);
+  assert.equal(stone.lastStone.y, -32);
+
+  const reloaded = await new HomeworkService(prisma).studentState(run.sessionId, player.participantId);
+  assert.equal(reloaded.participant.curling.attempts.length, 1);
+  assert.equal(reloaded.participant.curling.shootingScore, 1000);
+  const teacher = await service.teacherState(run.sessionId, run.facilitatorToken);
+  assert.deepEqual(teacher.curlingLeaderboard, [{ name: 'Curler', attempts: 1, bestScore: 1000 }]);
 });

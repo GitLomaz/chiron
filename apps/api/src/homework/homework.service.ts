@@ -10,8 +10,9 @@ const TEACHER_PASSWORD = 'testing';
 type HomeworkQuestion = { id: string; text: string; itemType: 'question' | 'game' | 'text'; gameType: 'coin_catch' | 'match_pairs' | 'tower_stack' | null; gameDurationSeconds: number | null; options: string[]; correctAnswer: string; timerSeconds: number | null; special?: SpecialQuestion | null };
 type HomeworkQuiz = { title: string; description: string | null; theme: string; answerMatching?: AnswerMatching; creditEveryCorrectAnswers: number; questions: HomeworkQuestion[] };
 type ArcheryShot = { id: string; x: number; y: number; score: number };
-type HomeworkParticipant = { id: string; name: string; answers: Record<string, string>; matchProgress: Record<string, MatchProgress>; completedItems: string[]; archeryArrows: number; archeryShots: ArcheryShot[]; shootingScore: number; joinedAt: Date; completedAt: Date | null };
-type HomeworkSession = { id: string; facilitatorToken: string; mode: 'classic' | 'archery'; quiz: HomeworkQuiz; participants: HomeworkParticipant[]; ended: boolean; expired: boolean; endsAt: Date; createdAt: Date };
+type CurlingShot = { id: string; direction: number; speed: number; x: number; y: number; score: number };
+type HomeworkParticipant = { id: string; name: string; answers: Record<string, string>; matchProgress: Record<string, MatchProgress>; completedItems: string[]; archeryArrows: number; archeryShots: ArcheryShot[]; shootingScore: number; curlingStones: number; curlingShots: CurlingShot[]; curlingScore: number; joinedAt: Date; completedAt: Date | null };
+type HomeworkSession = { id: string; facilitatorToken: string; mode: 'classic' | 'archery' | 'curling'; quiz: HomeworkQuiz; participants: HomeworkParticipant[]; ended: boolean; expired: boolean; endsAt: Date; createdAt: Date };
 
 /** Homework snapshots and attempts live in Postgres so they survive API restarts. */
 @Injectable()
@@ -20,16 +21,16 @@ export class HomeworkService {
 
   async listActive() {
     const sessions = await (this.prisma as any).homeworkSession.findMany({ where: { ended: false, endsAt: { gt: new Date() } }, orderBy: { createdAt: 'desc' }, include: { _count: { select: { participants: true } } } });
-    return sessions.map((session: any) => ({ sessionId: session.id, title: (session.quizSnapshot as HomeworkQuiz).title, participantCount: session._count.participants, createdAt: session.createdAt.toISOString(), endsAt: session.endsAt.toISOString() }));
+    return sessions.map((session: any) => ({ sessionId: session.id, title: (session.quizSnapshot as HomeworkQuiz).title, participantCount: session._count.participants, createdAt: session.createdAt.toISOString(), endsAt: session.endsAt.toISOString(), mode: session.mode === 'archery' || session.mode === 'curling' ? session.mode : 'classic' }));
   }
 
   async listHistory() {
     await (this.prisma as any).homeworkSession.updateMany({ where: { ended: false, endsAt: { lte: new Date() } }, data: { ended: true, expired: true } });
     const sessions = await (this.prisma as any).homeworkSession.findMany({ where: { ended: true }, orderBy: { createdAt: 'desc' }, take: 100, include: { _count: { select: { participants: true } } } });
-    return sessions.map((session: any) => ({ sessionId: session.id, title: (session.quizSnapshot as HomeworkQuiz).title, participantCount: session._count.participants, createdAt: session.createdAt.toISOString(), endsAt: session.endsAt.toISOString(), mode: session.mode === 'archery' ? 'archery' : 'classic', ended: true, expired: session.expired }));
+    return sessions.map((session: any) => ({ sessionId: session.id, title: (session.quizSnapshot as HomeworkQuiz).title, participantCount: session._count.participants, createdAt: session.createdAt.toISOString(), endsAt: session.endsAt.toISOString(), mode: session.mode === 'archery' || session.mode === 'curling' ? session.mode : 'classic', ended: true, expired: session.expired }));
   }
 
-  async create(quizId: number, durationSeconds: number, mode: 'classic' | 'archery' = 'classic') {
+  async create(quizId: number, durationSeconds: number, mode: 'classic' | 'archery' | 'curling' = 'classic') {
     const quiz = await this.prisma.quiz.findUnique({ where: { id: quizId }, include: { questions: { where: { isEnabled: true }, orderBy: { position: 'asc' } } } });
     if (!quiz) throw new NotFoundException(`Quiz ${quizId} was not found`);
     if (!quiz.questions.length) throw new BadRequestException('Enable at least one item before creating homework');
@@ -63,7 +64,7 @@ export class HomeworkService {
 
   async studentState(sessionId: string, participantId?: string) {
     const session = await this.get(sessionId), participant = participantId ? session.participants.find((item) => item.id === participantId) : undefined;
-    return { sessionId: session.id, title: session.quiz.title, description: session.quiz.description, theme: session.quiz.theme, answerMatching: session.quiz.answerMatching ?? 'close', mode: session.mode, ended: session.ended, expired: session.expired, endsAt: session.endsAt.toISOString(), questions: session.quiz.questions.map((question) => ({ ...question, answer: participant?.answers[question.id] ?? null, completed: participant?.completedItems.includes(question.id) ?? false, matchProgress: participant?.matchProgress[question.id] ?? null })), participant: participant ? { id: participant.id, name: participant.name, score: this.score(session, participant), archery: session.mode === 'archery' ? this.archeryState(participant) : null, completed: participant.completedAt !== null } : null };
+    return { sessionId: session.id, title: session.quiz.title, description: session.quiz.description, theme: session.quiz.theme, answerMatching: session.quiz.answerMatching ?? 'close', mode: session.mode, ended: session.ended, expired: session.expired, endsAt: session.endsAt.toISOString(), questions: session.quiz.questions.map((question) => ({ ...question, answer: participant?.answers[question.id] ?? null, completed: participant?.completedItems.includes(question.id) ?? false, matchProgress: participant?.matchProgress[question.id] ?? null })), participant: participant ? { id: participant.id, name: participant.name, score: this.score(session, participant), archery: session.mode === 'archery' ? this.archeryState(participant) : null, curling: session.mode === 'curling' ? this.curlingState(participant) : null, completed: participant.completedAt !== null } : null };
   }
 
   async submitAnswer(sessionId: string, participantId: string, questionId: string, answer: string) {
@@ -88,11 +89,13 @@ export class HomeworkService {
     answers[questionId] = answer; completedItems.add(questionId);
     const correct = answer === question.correctAnswer;
     const correctAnswers = session.quiz.questions.filter((item) => item.itemType === 'question' && answers[item.id] === item.correctAnswer).length;
-    const archeryArrows = participant.archeryArrows + (session.mode === 'archery' && correct && correctAnswers % session.quiz.creditEveryCorrectAnswers === 0 ? 1 : 0);
+    const earnsCredit = correct && correctAnswers % session.quiz.creditEveryCorrectAnswers === 0;
+    const archeryArrows = participant.archeryArrows + (session.mode === 'archery' && earnsCredit ? 1 : 0);
+    const curlingStones = (participant.curlingStones ?? 0) + (session.mode === 'curling' && earnsCredit ? 1 : 0);
     const completedAt = completedItems.size === session.quiz.questions.length ? new Date() : null;
-    const updated = { ...participant, answers, matchProgress, completedItems: [...completedItems], archeryArrows, completedAt };
-    await this.saveParticipant(participant.id, { answers, matchProgress, completedItems: [...completedItems], archeryArrows, completedAt });
-    return { answered: true, matchProgress: progress, isCorrect: correct, correctAnswer: question.correctAnswer, score: this.score(session, updated), archery: session.mode === 'archery' ? this.archeryState(updated) : null, completed: completedAt !== null };
+    const updated = { ...participant, answers, matchProgress, completedItems: [...completedItems], archeryArrows, curlingStones, completedAt };
+    await this.saveParticipant(participant.id, { answers, matchProgress, completedItems: [...completedItems], archeryArrows, curlingStones, completedAt });
+    return { answered: true, matchProgress: progress, isCorrect: correct, correctAnswer: question.correctAnswer, score: this.score(session, updated), archery: session.mode === 'archery' ? this.archeryState(updated) : null, curling: session.mode === 'curling' ? this.curlingState(updated) : null, completed: completedAt !== null };
   }
 
   async completeItem(sessionId: string, participantId: string, questionId: string) {
@@ -112,6 +115,16 @@ export class HomeworkService {
     return this.archeryState({ ...participant, archeryShots, archeryArrows, shootingScore });
   }
 
+  async releaseCurlingStone(sessionId: string, participantId: string, direction: number, speed: number) {
+    const { session, participant } = await this.participant(sessionId, participantId); this.assertOpen(session);
+    if (session.mode !== 'curling') throw new BadRequestException('Curling is not enabled for this homework');
+    if (!Number.isInteger(direction) || !Number.isInteger(speed) || Math.abs(direction) > 100 || speed < 0 || speed > 100) throw new BadRequestException('Choose a direction and speed on the sheet');
+    if (participant.curlingStones < 1) throw new BadRequestException('Answer a question correctly to earn a stone');
+    const shot = { id: randomUUID(), direction, speed, ...this.curlingLanding(direction, speed) }, curlingShots = [...participant.curlingShots, shot], curlingStones = participant.curlingStones - 1, curlingScore = participant.curlingScore + shot.score;
+    await this.saveParticipant(participant.id, { curlingShots, curlingStones, curlingScore });
+    return this.curlingState({ ...participant, curlingShots, curlingStones, curlingScore });
+  }
+
   async teacherState(sessionId: string, token: string) {
     const session = await this.get(sessionId); this.authorizeTeacher(token);
     const questionCount = session.quiz.questions.filter((question) => question.itemType === 'question').length;
@@ -120,7 +133,7 @@ export class HomeworkService {
       const key = participant.name.trim().toLocaleLowerCase();
       const attemptNumber = (attemptsByStudent.get(key) ?? 0) + 1;
       attemptsByStudent.set(key, attemptNumber);
-      return { id: participant.id, name: participant.name, attemptNumber, joinedAt: participant.joinedAt.toISOString(), completedAt: participant.completedAt?.toISOString() ?? null, completed: participant.completedAt !== null, completedItems: participant.completedItems.length, score: this.score(session, participant), shootingScore: session.mode === 'archery' ? participant.shootingScore : null };
+      return { id: participant.id, name: participant.name, attemptNumber, joinedAt: participant.joinedAt.toISOString(), completedAt: participant.completedAt?.toISOString() ?? null, completed: participant.completedAt !== null, completedItems: participant.completedItems.length, score: this.score(session, participant), shootingScore: session.mode === 'archery' ? participant.shootingScore : session.mode === 'curling' ? participant.curlingScore : null };
     });
     const questionStats = session.quiz.questions.filter((question) => question.itemType === 'question').map((question) => {
       const answered = session.participants.filter((participant) => Object.hasOwn(participant.answers, question.id));
@@ -134,7 +147,13 @@ export class HomeworkService {
       leaders.set(key, current ? { ...current, attempts: current.attempts + 1, bestScore: Math.max(current.bestScore, participant.shootingScore) } : { name: participant.name, attempts: 1, bestScore: participant.shootingScore });
       return leaders;
     }, new Map<string, { name: string; attempts: number; bestScore: number }>()).values()].sort((a, b) => b.bestScore - a.bestScore || a.name.localeCompare(b.name)) : [];
-    return { sessionId: session.id, title: session.quiz.title, description: session.quiz.description, mode: session.mode, ended: session.ended, expired: session.expired, endsAt: session.endsAt.toISOString(), questionCount, itemCount: session.quiz.questions.length, createdAt: session.createdAt.toISOString(), participants, questionStats, archeryLeaderboard };
+    const curlingLeaderboard = session.mode === 'curling' ? [...session.participants.reduce((leaders, participant) => {
+      const key = participant.name.trim().toLocaleLowerCase();
+      const current = leaders.get(key);
+      leaders.set(key, current ? { ...current, attempts: current.attempts + 1, bestScore: Math.max(current.bestScore, participant.curlingScore) } : { name: participant.name, attempts: 1, bestScore: participant.curlingScore });
+      return leaders;
+    }, new Map<string, { name: string; attempts: number; bestScore: number }>()).values()].sort((a, b) => b.bestScore - a.bestScore || a.name.localeCompare(b.name)) : [];
+    return { sessionId: session.id, title: session.quiz.title, description: session.quiz.description, mode: session.mode, ended: session.ended, expired: session.expired, endsAt: session.endsAt.toISOString(), questionCount, itemCount: session.quiz.questions.length, createdAt: session.createdAt.toISOString(), participants, questionStats, archeryLeaderboard, curlingLeaderboard };
   }
 
   async teacherAttempt(sessionId: string, token: string, participantId: string) {
@@ -150,7 +169,7 @@ export class HomeworkService {
       completed: participant.completedAt !== null,
       completedItems: participant.completedItems.length,
       score: this.score(session, participant),
-      shootingScore: session.mode === 'archery' ? participant.shootingScore : null,
+      shootingScore: session.mode === 'archery' ? participant.shootingScore : session.mode === 'curling' ? participant.curlingScore : null,
       answers: session.quiz.questions.filter((question) => question.itemType === 'question').map((question) => {
         const answer = participant.answers[question.id];
         const matchingPairs = question.special?.kind === 'matching' ? question.special.pairs : undefined;
@@ -196,7 +215,7 @@ export class HomeworkService {
     let row = await (this.prisma as any).homeworkSession.findUnique({ where: { id: sessionId }, include });
     if (!row) throw new NotFoundException('That homework run is no longer available');
     if (!row.ended && Date.now() >= row.endsAt.getTime()) row = await (this.prisma as any).homeworkSession.update({ where: { id: row.id }, data: { ended: true, expired: true }, include });
-    return { id: row.id, facilitatorToken: row.facilitatorToken, mode: row.mode === 'archery' ? 'archery' : 'classic', quiz: row.quizSnapshot as HomeworkQuiz, ended: row.ended, expired: row.expired, endsAt: row.endsAt, createdAt: row.createdAt, participants: row.participants.map((participant: any) => ({ id: participant.id, name: participant.name, answers: participant.answers as Record<string, string>, matchProgress: participant.matchProgress as Record<string, MatchProgress>, completedItems: participant.completedItems as string[], archeryArrows: participant.archeryArrows, archeryShots: participant.archeryShots as ArcheryShot[], shootingScore: participant.shootingScore, joinedAt: participant.joinedAt, completedAt: participant.completedAt })) };
+    return { id: row.id, facilitatorToken: row.facilitatorToken, mode: row.mode === 'archery' || row.mode === 'curling' ? row.mode : 'classic', quiz: row.quizSnapshot as HomeworkQuiz, ended: row.ended, expired: row.expired, endsAt: row.endsAt, createdAt: row.createdAt, participants: row.participants.map((participant: any) => ({ id: participant.id, name: participant.name, answers: participant.answers as Record<string, string>, matchProgress: participant.matchProgress as Record<string, MatchProgress>, completedItems: participant.completedItems as string[], archeryArrows: participant.archeryArrows, archeryShots: participant.archeryShots as ArcheryShot[], shootingScore: participant.shootingScore, curlingStones: participant.curlingStones ?? 0, curlingShots: Array.isArray(participant.curlingShots) ? participant.curlingShots as CurlingShot[] : [], curlingScore: participant.curlingScore ?? 0, joinedAt: participant.joinedAt, completedAt: participant.completedAt })) };
   }
 
   private async participant(sessionId: string, participantId: string) { const session = await this.get(sessionId), participant = session.participants.find((item) => item.id === participantId); if (!participant) throw new NotFoundException('Your homework attempt could not be found. Please begin again.'); return { session, participant }; }
@@ -207,6 +226,8 @@ export class HomeworkService {
   private score(session: HomeworkSession, participant: HomeworkParticipant) { const questions = session.quiz.questions.filter((question) => question.itemType === 'question'); return { correct: questions.filter((question) => participant.answers[question.id] === question.correctAnswer).length, answered: Object.keys(participant.answers).length, total: questions.length }; }
   private archeryState(participant: HomeworkParticipant) { return { arrows: participant.archeryArrows, lastShot: participant.archeryShots.at(-1) ?? null, attempts: [...participant.archeryShots].sort((a, b) => b.score - a.score), shootingScore: participant.shootingScore }; }
   private archeryScore(x: number, y: number) { return Math.max(1, Math.round(1000 - (Math.sqrt((x * x) + (y * y)) * 10))); }
+  private curlingState(participant: HomeworkParticipant) { return { stones: participant.curlingStones, lastStone: participant.curlingShots.at(-1) ?? null, attempts: [...participant.curlingShots].sort((a, b) => b.score - a.score), shootingScore: participant.curlingScore }; }
+  private curlingLanding(direction: number, speed: number) { const x = Math.round(direction * (speed / 100) * 1.2), y = Math.round(100 - (speed * 1.55)), distance = Math.sqrt((x * x) + ((y + 32) * (y + 32))); return { x, y, score: Math.max(1, Math.round(1000 - (distance * 8))) }; }
   private effectiveTimer(questionTimerSeconds: number | null, defaultTimerSeconds: number) { const value = questionTimerSeconds ?? defaultTimerSeconds; return value === -1 || value === null ? null : value; }
   private shuffleQuestionsInPlace(items: HomeworkQuestion[]) { const questions = items.filter((item) => item.itemType === 'question'); for (let index = questions.length - 1; index > 0; index -= 1) { const randomIndex = Math.floor(Math.random() * (index + 1)); [questions[index], questions[randomIndex]] = [questions[randomIndex], questions[index]]; } let questionIndex = 0; return items.map((item) => item.itemType === 'question' ? questions[questionIndex++] : item); }
   private shuffle<T>(items: T[]) { const result = [...items]; for (let index = result.length - 1; index > 0; index -= 1) { const randomIndex = Math.floor(Math.random() * (index + 1)); [result[index], result[randomIndex]] = [result[randomIndex], result[index]]; } return result; }

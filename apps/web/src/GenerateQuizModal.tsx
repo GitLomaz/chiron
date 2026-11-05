@@ -2,11 +2,12 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
-type QuestionType = 'multiple_choice' | 'true_false' | 'matching';
+type QuestionType = 'multiple_choice' | 'true_false' | 'matching' | 'short_answer';
 const QUESTION_TYPES: { value: QuestionType; label: string }[] = [
   { value: 'multiple_choice', label: 'Multiple choice' },
   { value: 'true_false', label: 'True / False' },
   { value: 'matching', label: 'Matching' },
+  { value: 'short_answer', label: 'Short answer' },
 ];
 
 export function GenerateQuizModal({ dataSet, onClose, onCreated }: { dataSet: { id: number; name: string; pairs: { question: string; answer: string }[] }; onClose: () => void; onCreated: (id: number) => void }) {

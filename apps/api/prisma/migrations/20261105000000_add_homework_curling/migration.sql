@@ -1,0 +1,4 @@
+ALTER TABLE "HomeworkParticipant"
+  ADD COLUMN "curlingStones" INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN "curlingShots" JSONB NOT NULL DEFAULT '[]',
+  ADD COLUMN "curlingScore" INTEGER NOT NULL DEFAULT 0;

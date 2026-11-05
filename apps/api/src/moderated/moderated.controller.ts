@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, ParseIntPipe, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { AdvanceModeratedQuestionDto, ArcheryNextDto, ArcheryShotDto, BattleshipAttackDto, BattleshipNextDto, CreateModeratedSessionDto, FacilitatorActionDto, FlipMatchingCardDto, JoinModeratedSessionDto, MatchingNextDto, ReportModeratedGameScoreDto, RestartModeratedSessionDto, SubmitModeratedAnswerDto, TreasureMapDigDto, TreasureMapNextDto, UpdateBoardAutoResetDto, UpdateLobbyLockDto, UpdatePresentationModeDto } from './dto/moderated-session.dto';
+import { AdvanceModeratedQuestionDto, ArcheryNextDto, ArcheryShotDto, BattleshipAttackDto, BattleshipNextDto, CreateModeratedSessionDto, CurlingNextDto, CurlingReleaseDto, FacilitatorActionDto, FlipMatchingCardDto, JoinModeratedSessionDto, MatchingNextDto, ReportModeratedGameScoreDto, RestartModeratedSessionDto, SubmitModeratedAnswerDto, TreasureMapDigDto, TreasureMapNextDto, UpdateBoardAutoResetDto, UpdateLobbyLockDto, UpdatePresentationModeDto } from './dto/moderated-session.dto';
 import { ModeratedService } from './moderated.service';
 
 @Controller('moderated-sessions')
@@ -63,6 +63,16 @@ export class ModeratedController {
   @Post('pin/:pin/archery/next')
   nextArcheryQuestion(@Param('pin') pin: string, @Body() body: ArcheryNextDto) {
     return this.moderatedService.nextArcheryQuestion(pin, body.participantId);
+  }
+
+  @Post('pin/:pin/curling/release')
+  releaseCurlingStone(@Param('pin') pin: string, @Body() body: CurlingReleaseDto) {
+    return this.moderatedService.releaseCurlingStone(pin, body.participantId, body.direction, body.speed);
+  }
+
+  @Post('pin/:pin/curling/next')
+  nextCurlingQuestion(@Param('pin') pin: string, @Body() body: CurlingNextDto) {
+    return this.moderatedService.nextCurlingQuestion(pin, body.participantId);
   }
 
   @Post('pin/:pin/treasure-map/dig')

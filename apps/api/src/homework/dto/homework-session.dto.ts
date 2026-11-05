@@ -7,8 +7,8 @@ export class CreateHomeworkSessionDto {
   durationSeconds!: number;
 
   @IsOptional()
-  @IsIn(['classic', 'archery'])
-  mode?: 'classic' | 'archery';
+  @IsIn(['classic', 'archery', 'curling'])
+  mode?: 'classic' | 'archery' | 'curling';
 }
 
 export class EndHomeworkSessionDto {
@@ -77,4 +77,15 @@ export class ShootHomeworkArcheryDto {
   @Min(-100)
   @Max(100)
   y!: number;
+}
+
+export class ReleaseHomeworkCurlingDto {
+  @IsUUID('4')
+  participantId!: string;
+
+  @IsInt() @Min(-100) @Max(100)
+  direction!: number;
+
+  @IsInt() @Min(0) @Max(100)
+  speed!: number;
 }

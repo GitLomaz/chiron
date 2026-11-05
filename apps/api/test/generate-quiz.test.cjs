@@ -2,38 +2,43 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { validate } = require('class-validator');
-const { GenerateQuizService } = require('../src/data-sets/generate-quiz.service');
-const { GenerateQuizDto } = require('../src/data-sets/generate-quiz.dto');
+const { GenerateQuizService } = require('../dist/data-sets/generate-quiz.service');
+const { GenerateQuizDto } = require('../dist/data-sets/generate-quiz.dto');
 const source = [{ question: 'cat', answer: 'chat' }, { question: 'dog', answer: 'chien' }, { question: 'bird', answer: 'oiseau' }, { question: 'fish', answer: 'poisson' }, { question: 'cat', answer: 'minou' }];
 function setup(pairs = source) {
   let created;
   const prisma = { dataSet: { findUnique: async () => ({ name: 'French', pairs }) }, quiz: { create: async (args) => { created = args.data; return { id: 9, title: created.title }; } } };
   return { service: new GenerateQuizService(prisma), getCreated: () => created };
 }
-const input = { title: 'French quiz', questionCount: 9, questionTypes: ['multiple_choice', 'true_false', 'matching'], gameCount: 3 };
+const input = { title: 'French quiz', questionCount: 12, questionTypes: ['multiple_choice', 'true_false', 'matching', 'short_answer'], gameCount: 3 };
 test('generates balanced playable questions with games and safe alternatives', async () => {
   const { service, getCreated } = setup();
   const quiz = await service.generate(1, input);
   assert.equal(quiz.id, 9);
   const items = getCreated().questions.create;
-  assert.equal(items.length, 12);
-  assert.deepEqual(items.map((item) => item.position), Array.from({ length: 12 }, (_, i) => i));
+  assert.equal(items.length, 15);
+  assert.deepEqual(items.map((item) => item.position), Array.from({ length: 15 }, (_, i) => i));
   assert.equal(items.filter((item) => item.itemType === 'game').length, 3);
   assert.ok(items.some((item, index) => item.itemType === 'game' && index < items.length - 1));
   const questions = items.filter((item) => item.itemType !== 'game');
   assert.equal(questions.filter((item) => Array.isArray(item.options)).length, 3);
   assert.equal(questions.filter((item) => item.options.kind === 'true_false').length, 3);
   assert.equal(questions.filter((item) => item.options.kind === 'matching').length, 3);
+  assert.equal(questions.filter((item) => item.options.kind === 'short_answer').length, 3);
   for (const item of questions) {
     if (Array.isArray(item.options)) {
       assert.ok(item.options.includes(item.correctAnswer) && item.options.length >= 2);
       for (const wrong of item.options.filter((value) => value !== item.correctAnswer)) assert.ok(!source.some((pair) => pair.question === item.text && pair.answer === wrong));
     } else if (item.options.kind === 'true_false') {
       assert.equal(source.some((pair) => pair.question === item.text && pair.answer === item.options.statement), item.correctAnswer === 'True');
-    } else {
+    } else if (item.options.kind === 'matching') {
       assert.ok(item.options.pairs.length >= 2 && item.options.pairs.length <= 4);
       assert.equal(new Set(item.options.pairs.map((pair) => pair.question)).size, item.options.pairs.length);
       assert.equal(new Set(item.options.pairs.map((pair) => pair.answer)).size, item.options.pairs.length);
+    } else {
+      assert.equal(item.options.kind, 'short_answer');
+      assert.deepEqual(item.options.pairs, []);
+      assert.ok(source.some((pair) => pair.question === item.text && pair.answer === item.correctAnswer));
     }
   }
 });

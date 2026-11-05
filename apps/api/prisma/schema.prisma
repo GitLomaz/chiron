@@ -57,6 +57,9 @@ model HomeworkParticipant {
   archeryArrows     Int             @default(0)
   archeryShots      Json            @default("[]")
   shootingScore     Int             @default(0)
+  curlingStones     Int             @default(0)
+  curlingShots      Json            @default("[]")
+  curlingScore      Int             @default(0)
   joinedAt          DateTime        @default(now())
   completedAt       DateTime?
   homeworkSession   HomeworkSession @relation(fields: [homeworkSessionId], references: [id], onDelete: Cascade)

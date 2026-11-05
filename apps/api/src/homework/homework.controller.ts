@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { CompleteHomeworkItemDto, CreateHomeworkSessionDto, EndHomeworkSessionDto, JoinHomeworkSessionDto, RestartHomeworkDto, ShootHomeworkArcheryDto, SubmitHomeworkAnswerDto, UpdateHomeworkDurationDto } from './dto/homework-session.dto';
+import { CompleteHomeworkItemDto, CreateHomeworkSessionDto, EndHomeworkSessionDto, JoinHomeworkSessionDto, ReleaseHomeworkCurlingDto, RestartHomeworkDto, ShootHomeworkArcheryDto, SubmitHomeworkAnswerDto, UpdateHomeworkDurationDto } from './dto/homework-session.dto';
 import { HomeworkService } from './homework.service';
 
 @Controller('homework-sessions')
@@ -35,6 +35,9 @@ export class HomeworkController {
 
   @Post(':sessionId/archery/shoot')
   shootArchery(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: ShootHomeworkArcheryDto) { return this.homeworkService.shootArchery(sessionId, body.participantId, body.x, body.y); }
+
+  @Post(':sessionId/curling/release')
+  releaseCurling(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: ReleaseHomeworkCurlingDto) { return this.homeworkService.releaseCurlingStone(sessionId, body.participantId, body.direction, body.speed); }
 
   @Get(':sessionId/teacher')
   teacherState(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Query('token') token: string) { return this.homeworkService.teacherState(sessionId, token); }
