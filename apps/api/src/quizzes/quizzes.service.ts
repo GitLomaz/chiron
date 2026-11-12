@@ -7,37 +7,39 @@ import { UpdateQuizDto } from './dto/update-quiz.dto';
 import { CreateAnswerPoolDto } from './dto/create-answer-pool.dto';
 import { CreateGameDto } from './dto/create-game.dto';
 import { CreateTextDto } from './dto/create-text.dto';
+import { AuthUser } from '../auth/auth.types';
 
 @Injectable()
 export class QuizzesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  findAll() {
+  findAll(user: AuthUser) {
     return this.prisma.quiz.findMany({
+      where: user.canViewAllQuizzes ? {} : { ownerId: user.id },
       orderBy: [{ archivedAt: 'asc' }, { createdAt: 'desc' }],
       include: { _count: { select: { questions: true } } },
     });
   }
 
-  async archive(id: number) {
-    await this.findOne(id);
+  async archive(id: number, user: AuthUser) {
+    await this.findOne(id, user);
     return this.prisma.quiz.update({ where: { id }, data: { archivedAt: new Date() } });
   }
 
-  async restore(id: number) {
-    await this.findOne(id);
+  async restore(id: number, user: AuthUser) {
+    await this.findOne(id, user);
     return this.prisma.quiz.update({ where: { id }, data: { archivedAt: null } });
   }
 
-  async remove(id: number) {
-    await this.findOne(id);
+  async remove(id: number, user: AuthUser) {
+    await this.findOne(id, user);
     await this.prisma.quiz.delete({ where: { id } });
     return { deleted: true };
   }
 
-  async findOne(id: number) {
-    const quiz = await this.prisma.quiz.findUnique({
-      where: { id },
+  async findOne(id: number, user: AuthUser) {
+    const quiz = await this.prisma.quiz.findFirst({
+      where: user.canViewAllQuizzes ? { id } : { id, ownerId: user.id },
       include: {
         questions: {
           orderBy: { position: 'asc' },
@@ -50,7 +52,7 @@ export class QuizzesService {
     return quiz;
   }
 
-  create({ title, description, randomizeQuestionOrder, theme, answerMatching, defaultTimerSeconds, matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers }: CreateQuizDto) {
+  create({ title, description, randomizeQuestionOrder, theme, answerMatching, defaultTimerSeconds, matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers }: CreateQuizDto, user: AuthUser) {
     if (!title.trim()) {
       throw new BadRequestException('title cannot be blank');
     }
@@ -66,12 +68,13 @@ export class QuizzesService {
         matchingPairCount: matchingPairCount ?? 6,
         battleshipBoardSize: battleshipBoardSize ?? 10,
         creditEveryCorrectAnswers: creditEveryCorrectAnswers ?? 1,
+        ownerId: user.id,
       },
     });
   }
 
-  async update(id: number, { title, description, randomizeQuestionOrder, theme, answerMatching, defaultTimerSeconds, matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers }: UpdateQuizDto) {
-    await this.findOne(id);
+  async update(id: number, { title, description, randomizeQuestionOrder, theme, answerMatching, defaultTimerSeconds, matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers }: UpdateQuizDto, user: AuthUser) {
+    await this.findOne(id, user);
     if (title !== undefined && !title.trim()) throw new BadRequestException('title cannot be blank');
     return this.prisma.quiz.update({
       where: { id },
@@ -79,9 +82,9 @@ export class QuizzesService {
     });
   }
 
-  async addQuestion(quizId: number, question: CreateQuestionDto) {
-    await this.findOne(quizId);
-    const { text, correctAnswer, options, answerPoolId, answerCount } = await this.prepareQuestion(question);
+  async addQuestion(quizId: number, question: CreateQuestionDto, user: AuthUser) {
+    await this.findOne(quizId, user);
+    const { text, correctAnswer, options, answerPoolId, answerCount } = await this.prepareQuestion(question, user);
     const { _max } = await this.prisma.question.aggregate({ where: { quizId }, _max: { position: true } });
 
     return this.prisma.question.create({
@@ -98,8 +101,8 @@ export class QuizzesService {
     });
   }
 
-  async addGame(quizId: number, game: CreateGameDto) {
-    await this.findOne(quizId);
+  async addGame(quizId: number, game: CreateGameDto, user: AuthUser) {
+    await this.findOne(quizId, user);
     const { _max } = await this.prisma.question.aggregate({ where: { quizId }, _max: { position: true } });
     const text = game.text?.trim() || this.gameTitle(game.gameType);
     return this.prisma.question.create({
@@ -117,7 +120,8 @@ export class QuizzesService {
     });
   }
 
-  async updateGame(quizId: number, gameId: number, game: CreateGameDto) {
+  async updateGame(quizId: number, gameId: number, game: CreateGameDto, user: AuthUser) {
+    await this.findOne(quizId, user);
     const existing = await this.prisma.question.findFirst({ where: { id: gameId, quizId, itemType: 'game' } });
     if (!existing) throw new NotFoundException(`Game ${gameId} was not found in quiz ${quizId}`);
     return this.prisma.question.update({
@@ -130,8 +134,8 @@ export class QuizzesService {
     });
   }
 
-  async addText(quizId: number, textItem: CreateTextDto) {
-    await this.findOne(quizId);
+  async addText(quizId: number, textItem: CreateTextDto, user: AuthUser) {
+    await this.findOne(quizId, user);
     const text = textItem.text.trim();
     if (!text) throw new BadRequestException('Text cannot be blank');
     const { _max } = await this.prisma.question.aggregate({ where: { quizId }, _max: { position: true } });
@@ -148,7 +152,8 @@ export class QuizzesService {
     });
   }
 
-  async updateText(quizId: number, textId: number, textItem: CreateTextDto) {
+  async updateText(quizId: number, textId: number, textItem: CreateTextDto, user: AuthUser) {
+    await this.findOne(quizId, user);
     const existing = await this.prisma.question.findFirst({ where: { id: textId, quizId, itemType: 'text' } });
     if (!existing) throw new NotFoundException(`Text item ${textId} was not found in quiz ${quizId}`);
     const text = textItem.text.trim();
@@ -156,31 +161,35 @@ export class QuizzesService {
     return this.prisma.question.update({ where: { id: textId }, data: { text } });
   }
 
-  async updateQuestion(quizId: number, questionId: number, question: CreateQuestionDto) {
+  async updateQuestion(quizId: number, questionId: number, question: CreateQuestionDto, user: AuthUser) {
+    await this.findOne(quizId, user);
     const existing = await this.prisma.question.findFirst({ where: { id: questionId, quizId } });
     if (!existing) throw new NotFoundException(`Question ${questionId} was not found in quiz ${quizId}`);
-    const { text, correctAnswer, options, answerPoolId, answerCount } = await this.prepareQuestion(question);
+    const { text, correctAnswer, options, answerPoolId, answerCount } = await this.prepareQuestion(question, user);
     return this.prisma.question.update({
       where: { id: questionId },
       data: { text, correctAnswer, options: options as Prisma.InputJsonValue, answerPoolId, answerCount, timerSeconds: question.timerSeconds ?? null },
     });
   }
 
-  async updateQuestionEnabled(quizId: number, questionId: number, isEnabled: boolean) {
+  async updateQuestionEnabled(quizId: number, questionId: number, isEnabled: boolean, user: AuthUser) {
+    await this.findOne(quizId, user);
     const existing = await this.prisma.question.findFirst({ where: { id: questionId, quizId } });
     if (!existing) throw new NotFoundException(`Question ${questionId} was not found in quiz ${quizId}`);
     await this.prisma.question.update({ where: { id: questionId }, data: { isEnabled } });
-    return this.findOne(quizId);
+    return this.findOne(quizId, user);
   }
 
-  async deleteItem(quizId: number, itemId: number) {
+  async deleteItem(quizId: number, itemId: number, user: AuthUser) {
+    await this.findOne(quizId, user);
     const item = await this.prisma.question.findFirst({ where: { id: itemId, quizId } });
     if (!item) throw new NotFoundException(`Quiz item ${itemId} was not found in quiz ${quizId}`);
     await this.prisma.question.delete({ where: { id: itemId } });
-    return this.findOne(quizId);
+    return this.findOne(quizId, user);
   }
 
-  async reorderQuestions(quizId: number, questionIds: number[]) {
+  async reorderQuestions(quizId: number, questionIds: number[], user: AuthUser) {
+    await this.findOne(quizId, user);
     const questions = await this.prisma.question.findMany({ where: { quizId }, select: { id: true } });
     const existingIds = new Set(questions.map((question) => question.id));
     const requestedIds = new Set(questionIds);
@@ -189,28 +198,29 @@ export class QuizzesService {
     }
 
     await this.prisma.$transaction(questionIds.map((questionId, position) => this.prisma.question.update({ where: { id: questionId }, data: { position } })));
-    return this.findOne(quizId);
+    return this.findOne(quizId, user);
   }
 
-  findCommonQuestions() {
+  findCommonQuestions(user: AuthUser) {
     return this.prisma.commonQuestion.findMany({
+      where: { ownerId: user.id },
       orderBy: { createdAt: 'desc' },
       include: { answerPool: { include: { answers: { orderBy: { value: 'asc' } } } } },
     });
   }
 
-  async createCommonQuestion(question: CreateQuestionDto) {
-    const { text, correctAnswer, options, answerPoolId, answerCount } = await this.prepareQuestion(question);
+  async createCommonQuestion(question: CreateQuestionDto, user: AuthUser) {
+    const { text, correctAnswer, options, answerPoolId, answerCount } = await this.prepareQuestion(question, user);
     return this.prisma.commonQuestion.create({
-      data: { text, correctAnswer, options: options as Prisma.InputJsonValue, answerPoolId, answerCount },
+      data: { text, correctAnswer, options: options as Prisma.InputJsonValue, answerPoolId, answerCount, ownerId: user.id },
       include: { answerPool: { include: { answers: true } } },
     });
   }
 
-  async updateCommonQuestion(id: number, question: CreateQuestionDto) {
-    const existing = await this.prisma.commonQuestion.findUnique({ where: { id } });
+  async updateCommonQuestion(id: number, question: CreateQuestionDto, user: AuthUser) {
+    const existing = await this.prisma.commonQuestion.findFirst({ where: { id, ownerId: user.id } });
     if (!existing) throw new NotFoundException(`Common question ${id} was not found`);
-    const { text, correctAnswer, options, answerPoolId, answerCount } = await this.prepareQuestion(question);
+    const { text, correctAnswer, options, answerPoolId, answerCount } = await this.prepareQuestion(question, user);
     return this.prisma.commonQuestion.update({
       where: { id },
       data: { text, correctAnswer, options: options as Prisma.InputJsonValue, answerPoolId, answerCount },
@@ -218,29 +228,30 @@ export class QuizzesService {
     });
   }
 
-  findAnswerPools() {
+  findAnswerPools(user: AuthUser) {
     return this.prisma.answerPool.findMany({
+      where: { ownerId: user.id },
       orderBy: { name: 'asc' },
       include: { answers: { orderBy: { value: 'asc' } }, _count: { select: { questions: true, commonQuestions: true } } },
     });
   }
 
-  async createAnswerPool(pool: CreateAnswerPoolDto) {
+  async createAnswerPool(pool: CreateAnswerPoolDto, user: AuthUser) {
     const name = pool.name.trim();
     const answers = this.cleanUnique(pool.answers);
     if (!name || !answers.length) throw new BadRequestException('A pool name and at least one answer are required');
     return this.prisma.answerPool.create({
-      data: { name, answers: { create: answers.map((value) => ({ value })) } },
+      data: { name, ownerId: user.id, answers: { create: answers.map((value) => ({ value })) } },
       include: { answers: true, _count: { select: { questions: true, commonQuestions: true } } },
     });
   }
 
-  async updateAnswerPool(id: number, pool: CreateAnswerPoolDto) {
+  async updateAnswerPool(id: number, pool: CreateAnswerPoolDto, user: AuthUser) {
     const name = pool.name.trim();
     const answers = this.cleanUnique(pool.answers);
     if (!name || !answers.length) throw new BadRequestException('A pool name and at least one answer are required');
-    const existing = await this.prisma.answerPool.findUnique({
-      where: { id },
+    const existing = await this.prisma.answerPool.findFirst({
+      where: { id, ownerId: user.id },
       include: {
         questions: { select: { correctAnswer: true, answerCount: true } },
         commonQuestions: { select: { correctAnswer: true, answerCount: true } },
@@ -262,9 +273,9 @@ export class QuizzesService {
     });
   }
 
-  async addCommonQuestion(quizId: number, commonQuestionId: number) {
-    await this.findOne(quizId);
-    const commonQuestion = await this.prisma.commonQuestion.findUnique({ where: { id: commonQuestionId } });
+  async addCommonQuestion(quizId: number, commonQuestionId: number, user: AuthUser) {
+    await this.findOne(quizId, user);
+    const commonQuestion = await this.prisma.commonQuestion.findFirst({ where: { id: commonQuestionId, ownerId: user.id } });
     if (!commonQuestion) throw new NotFoundException(`Common question ${commonQuestionId} was not found`);
     const { _max } = await this.prisma.question.aggregate({ where: { quizId }, _max: { position: true } });
     return this.prisma.question.create({
@@ -281,7 +292,7 @@ export class QuizzesService {
     });
   }
 
-  private async prepareQuestion(question: CreateQuestionDto) {
+  private async prepareQuestion(question: CreateQuestionDto, user: AuthUser) {
     const text = question.text.trim();
     const correctAnswer = question.correctAnswer.trim();
     if (!text || !correctAnswer) throw new BadRequestException('Question text and the correct answer cannot be blank');
@@ -304,8 +315,8 @@ export class QuizzesService {
     let wrongAnswers = this.cleanUnique(question.wrongAnswers ?? []).filter((answer) => answer !== correctAnswer);
     let answerCount: number | null = null;
     if (question.answerPoolId) {
-      const pool = await this.prisma.answerPool.findUnique({
-        where: { id: question.answerPoolId }, include: { answers: true },
+      const pool = await this.prisma.answerPool.findFirst({
+        where: { id: question.answerPoolId, ownerId: user.id }, include: { answers: true },
       });
       if (!pool) throw new NotFoundException(`Answer pool ${question.answerPoolId} was not found`);
       wrongAnswers = pool.answers.map((answer) => answer.value).filter((answer) => answer !== correctAnswer);

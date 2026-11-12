@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { HomeworkController } from './homework.controller';
 import { HomeworkService } from './homework.service';
+import { AuthModule } from '../auth/auth.module';
 
-@Module({ controllers: [HomeworkController], providers: [HomeworkService] })
+@Module({ imports: [AuthModule], controllers: [HomeworkController], providers: [HomeworkService] })
 export class HomeworkModule {}

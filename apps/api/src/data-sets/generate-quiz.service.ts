@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { GenerateQuizDto, GeneratedQuestionType } from './generate-quiz.dto';
+import { AuthUser } from '../auth/auth.types';
 
 type Pair = { question: string; answer: string };
 type GeneratedItem = { text: string; correctAnswer: string; options: Prisma.InputJsonValue; itemType?: string; gameType?: string; gameDurationSeconds?: number };
@@ -15,11 +16,11 @@ const GAMES = [
 export class GenerateQuizService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async generate(dataSetId: number, input: GenerateQuizDto) {
+  async generate(dataSetId: number, input: GenerateQuizDto, user: AuthUser) {
     const title = input.title.trim();
     if (!title) throw new BadRequestException('Enter a quiz title');
     if (input.questionCount < input.questionTypes.length) throw new BadRequestException('Choose at least one question per selected type');
-    const set = await this.prisma.dataSet.findUnique({ where: { id: dataSetId }, include: { pairs: { orderBy: { position: 'asc' } } } });
+    const set = await this.prisma.dataSet.findFirst({ where: { id: dataSetId, ownerId: user.id }, include: { pairs: { orderBy: { position: 'asc' } } } });
     if (!set) throw new NotFoundException('Data set not found');
     // Existing question editors limit answers to 500 characters; omit entries
     // that could not be edited as generated questions.
@@ -68,7 +69,7 @@ export class GenerateQuizService {
       }
     });
     return this.prisma.quiz.create({
-      data: { title, questions: { create: items.map((item, position) => ({ ...item, position })) } },
+      data: { title, ownerId: user.id, questions: { create: items.map((item, position) => ({ ...item, position })) } },
       select: { id: true, title: true },
     });
   }

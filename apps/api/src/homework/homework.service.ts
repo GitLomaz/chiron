@@ -4,34 +4,35 @@ import { MatchProgress } from '../question-types/matching';
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuthUser } from '../auth/auth.types';
 
-const TEACHER_PASSWORD = 'testing';
 
 type HomeworkQuestion = { id: string; text: string; itemType: 'question' | 'game' | 'text'; gameType: 'coin_catch' | 'match_pairs' | 'tower_stack' | null; gameDurationSeconds: number | null; options: string[]; correctAnswer: string; timerSeconds: number | null; special?: SpecialQuestion | null };
 type HomeworkQuiz = { title: string; description: string | null; theme: string; answerMatching?: AnswerMatching; creditEveryCorrectAnswers: number; questions: HomeworkQuestion[] };
 type ArcheryShot = { id: string; x: number; y: number; score: number };
 type CurlingShot = { id: string; direction: number; speed: number; x: number; y: number; score: number };
 type HomeworkParticipant = { id: string; name: string; answers: Record<string, string>; matchProgress: Record<string, MatchProgress>; completedItems: string[]; archeryArrows: number; archeryShots: ArcheryShot[]; shootingScore: number; curlingStones: number; curlingShots: CurlingShot[]; curlingScore: number; joinedAt: Date; completedAt: Date | null };
-type HomeworkSession = { id: string; facilitatorToken: string; mode: 'classic' | 'archery' | 'curling'; quiz: HomeworkQuiz; participants: HomeworkParticipant[]; ended: boolean; expired: boolean; endsAt: Date; createdAt: Date };
+type HomeworkSession = { id: string; ownerId: string | null; facilitatorToken: string; mode: 'classic' | 'archery' | 'curling'; quiz: HomeworkQuiz; participants: HomeworkParticipant[]; ended: boolean; expired: boolean; endsAt: Date; createdAt: Date };
 
 /** Homework snapshots and attempts live in Postgres so they survive API restarts. */
 @Injectable()
 export class HomeworkService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async listActive() {
-    const sessions = await (this.prisma as any).homeworkSession.findMany({ where: { ended: false, endsAt: { gt: new Date() } }, orderBy: { createdAt: 'desc' }, include: { _count: { select: { participants: true } } } });
+  async listActive(user: AuthUser) {
+    const sessions = await (this.prisma as any).homeworkSession.findMany({ where: { ...(user.canViewAllQuizzes ? {} : { ownerId: user.id }), ended: false, endsAt: { gt: new Date() } }, orderBy: { createdAt: 'desc' }, include: { _count: { select: { participants: true } } } });
     return sessions.map((session: any) => ({ sessionId: session.id, title: (session.quizSnapshot as HomeworkQuiz).title, participantCount: session._count.participants, createdAt: session.createdAt.toISOString(), endsAt: session.endsAt.toISOString(), mode: session.mode === 'archery' || session.mode === 'curling' ? session.mode : 'classic' }));
   }
 
-  async listHistory() {
-    await (this.prisma as any).homeworkSession.updateMany({ where: { ended: false, endsAt: { lte: new Date() } }, data: { ended: true, expired: true } });
-    const sessions = await (this.prisma as any).homeworkSession.findMany({ where: { ended: true }, orderBy: { createdAt: 'desc' }, take: 100, include: { _count: { select: { participants: true } } } });
+  async listHistory(user: AuthUser) {
+    const ownership = user.canViewAllQuizzes ? {} : { ownerId: user.id };
+    await (this.prisma as any).homeworkSession.updateMany({ where: { ...ownership, ended: false, endsAt: { lte: new Date() } }, data: { ended: true, expired: true } });
+    const sessions = await (this.prisma as any).homeworkSession.findMany({ where: { ...ownership, ended: true }, orderBy: { createdAt: 'desc' }, take: 100, include: { _count: { select: { participants: true } } } });
     return sessions.map((session: any) => ({ sessionId: session.id, title: (session.quizSnapshot as HomeworkQuiz).title, participantCount: session._count.participants, createdAt: session.createdAt.toISOString(), endsAt: session.endsAt.toISOString(), mode: session.mode === 'archery' || session.mode === 'curling' ? session.mode : 'classic', ended: true, expired: session.expired }));
   }
 
-  async create(quizId: number, durationSeconds: number, mode: 'classic' | 'archery' | 'curling' = 'classic') {
-    const quiz = await this.prisma.quiz.findUnique({ where: { id: quizId }, include: { questions: { where: { isEnabled: true }, orderBy: { position: 'asc' } } } });
+  async create(quizId: number, durationSeconds: number, mode: 'classic' | 'archery' | 'curling' = 'classic', user: AuthUser) {
+    const quiz = await this.prisma.quiz.findFirst({ where: user.canViewAllQuizzes ? { id: quizId } : { id: quizId, ownerId: user.id }, include: { questions: { where: { isEnabled: true }, orderBy: { position: 'asc' } } } });
     if (!quiz) throw new NotFoundException(`Quiz ${quizId} was not found`);
     if (!quiz.questions.length) throw new BadRequestException('Enable at least one item before creating homework');
     const authoredQuestions = quiz.questions.map((question): HomeworkQuestion => {
@@ -44,8 +45,8 @@ export class HomeworkService {
     });
     const questions = quiz.randomizeQuestionOrder ? this.shuffleQuestionsInPlace(authoredQuestions) : authoredQuestions;
     const createdAt = new Date();
-    const session = await (this.prisma as any).homeworkSession.create({ data: { id: randomUUID(), facilitatorToken: randomUUID(), mode, quizSnapshot: { title: quiz.title, description: quiz.description, theme: quiz.theme, answerMatching: quiz.answerMatching === 'exact' ? 'exact' : 'close', creditEveryCorrectAnswers: quiz.creditEveryCorrectAnswers ?? 1, questions }, endsAt: new Date(createdAt.getTime() + durationSeconds * 1000), createdAt } });
-    return { sessionId: session.id, facilitatorToken: TEACHER_PASSWORD };
+    const session = await (this.prisma as any).homeworkSession.create({ data: { id: randomUUID(), ownerId: user.id, facilitatorToken: randomUUID(), mode, quizSnapshot: { title: quiz.title, description: quiz.description, theme: quiz.theme, answerMatching: quiz.answerMatching === 'exact' ? 'exact' : 'close', creditEveryCorrectAnswers: quiz.creditEveryCorrectAnswers ?? 1, questions }, endsAt: new Date(createdAt.getTime() + durationSeconds * 1000), createdAt } });
+    return { sessionId: session.id, facilitatorToken: user.id };
   }
 
   async join(sessionId: string, name: string) {
@@ -125,15 +126,16 @@ export class HomeworkService {
     return this.curlingState({ ...participant, curlingShots, curlingStones, curlingScore });
   }
 
-  async teacherState(sessionId: string, token: string) {
-    const session = await this.get(sessionId); this.authorizeTeacher(token);
+  async teacherState(sessionId: string, user: AuthUser) {
+    const session = await this.get(sessionId); this.authorizeTeacher(session, user);
+    const aliases = this.nameAliases(session, user);
     const questionCount = session.quiz.questions.filter((question) => question.itemType === 'question').length;
     const attemptsByStudent = new Map<string, number>();
     const participants = session.participants.map((participant) => {
       const key = participant.name.trim().toLocaleLowerCase();
       const attemptNumber = (attemptsByStudent.get(key) ?? 0) + 1;
       attemptsByStudent.set(key, attemptNumber);
-      return { id: participant.id, name: participant.name, attemptNumber, joinedAt: participant.joinedAt.toISOString(), completedAt: participant.completedAt?.toISOString() ?? null, completed: participant.completedAt !== null, completedItems: participant.completedItems.length, score: this.score(session, participant), shootingScore: session.mode === 'archery' ? participant.shootingScore : session.mode === 'curling' ? participant.curlingScore : null };
+      return { id: participant.id, name: this.displayName(participant.name, aliases), attemptNumber, joinedAt: participant.joinedAt.toISOString(), completedAt: participant.completedAt?.toISOString() ?? null, completed: participant.completedAt !== null, completedItems: participant.completedItems.length, score: this.score(session, participant), shootingScore: session.mode === 'archery' ? participant.shootingScore : session.mode === 'curling' ? participant.curlingScore : null };
     });
     const questionStats = session.quiz.questions.filter((question) => question.itemType === 'question').map((question) => {
       const answered = session.participants.filter((participant) => Object.hasOwn(participant.answers, question.id));
@@ -144,26 +146,27 @@ export class HomeworkService {
     const archeryLeaderboard = session.mode === 'archery' ? [...session.participants.reduce((leaders, participant) => {
       const key = participant.name.trim().toLocaleLowerCase();
       const current = leaders.get(key);
-      leaders.set(key, current ? { ...current, attempts: current.attempts + 1, bestScore: Math.max(current.bestScore, participant.shootingScore) } : { name: participant.name, attempts: 1, bestScore: participant.shootingScore });
+      leaders.set(key, current ? { ...current, attempts: current.attempts + 1, bestScore: Math.max(current.bestScore, participant.shootingScore) } : { name: this.displayName(participant.name, aliases), attempts: 1, bestScore: participant.shootingScore });
       return leaders;
     }, new Map<string, { name: string; attempts: number; bestScore: number }>()).values()].sort((a, b) => b.bestScore - a.bestScore || a.name.localeCompare(b.name)) : [];
     const curlingLeaderboard = session.mode === 'curling' ? [...session.participants.reduce((leaders, participant) => {
       const key = participant.name.trim().toLocaleLowerCase();
       const current = leaders.get(key);
-      leaders.set(key, current ? { ...current, attempts: current.attempts + 1, bestScore: Math.max(current.bestScore, participant.curlingScore) } : { name: participant.name, attempts: 1, bestScore: participant.curlingScore });
+      leaders.set(key, current ? { ...current, attempts: current.attempts + 1, bestScore: Math.max(current.bestScore, participant.curlingScore) } : { name: this.displayName(participant.name, aliases), attempts: 1, bestScore: participant.curlingScore });
       return leaders;
     }, new Map<string, { name: string; attempts: number; bestScore: number }>()).values()].sort((a, b) => b.bestScore - a.bestScore || a.name.localeCompare(b.name)) : [];
     return { sessionId: session.id, title: session.quiz.title, description: session.quiz.description, mode: session.mode, ended: session.ended, expired: session.expired, endsAt: session.endsAt.toISOString(), questionCount, itemCount: session.quiz.questions.length, createdAt: session.createdAt.toISOString(), participants, questionStats, archeryLeaderboard, curlingLeaderboard };
   }
 
-  async teacherAttempt(sessionId: string, token: string, participantId: string) {
+  async teacherAttempt(sessionId: string, user: AuthUser, participantId: string) {
     const session = await this.get(sessionId);
-    this.authorizeTeacher(token);
+    this.authorizeTeacher(session, user);
+    const aliases = this.nameAliases(session, user);
     const participant = session.participants.find((item) => item.id === participantId);
     if (!participant) throw new NotFoundException('That homework attempt could not be found');
     return {
       id: participant.id,
-      name: participant.name,
+      name: this.displayName(participant.name, aliases),
       joinedAt: participant.joinedAt.toISOString(),
       completedAt: participant.completedAt?.toISOString() ?? null,
       completed: participant.completedAt !== null,
@@ -178,33 +181,19 @@ export class HomeworkService {
     };
   }
 
-  async end(sessionId: string, token: string) { const session = await this.get(sessionId); this.authorizeTeacher(token); await (this.prisma as any).homeworkSession.update({ where: { id: session.id }, data: { ended: true } }); return this.teacherState(sessionId, token); }
+  async end(sessionId: string, user: AuthUser) { const session = await this.get(sessionId); this.authorizeTeacher(session, user); await (this.prisma as any).homeworkSession.update({ where: { id: session.id }, data: { ended: true } }); return this.teacherState(sessionId, user); }
 
-  async anonymize(sessionId: string, token: string) {
+  async updateDuration(sessionId: string, user: AuthUser, durationSeconds: number) {
     const session = await this.get(sessionId);
-    this.authorizeTeacher(token);
-    if (!session.ended) throw new BadRequestException('Only closed homework sessions can be anonymized');
-    const aliases = new Map<string, string>();
-    await Promise.all(session.participants.map((participant) => {
-      const nameKey = participant.name.trim().toLocaleLowerCase();
-      let alias = aliases.get(nameKey);
-      if (!alias) { alias = `Student ${aliases.size + 1}`; aliases.set(nameKey, alias); }
-      return (this.prisma as any).homeworkParticipant.update({ where: { id: participant.id }, data: { name: alias } });
-    }));
-    return this.teacherState(sessionId, token);
-  }
-
-  async updateDuration(sessionId: string, token: string, durationSeconds: number) {
-    const session = await this.get(sessionId);
-    this.authorizeTeacher(token);
+    this.authorizeTeacher(session, user);
     this.assertOpen(session);
     await (this.prisma as any).homeworkSession.update({ where: { id: session.id }, data: { endsAt: new Date(Date.now() + durationSeconds * 1000), expired: false } });
-    return this.teacherState(sessionId, token);
+    return this.teacherState(sessionId, user);
   }
 
-  async remove(sessionId: string, token: string) {
+  async remove(sessionId: string, user: AuthUser) {
     const session = await this.get(sessionId);
-    this.authorizeTeacher(token);
+    this.authorizeTeacher(session, user);
     if (!session.ended) throw new BadRequestException('Only closed homework sessions can be deleted');
     await (this.prisma as any).homeworkSession.delete({ where: { id: session.id } });
     return { deleted: true };
@@ -215,11 +204,13 @@ export class HomeworkService {
     let row = await (this.prisma as any).homeworkSession.findUnique({ where: { id: sessionId }, include });
     if (!row) throw new NotFoundException('That homework run is no longer available');
     if (!row.ended && Date.now() >= row.endsAt.getTime()) row = await (this.prisma as any).homeworkSession.update({ where: { id: row.id }, data: { ended: true, expired: true }, include });
-    return { id: row.id, facilitatorToken: row.facilitatorToken, mode: row.mode === 'archery' || row.mode === 'curling' ? row.mode : 'classic', quiz: row.quizSnapshot as HomeworkQuiz, ended: row.ended, expired: row.expired, endsAt: row.endsAt, createdAt: row.createdAt, participants: row.participants.map((participant: any) => ({ id: participant.id, name: participant.name, answers: participant.answers as Record<string, string>, matchProgress: participant.matchProgress as Record<string, MatchProgress>, completedItems: participant.completedItems as string[], archeryArrows: participant.archeryArrows, archeryShots: participant.archeryShots as ArcheryShot[], shootingScore: participant.shootingScore, curlingStones: participant.curlingStones ?? 0, curlingShots: Array.isArray(participant.curlingShots) ? participant.curlingShots as CurlingShot[] : [], curlingScore: participant.curlingScore ?? 0, joinedAt: participant.joinedAt, completedAt: participant.completedAt })) };
+    return { id: row.id, ownerId: row.ownerId, facilitatorToken: row.facilitatorToken, mode: row.mode === 'archery' || row.mode === 'curling' ? row.mode : 'classic', quiz: row.quizSnapshot as HomeworkQuiz, ended: row.ended, expired: row.expired, endsAt: row.endsAt, createdAt: row.createdAt, participants: row.participants.map((participant: any) => ({ id: participant.id, name: participant.name, answers: participant.answers as Record<string, string>, matchProgress: participant.matchProgress as Record<string, MatchProgress>, completedItems: participant.completedItems as string[], archeryArrows: participant.archeryArrows, archeryShots: participant.archeryShots as ArcheryShot[], shootingScore: participant.shootingScore, curlingStones: participant.curlingStones ?? 0, curlingShots: Array.isArray(participant.curlingShots) ? participant.curlingShots as CurlingShot[] : [], curlingScore: participant.curlingScore ?? 0, joinedAt: participant.joinedAt, completedAt: participant.completedAt })) };
   }
 
   private async participant(sessionId: string, participantId: string) { const session = await this.get(sessionId), participant = session.participants.find((item) => item.id === participantId); if (!participant) throw new NotFoundException('Your homework attempt could not be found. Please begin again.'); return { session, participant }; }
-  private authorizeTeacher(password: string) { if (password !== TEACHER_PASSWORD) throw new ForbiddenException('That teacher password is not valid'); }
+  private nameAliases(session: HomeworkSession, user: AuthUser) { if (session.ownerId === user.id) return new Map<string, string>(); const aliases = new Map<string, string>(); for (const participant of session.participants) { const key = participant.name.trim().toLocaleLowerCase(); if (!aliases.has(key)) aliases.set(key, `Student #${aliases.size + 1}`); } return aliases; }
+  private displayName(name: string, aliases: Map<string, string>) { return aliases.get(name.trim().toLocaleLowerCase()) ?? name; }
+  private authorizeTeacher(session: HomeworkSession, user: AuthUser) { if (session.ownerId !== user.id && !user.canViewAllQuizzes) throw new ForbiddenException('You do not have access to this homework run'); }
   private assertOpen(session: HomeworkSession) { if (session.ended) throw new BadRequestException('This homework has ended'); }
   private assertActiveAttempt(session: HomeworkSession, participant: HomeworkParticipant) { this.assertOpen(session); if (participant.completedAt) throw new BadRequestException('This homework attempt is already complete'); }
   private saveParticipant(id: string, data: Record<string, unknown>) { return (this.prisma as any).homeworkParticipant.update({ where: { id }, data }); }

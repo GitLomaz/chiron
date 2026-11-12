@@ -3,7 +3,10 @@ import { confirmAction, ConfirmDialogHost } from './ConfirmDialog';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, FormEvent, ReactNode } from 'react';
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+const API_URL = import.meta.env.VITE_API_URL ?? (['localhost', '127.0.0.1'].includes(window.location.hostname)
+  ? `${window.location.protocol}//${window.location.hostname}:3000`
+  : window.location.origin);
+let teacherAccessToken: string | null = null;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MODERATED_PIN_PATTERN = /^\d{6}$/;
 const NUMBER_FORMATTER = new Intl.NumberFormat('en-US');
@@ -73,7 +76,7 @@ function rememberPlayerName(name: string) {
   try { localStorage.setItem(PLAYER_NAME_STORAGE_KEY, name.trim()); } catch { /* Saving this convenience value is optional. */ }
 }
 
-function AudioSettingsProvider({ children }: { children: ReactNode }) {
+export function AudioSettingsProvider({ children }: { children: ReactNode }) {
   const [volume, setVolumeState] = useState(savedVolume);
   const setVolume = useCallback((nextVolume: number) => {
     const value = Math.max(0, Math.min(100, nextVolume));
@@ -266,6 +269,17 @@ function RunDeadline({ endsAt }: { endsAt: string }) {
   return <div className="run-deadline" role="timer" aria-label={`Time left in this test: ${label}`}>Time left: {label}</div>;
 }
 
+function ProjectorSessionTimer({ endsAt, durationSeconds, running }: { endsAt: string | null; durationSeconds: number; running: boolean }) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => { if (!endsAt) return; const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, [endsAt]);
+  const seconds = endsAt ? Math.max(0, Math.ceil((Date.parse(endsAt) - now) / 1000)) : 0;
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const label = hours ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}` : `${minutes}:${String(seconds % 60).padStart(2, '0')}`;
+  const urgent = running && seconds <= durationSeconds * .25;
+  return <aside className={`projector-session-timer${running ? ' is-running' : ''}${urgent ? ' is-urgent' : ''}`} aria-live="polite"><span>SESSION TIMER</span><strong>{running ? label : 'STARTS WITH TEST'}</strong></aside>;
+}
+
 function QuizCodeForm({ initialCode = '', onSubmit }: { initialCode?: string; onSubmit: (guid: string) => void }) {
   const [code, setCode] = useState(initialCode);
   const [error, setError] = useState('');
@@ -317,13 +331,13 @@ type ModeratedStudentState = { endless: boolean; scoringEnabled: boolean; pin: s
 type FacilitatorState = { endless: boolean; scoringEnabled: boolean; sessionId: string; pin: string; title: string; description: string | null; mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling'; presentationMode: 'scores' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling'; matching: MatchingState | null; battleship: BattleshipState | null; treasureMap: TreasureMapState | null; archery: ArcheryState | null; curling: CurlingState | null; currentRound: number; phase: 'lobby' | 'question' | 'complete'; endedByTeacher: boolean; expired: boolean; endsAt: string | null; durationSeconds: number; lobbyLocked: boolean; autoBoardReset: boolean; boardResetAt: string | null; questionCount: number; completedCount: number; participants: { id: string; name: string; completed: boolean; completedItems: number; currentItemType: 'question' | 'game' | 'text' | null; currentAnswered: boolean; score: ModeratedScore }[]; scoreLeaderboard: { id: string; name: string; score: number; correct: number; answered: number; longestStreak: number }[] };
 
 async function moderatedRequest<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}/moderated-sessions${path}`, { headers: { 'Content-Type': 'application/json', ...options?.headers }, ...options });
+  const response = await fetch(`${API_URL}/moderated-sessions${path}`, { ...options, headers: { 'Content-Type': 'application/json', ...(teacherAccessToken ? { Authorization: `Bearer ${teacherAccessToken}` } : {}), ...options?.headers } });
   if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(Array.isArray(body?.message) ? body.message.join(', ') : body?.message || 'Something went wrong'); }
   return response.json() as Promise<T>;
 }
 
 async function homeworkRequest<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}/homework-sessions${path}`, { headers: { 'Content-Type': 'application/json', ...options?.headers }, ...options });
+  const response = await fetch(`${API_URL}/homework-sessions${path}`, { ...options, headers: { 'Content-Type': 'application/json', ...(teacherAccessToken ? { Authorization: `Bearer ${teacherAccessToken}` } : {}), ...options?.headers } });
   if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(Array.isArray(body?.message) ? body.message.join(', ') : body?.message || 'Something went wrong'); }
   return response.json() as Promise<T>;
 }
@@ -354,7 +368,10 @@ function studentAppUrl() {
 function moderatedStudentUrl(pin: string) { return `${studentAppUrl()}/moderated/${pin}`; }
 function teacherAppUrl() {
   const configuredUrl = import.meta.env.VITE_TEACHER_APP_URL;
-  return (configuredUrl && configuredUrl !== 'https://placeholder.invalid' ? configuredUrl : 'http://localhost:5173').replace(/\/$/, '');
+  if (configuredUrl && configuredUrl !== 'https://placeholder.invalid') return configuredUrl.replace(/\/$/, '');
+  return ['localhost', '127.0.0.1'].includes(window.location.hostname)
+    ? `${window.location.protocol}//${window.location.hostname}:5173`
+    : window.location.origin;
 }
 function projectorUrl(sessionId: string) { return `${teacherAppUrl()}/teacher/projector/${sessionId}`; }
 function homeworkStorageKey(sessionId: string) { return `quizboard-homework-${sessionId}`; }
@@ -433,11 +450,12 @@ function ModeratedStudent({ pin }: { pin: string }) {
   if (playingMatching && state.matching) {
     const matching = state.matching;
     const matchedPairs = matching.cards.filter((card) => card.matched).length / 2;
-    return <main className={`page quiz-page moderated-quiz-page theme-${state.theme}`}>
+    const denseBoard = matching.rows > 4;
+    return <main className={`page quiz-page moderated-quiz-page matching-player-page${denseBoard ? ' dense-matching-player-page' : ''} theme-${state.theme}`}>
       <header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">MATCHING BREAK</span></header>
       <section className="game-card match-game-card matching-credit-game">
         <div className="game-heading"><div><p className="eyebrow">MEMORY GAME</p><h1>Match Pairs</h1><p>Flip two cards to find a pair. A wrong match costs one credit.</p></div><div className="game-stats"><span className="matching-credit-stat">Credits <strong>{matching.credits}</strong></span><span>Pairs <strong>{matchedPairs} / {matching.cards.length / 2}</strong></span></div></div>
-        <SharedMatchBoard matching={matching} disabled={flipping} onFlip={(id) => void flip(id)} />
+        <div className="matching-board-frame"><SharedMatchBoard matching={matching} disabled={flipping} onFlip={(id) => void flip(id)} /></div>
         <p className="game-tip" aria-live="polite">{matchedPairs * 2 === matching.cards.length ? 'The class found all the pairs!' : matching.credits === 0 ? 'You are out of credits. Answer more questions to earn another.' : matching.attempt ? 'The shared board is revealing a pair.' : 'Your first pick stays on your screen. Pick a second card to reveal the pair to the class.'}</p>
         {error && <p className="form-error">{error}</p>}
         <div className="matching-game-actions"><button className="matching-secondary-button" disabled={submitting} onClick={() => void nextMatchingQuestion()}>{submitting ? 'Loading…' : 'Next question →'}</button></div>
@@ -530,26 +548,28 @@ function ModeratedPinEntry() {
 }
 
 export function Facilitator({ sessionId, token, projector = false, metrics = false }: { sessionId: string; token: string; projector?: boolean; metrics?: boolean }) {
+  teacherAccessToken = token;
   const [state, setState] = useState<FacilitatorState | null>(null);
   const [error, setError] = useState('');
   const [acting, setActing] = useState(false);
   const [updatingLobby, setUpdatingLobby] = useState(false);
   const [removingParticipantId, setRemovingParticipantId] = useState<string | null>(null);
   const [projectorMetric, setProjectorMetric] = useState<'scores' | 'correct'>('scores');
-  const load = useCallback(async () => { try { const next = await moderatedRequest<FacilitatorState>(`/${sessionId}/facilitator?token=${encodeURIComponent(token)}`); setState((current) => { const restarted = Boolean(next.endsAt && (!current?.endsAt || Date.parse(next.endsAt) > Date.parse(current.endsAt))); return current?.sessionId === next.sessionId && (current.endedByTeacher || current.expired) && !next.endedByTeacher && !next.expired && !restarted ? current : next; }); setError(''); } catch (err) { setError(err instanceof Error ? err.message : 'Could not load facilitator controls'); } }, [sessionId, token]);
+  const load = useCallback(async () => { try { const next = await moderatedRequest<FacilitatorState>(`/${sessionId}/facilitator`); setState((current) => { const restarted = Boolean(next.endsAt && (!current?.endsAt || Date.parse(next.endsAt) > Date.parse(current.endsAt))); return current?.sessionId === next.sessionId && (current.endedByTeacher || current.expired) && !next.endedByTeacher && !next.expired && !restarted ? current : next; }); setError(''); } catch (err) { setError(err instanceof Error ? err.message : 'Could not load facilitator controls'); } }, [sessionId]);
   useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 2000); return () => window.clearInterval(timer); }, [load]);
-  async function start() { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/start`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not start the test'); } finally { setActing(false); } }
-  async function next() { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/next`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not release the next round'); } finally { setActing(false); } }
+  async function start() { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/start`, { method: 'POST' })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not start the test'); } finally { setActing(false); } }
+  async function next() { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/next`, { method: 'POST' })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not release the next round'); } finally { setActing(false); } }
   async function end() { confirmAction({ title: 'End quiz?', copy: 'Students will no longer be able to answer or join.', confirmLabel: 'End quiz', onConfirm: endNow }); }
-  async function endNow() { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/end`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not end the quiz'); } finally { setActing(false); } }
+  async function endNow() { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/end`, { method: 'POST' })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not end the quiz'); } finally { setActing(false); } }
+  async function updateDuration(durationSeconds: number) { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/duration`, { method: 'POST', body: JSON.stringify({ durationSeconds }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not update the quiz deadline'); } finally { setActing(false); } }
   async function restart(mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling') { confirmAction({ title: `Launch a new ${mode} quiz?`, copy: 'Current participants will remain, but their scores and progress will be cleared.', confirmLabel: 'Launch new quiz', onConfirm: () => restartNow(mode) }); }
-  async function restartNow(mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling') { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/restart`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token, mode }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not launch the new quiz'); } finally { setActing(false); } }
+  async function restartNow(mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling') { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/restart`, { method: 'POST', body: JSON.stringify({ mode }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not launch the new quiz'); } finally { setActing(false); } }
   async function resetBoard() { confirmAction({ title: 'Start a fresh board?', copy: 'Board progress and player credits or tokens will be cleared.', confirmLabel: 'Reset board', onConfirm: resetBoardNow }); }
-  async function resetBoardNow() { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/board/reset`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not reset the shared board'); } finally { setActing(false); } }
-  async function updateBoardAutoReset(autoBoardReset: boolean) { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/board/auto-reset`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token, autoBoardReset }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not update automatic board reset'); } finally { setActing(false); } }
-  async function updateLobbyLock(lobbyLocked: boolean) { setUpdatingLobby(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/lobby`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token, lobbyLocked }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not update the lobby'); } finally { setUpdatingLobby(false); } }
-  async function updatePresentationMode(presentationMode: 'scores' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling') { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/presentation`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token, presentationMode }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not update the projector display'); } finally { setActing(false); } }
-  async function removeParticipant(participantId: string) { setRemovingParticipantId(participantId); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/participants/${participantId}/remove`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not remove this participant'); } finally { setRemovingParticipantId(null); } }
+  async function resetBoardNow() { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/board/reset`, { method: 'POST' })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not reset the shared board'); } finally { setActing(false); } }
+  async function updateBoardAutoReset(autoBoardReset: boolean) { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/board/auto-reset`, { method: 'POST', body: JSON.stringify({ autoBoardReset }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not update automatic board reset'); } finally { setActing(false); } }
+  async function updateLobbyLock(lobbyLocked: boolean) { setUpdatingLobby(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/lobby`, { method: 'POST', body: JSON.stringify({ lobbyLocked }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not update the lobby'); } finally { setUpdatingLobby(false); } }
+  async function updatePresentationMode(presentationMode: 'scores' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling') { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/presentation`, { method: 'POST', body: JSON.stringify({ presentationMode }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not update the projector display'); } finally { setActing(false); } }
+  async function removeParticipant(participantId: string) { setRemovingParticipantId(participantId); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/participants/${participantId}/remove`, { method: 'POST' })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not remove this participant'); } finally { setRemovingParticipantId(null); } }
   if (!state) return <main className="page status-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div>{error ? <section className="error-card"><h1>Facilitator access unavailable.</h1><p>{error}</p></section> : <div className="loader" />}</main>;
   if (projector) {
     if (state.phase === 'lobby') {
@@ -559,6 +579,7 @@ export function Facilitator({ sessionId, token, projector = false, metrics = fal
       const playerGap = Math.max(4, Math.min(20, 22 - (playerRows * 1.6)));
       const playerFontSize = Math.max(.62, Math.min(1.65, 1.75 - (Math.max(0, playerRows - 3) * .14)));
       return <main className="projector-lobby" aria-live="polite">
+        <ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={false} />
         <section className="projector-lobby-content">
           <header className="projector-lobby-header">
             <div>
@@ -576,20 +597,21 @@ export function Facilitator({ sessionId, token, projector = false, metrics = fal
     }
     if (state.phase !== 'complete' && state.presentationMode === 'matching' && state.matching) {
       const matchedPairs = state.matching.cards.filter((card) => card.matched).length / 2;
-      return <main className="projector-match-screen" aria-live="polite"><section className="projector-match-content"><header><div className="projector-title"><p>SHARED MEMORY BOARD</p><h1>Match Pairs</h1><span>{state.title}</span></div><div className="projector-match-score"><span>PAIRS FOUND</span><strong>{matchedPairs} / {state.matching.cards.length / 2}</strong></div></header><SharedMatchBoard matching={state.matching} projector /><p className="projector-match-tip">Students choose two cards on their own screens. The pair is revealed here for everyone.</p></section></main>;
+      const denseBoard = state.matching.rows > 4;
+      return <main className={`projector-match-screen${denseBoard ? ' projector-dense-match-screen' : ''}`} aria-live="polite"><section className="projector-match-content"><header><div className="projector-title"><p>SHARED MEMORY BOARD</p><h1>Match Pairs</h1><span>{state.title}</span></div><div className="projector-match-header-stats"><ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} /><div className="projector-match-score"><span>PAIRS FOUND</span><strong>{matchedPairs} / {state.matching.cards.length / 2}</strong></div></div></header><div className="projector-match-board-frame"><SharedMatchBoard matching={state.matching} projector /></div><p className="projector-match-tip">Students choose two cards on their own screens. The pair is revealed here for everyone.</p></section></main>;
     }
     if (state.phase !== 'complete' && state.presentationMode === 'battleship' && state.battleship) {
-      return <main className="projector-match-screen projector-battleship-screen" aria-live="polite"><section className="projector-match-content"><header><div className="projector-title"><p>SHARED BATTLE MAP</p><h1>Battleship</h1><span>{state.title}</span></div><div className="projector-match-score"><span>FLEET HIT</span><strong>{state.battleship.hits} / {state.battleship.shipCells}</strong></div></header><SharedBattleshipBoard battleship={state.battleship} projector /><p className="projector-match-tip">Students earn attack tokens by answering correctly, then choose a square to fire on the shared map.</p></section></main>;
+      return <main className="projector-match-screen projector-battleship-screen" aria-live="polite"><ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} /><section className="projector-match-content"><header><div className="projector-title"><p>SHARED BATTLE MAP</p><h1>Battleship</h1><span>{state.title}</span></div><div className="projector-match-score"><span>FLEET HIT</span><strong>{state.battleship.hits} / {state.battleship.shipCells}</strong></div></header><SharedBattleshipBoard battleship={state.battleship} projector /><p className="projector-match-tip">Students earn attack tokens by answering correctly, then choose a square to fire on the shared map.</p></section></main>;
     }
     if (state.phase !== 'complete' && state.presentationMode === 'treasure_map' && state.treasureMap) {
       const clues = state.treasureMap.cells.filter((cell) => cell.result === 'clue').length;
-      return <main className="projector-match-screen projector-treasure-map-screen" aria-live="polite"><section className="projector-match-content"><header><div className="projector-title"><p>SHARED TREASURE HUNT</p><h1>Treasure Map</h1><span>{state.title}</span></div><div className="projector-match-score"><span>CLUES FOUND</span><strong>{clues}</strong></div></header><SharedTreasureMap map={state.treasureMap} projector /><p className="projector-match-tip">Students earn scout tokens with correct answers, then uncover clues to find the treasure together.</p></section></main>;
+      return <main className="projector-match-screen projector-treasure-map-screen" aria-live="polite"><ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} /><section className="projector-match-content"><header><div className="projector-title"><p>SHARED TREASURE HUNT</p><h1>Treasure Map</h1><span>{state.title}</span></div><div className="projector-match-score"><span>CLUES FOUND</span><strong>{clues}</strong></div></header><SharedTreasureMap map={state.treasureMap} projector /><p className="projector-match-tip">Students earn scout tokens with correct answers, then uncover clues to find the treasure together.</p></section></main>;
     }
     if (state.phase !== 'complete' && state.presentationMode === 'archery' && state.archery) {
-      return <main className="projector-match-screen projector-archery-screen" aria-live="polite"><section className="projector-match-content"><header><div className="projector-title"><p>SHARED ARCHERY RANGE</p><h1>Archery</h1><span>{state.title}</span></div><div className="projector-match-score"><span>BEST BULLSEYE</span><strong>{state.archery.attempts[0]?.score ?? '—'}</strong></div></header><SharedArcheryBoard archery={state.archery} projector /><p className="projector-match-tip">Students place their shot using the bars beside and below the target.</p></section></main>;
+      return <main className="projector-match-screen projector-archery-screen" aria-live="polite"><ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} /><section className="projector-match-content"><header><div className="projector-title"><p>SHARED ARCHERY RANGE</p><h1>Archery</h1><span>{state.title}</span></div><div className="projector-match-score"><span>BEST BULLSEYE</span><strong>{state.archery.attempts[0]?.score ?? '—'}</strong></div></header><SharedArcheryBoard archery={state.archery} projector /><p className="projector-match-tip">Students place their shot using the bars beside and below the target.</p></section></main>;
     }
     if (state.phase !== 'complete' && state.presentationMode === 'curling' && state.curling) {
-      return <main className="projector-match-screen projector-curling-screen" aria-live="polite"><section className="projector-match-content"><header><div className="projector-title"><p>SHARED CURLING SHEET</p><h1>Curling</h1><span>{state.title}</span></div><div className="projector-match-score"><span>BEST STONE</span><strong>{state.curling.attempts[0]?.score ?? '—'}</strong></div></header><SharedCurlingSheet curling={state.curling} projector /><p className="projector-match-tip">Each stone lands independently—stones do not interact.</p></section></main>;
+      return <main className="projector-match-screen projector-curling-screen" aria-live="polite"><ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} /><section className="projector-match-content"><header><div className="projector-title"><p>SHARED CURLING SHEET</p><h1>Curling</h1><span>{state.title}</span></div><div className="projector-match-score"><span>BEST STONE</span><strong>{state.curling.attempts[0]?.score ?? '—'}</strong></div></header><SharedCurlingSheet curling={state.curling} projector /><p className="projector-match-tip">Each stone lands independently—stones do not interact.</p></section></main>;
     }
     const complete = state.phase === 'complete';
     const scoring = state.scoringEnabled;
@@ -601,10 +623,10 @@ export function Facilitator({ sessionId, token, projector = false, metrics = fal
     const mostAnswered = Math.max(0, ...leaderboard.map((player) => player.answered));
     const longestStreakPlayers = leaderboard.filter((player) => player.longestStreak === longestStreak && longestStreak > 0);
     const mostAnsweredPlayers = leaderboard.filter((player) => player.answered === mostAnswered && mostAnswered > 0);
-    return <main className={`projector-scoreboard${complete ? ' projector-final-scoreboard' : ''}`} aria-live="polite"><section className="projector-scoreboard-content"><header><div className="projector-title"><p>{complete ? 'QUIZ OVER' : 'LIVE LEADERBOARD'}</p><h1>{complete ? 'High scores' : showingScores ? 'Scores' : 'Correct answers'}</h1><span>{state.title}</span></div>{!complete && <div className="projector-metric-toggle" aria-label="Leaderboard display"><button className={showingScores ? 'selected' : ''} disabled={!scoring} onClick={() => setProjectorMetric('scores')} title={scoring ? 'Show point scores' : 'Point scoring is not enabled for this session'}>Scores</button><button className={!showingScores ? 'selected' : ''} onClick={() => setProjectorMetric('correct')}>Correct</button></div>}</header>{leaderboard.length ? <div className="projector-leaderboard"><ol className="projector-podium">{leaderboard.slice(0, 3).map((player, index) => <li key={player.id} className={`podium-place podium-${index + 1}`}><span className="projector-rank">{index + 1}</span><strong title={player.name}>{player.name}</strong><em>{value(player)}<small>{unit}</small></em></li>)}</ol>{leaderboard.length > 3 && <ol className="projector-top-five">{leaderboard.slice(3, 5).map((player, index) => <li key={player.id}><span className="projector-rank">{index + 4}</span><strong title={player.name}>{player.name}</strong><em>{value(player)}<small>{unit}</small></em></li>)}</ol>}{complete && <section className="projector-honours" aria-label="Honourable mentions"><h2>Honourable mentions</h2><div>{longestStreakPlayers.length > 0 && <p><span>Longest streak{longestStreakPlayers.length > 1 ? 's' : ''}</span><strong>{longestStreakPlayers.map((player) => player.name).join(', ')}</strong><em>{longestStreak} in a row</em></p>}{mostAnsweredPlayers.length > 0 && <p><span>Most questions answered</span><strong>{mostAnsweredPlayers.map((player) => player.name).join(', ')}</strong><em>{mostAnswered} answered</em></p>}</div></section>}{leaderboard.length > 5 && <section className="projector-more"><h2>More players</h2><ol>{leaderboard.slice(5).map((player, index) => <li key={player.id}><span>{index + 6}</span><strong title={player.name}>{player.name}</strong><em>{value(player)}</em></li>)}</ol></section>}</div> : <p className="projector-empty">{complete ? 'No scores were recorded for this quiz.' : 'Scores will appear here as participants answer questions.'}</p>}</section></main>;
+    return <main className={`projector-scoreboard${complete ? ' projector-final-scoreboard' : ''}`} aria-live="polite">{!complete && <ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} />}<section className="projector-scoreboard-content"><header><div className="projector-title"><p>{complete ? 'QUIZ OVER' : 'LIVE LEADERBOARD'}</p><h1>{complete ? 'High scores' : showingScores ? 'Scores' : 'Correct answers'}</h1><span>{state.title}</span></div>{!complete && <div className="projector-metric-toggle" aria-label="Leaderboard display"><button className={showingScores ? 'selected' : ''} disabled={!scoring} onClick={() => setProjectorMetric('scores')} title={scoring ? 'Show point scores' : 'Point scoring is not enabled for this session'}>Scores</button><button className={!showingScores ? 'selected' : ''} onClick={() => setProjectorMetric('correct')}>Correct</button></div>}</header>{leaderboard.length ? <div className="projector-leaderboard"><ol className="projector-podium">{leaderboard.slice(0, 3).map((player, index) => <li key={player.id} className={`podium-place podium-${index + 1}`}><span className="projector-rank">{index + 1}</span><strong title={player.name}>{player.name}</strong><em>{value(player)}<small>{unit}</small></em></li>)}</ol>{leaderboard.length > 3 && <ol className="projector-top-five">{leaderboard.slice(3, 5).map((player, index) => <li key={player.id}><span className="projector-rank">{index + 4}</span><strong title={player.name}>{player.name}</strong><em>{value(player)}<small>{unit}</small></em></li>)}</ol>}{complete && <section className="projector-honours" aria-label="Honourable mentions"><h2>Honourable mentions</h2><div>{longestStreakPlayers.length > 0 && <p><span>Longest streak{longestStreakPlayers.length > 1 ? 's' : ''}</span><strong>{longestStreakPlayers.map((player) => player.name).join(', ')}</strong><em>{longestStreak} in a row</em></p>}{mostAnsweredPlayers.length > 0 && <p><span>Most questions answered</span><strong>{mostAnsweredPlayers.map((player) => player.name).join(', ')}</strong><em>{mostAnswered} answered</em></p>}</div></section>}{leaderboard.length > 5 && <section className="projector-more"><h2>More players</h2><ol>{leaderboard.slice(5).map((player, index) => <li key={player.id}><span>{index + 6}</span><strong title={player.name}>{player.name}</strong><em>{value(player)}</em></li>)}</ol></section>}</div> : <p className="projector-empty">{complete ? 'No scores were recorded for this quiz.' : 'Scores will appear here as participants answer questions.'}</p>}</section></main>;
   }
   if (metrics) return <LiveMetricsView state={state} />;
-  return <LiveFacilitatorView state={state} sessionId={sessionId} token={token} acting={acting} updatingLobby={updatingLobby} removingParticipantId={removingParticipantId} error={error} onStart={start} onNext={next} onEnd={end} onRestart={restart} onResetBoard={resetBoard} onBoardAutoReset={updateBoardAutoReset} onLobbyLock={updateLobbyLock} onPresentationMode={updatePresentationMode} onRemoveParticipant={removeParticipant} />;
+  return <LiveFacilitatorView state={state} sessionId={sessionId} token={token} acting={acting} updatingLobby={updatingLobby} removingParticipantId={removingParticipantId} error={error} onStart={start} onNext={next} onEnd={end} onUpdateDuration={updateDuration} onRestart={restart} onResetBoard={resetBoard} onBoardAutoReset={updateBoardAutoReset} onLobbyLock={updateLobbyLock} onPresentationMode={updatePresentationMode} onRemoveParticipant={removeParticipant} />;
 }
 
 function LiveMetricsView({ state }: { state: FacilitatorState }) {
@@ -612,7 +634,28 @@ function LiveMetricsView({ state }: { state: FacilitatorState }) {
   return <main className="page facilitator-page"><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">LIVE METRICS</span></header><section className="facilitator-grid"><div className="question-card control-card"><p className="eyebrow">SESSION PERFORMANCE</p><h1>{state.title}</h1><p className="lede">Live completion, answer, and game performance update automatically.</p><div className="score-so-far"><span>Completed</span><strong>{state.completedCount} / {state.participants.length}</strong><small>{state.phase === 'lobby' ? 'Waiting to start' : state.endless ? 'Endless questions' : `${state.questionCount} quiz items per participant`}</small></div>{state.archery && <section className="homework-archery-leaderboard"><p className="eyebrow">BEST ARCHERY SCORES</p>{state.archery.attempts.length ? <ol>{state.archery.attempts.slice(0, 5).map((attempt, index) => <li key={attempt.id}><b>{index + 1}</b><span><strong>{attempt.participantName ?? 'Player'}</strong><small>Archery attempt</small></span><em>{attempt.score} pts</em></li>)}</ol> : <p className="lede">No Archery scores recorded yet.</p>}</section>}</div><aside className="participant-panel homework-participant-panel"><div><p className="eyebrow">LEADERBOARD</p><h2>{leaderboard.length} participant{leaderboard.length === 1 ? '' : 's'}</h2></div>{leaderboard.length ? <ul>{leaderboard.map((player, index) => <li className="homework-participant" key={player.id}><span className="homework-participant-progress"><strong>{index + 1}. {player.name}</strong><small>{player.correct} correct · {player.answered} answered</small></span><span className="homework-participant-score"><strong>{state.scoringEnabled ? `${player.score} pts` : `${player.correct} / ${player.answered}`}</strong><small>{player.longestStreak ? `${player.longestStreak} streak` : 'No streak yet'}</small></span></li>)}</ul> : <p>No responses yet.</p>}</aside></section></main>;
 }
 
-function LiveFacilitatorView({ state, sessionId, token, acting, updatingLobby, removingParticipantId, error, onStart, onNext, onEnd, onRestart, onResetBoard, onBoardAutoReset, onLobbyLock, onPresentationMode, onRemoveParticipant }: { state: FacilitatorState; sessionId: string; token: string; acting: boolean; updatingLobby: boolean; removingParticipantId: string | null; error: string; onStart: () => Promise<void>; onNext: () => Promise<void>; onEnd: () => Promise<void>; onRestart: (mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling') => Promise<void>; onResetBoard: () => Promise<void>; onBoardAutoReset: (autoReset: boolean) => Promise<void>; onLobbyLock: (locked: boolean) => Promise<void>; onPresentationMode: (mode: 'scores' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling') => Promise<void>; onRemoveParticipant: (participantId: string) => Promise<void> }) {
+function SessionEndEditor({ endsAt, durationSeconds, mode, onUpdate }: { endsAt: string | null; durationSeconds: number; mode: 'date' | 'duration'; onUpdate: (durationSeconds: number) => Promise<void> }) {
+  const [endDate, setEndDate] = useState(() => dateTimeLocalValue(endsAt ?? new Date(Date.now() + durationSeconds * 1000).toISOString()));
+  const [durationMinutes, setDurationMinutes] = useState(() => String(endsAt ? Math.max(1, Math.ceil((Date.parse(endsAt) - Date.now()) / 60000)) : Math.max(1, Math.ceil(durationSeconds / 60))));
+  const [updating, setUpdating] = useState(false);
+  const [validationError, setValidationError] = useState('');
+  useEffect(() => {
+    if (endsAt) setEndDate(dateTimeLocalValue(endsAt));
+    setDurationMinutes(String(endsAt ? Math.max(1, Math.ceil((Date.parse(endsAt) - Date.now()) / 60000)) : Math.max(1, Math.ceil(durationSeconds / 60))));
+  }, [endsAt, durationSeconds]);
+  async function save() {
+    const durationSeconds = mode === 'date' ? Math.ceil((new Date(endDate).getTime() - Date.now()) / 1000) : Number(durationMinutes) * 60;
+    if (!Number.isInteger(durationSeconds) || durationSeconds < 60 || durationSeconds > 604800) {
+      setValidationError(mode === 'date' ? 'Choose an end date between 1 minute and 7 days from now.' : 'Choose a whole-number duration between 1 minute and 7 days.');
+      return;
+    }
+    setValidationError(''); setUpdating(true);
+    try { await onUpdate(durationSeconds); } finally { setUpdating(false); }
+  }
+  return <section className="session-duration-control"><p className="eyebrow">{mode === 'date' ? 'SESSION END' : 'SESSION DURATION'}</p>{mode === 'date' ? <label>End date and time<input type="datetime-local" value={endDate} min={dateTimeLocalValue(new Date(Date.now() + 60000).toISOString())} max={dateTimeLocalValue(new Date(Date.now() + 604800000).toISOString())} disabled={updating} onChange={(event) => setEndDate(event.target.value)} /></label> : <label>Duration in minutes<input type="number" min="1" max="10080" step="1" inputMode="numeric" value={durationMinutes} disabled={updating} onChange={(event) => setDurationMinutes(event.target.value)} /></label>}<button className="primary-button" disabled={updating} onClick={() => void save()}>{updating ? 'Updating…' : mode === 'date' ? 'Update deadline' : 'Update duration'}</button><small>{mode === 'date' ? 'Choose a deadline from 1 minute to 7 days from now.' : 'Choose a whole-number duration from 1 minute to 7 days.'}</small>{validationError && <p className="form-error">{validationError}</p>}</section>;
+}
+
+function LiveFacilitatorView({ state, sessionId, token, acting, updatingLobby, removingParticipantId, error, onStart, onNext, onEnd, onUpdateDuration, onRestart, onResetBoard, onBoardAutoReset, onLobbyLock, onPresentationMode, onRemoveParticipant }: { state: FacilitatorState; sessionId: string; token: string; acting: boolean; updatingLobby: boolean; removingParticipantId: string | null; error: string; onStart: () => Promise<void>; onNext: () => Promise<void>; onEnd: () => Promise<void>; onUpdateDuration: (durationSeconds: number) => Promise<void>; onRestart: (mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling') => Promise<void>; onResetBoard: () => Promise<void>; onBoardAutoReset: (autoReset: boolean) => Promise<void>; onLobbyLock: (locked: boolean) => Promise<void>; onPresentationMode: (mode: 'scores' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling') => Promise<void>; onRemoveParticipant: (participantId: string) => Promise<void> }) {
   const [studentLinkCopied, setStudentLinkCopied] = useState(false);
   const [restartMode, setRestartMode] = useState<'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling'>(state.mode);
   const studentUrl = moderatedStudentUrl(state.pin);
@@ -625,9 +668,10 @@ function LiveFacilitatorView({ state, sessionId, token, acting, updatingLobby, r
       <div className="question-card control-card">
         <p className="eyebrow">{state.phase === 'lobby' ? state.lobbyLocked ? 'LOBBY LOCKED' : 'READY TO START' : state.phase === 'complete' ? 'TEST COMPLETE' : 'TEST IN PROGRESS'}</p>
         <h1>{state.title}</h1>
-        <p>{state.endsAt ? `${state.expired ? 'Time expired' : 'Ends'}: ${new Date(state.endsAt).toLocaleString()}` : `Duration: ${state.durationSeconds / 60} minutes after starting`}</p>
+        <p>{state.phase === 'lobby' ? `Duration: ${state.durationSeconds / 60} minutes. The timer starts when the test starts.` : state.endsAt ? `${state.expired ? 'Time expired' : 'Ends'}: ${new Date(state.endsAt).toLocaleString()}` : 'Timer not started.'}</p>
         <p className="lede">{state.phase === 'lobby' ? state.lobbyLocked ? 'The lobby is locked. Current participants can stay, but no one new can join.' : 'Participants can join now. Start when you are ready.' : state.phase === 'complete' ? 'The test has finished.' : state.mode === 'facilitated' ? `Round ${state.currentRound} of ${state.questionCount}. Release the next round when you are ready.` : 'Students move through questions and games at their own pace.'}</p>
         {state.phase === 'lobby' ? <button className="primary-button" disabled={acting} onClick={() => void onStart()}>{acting ? 'Starting…' : 'Start test'}</button> : <div className="score-so-far"><span>Completed</span><strong>{state.completedCount} / {state.participants.length}</strong><small>{state.endless ? 'Endless questions' : `${state.questionCount} quiz items per participant`}</small></div>}
+        {state.phase !== 'complete' && <SessionEndEditor endsAt={state.endsAt} durationSeconds={state.durationSeconds} mode="duration" onUpdate={onUpdateDuration} />}
         {state.mode === 'facilitated' && state.phase === 'question' && <button className="primary-button" disabled={acting} onClick={() => void onNext()}>{acting ? 'Releasing…' : state.currentRound >= state.questionCount ? 'Finish test' : 'Release next round'}</button>}
         {(state.mode === 'matching' || state.mode === 'battleship' || state.mode === 'treasure_map' || state.mode === 'archery' || state.mode === 'curling') && <label className="projector-presentation-control"><span><strong>Projector display</strong><small>Choose what the class sees on the projector.</small></span><select value={state.presentationMode} disabled={acting} onChange={(event) => void onPresentationMode(event.target.value as 'scores' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling')}>{state.mode === 'matching' ? <option value="matching">Matching pairs grid</option> : state.mode === 'battleship' ? <option value="battleship">Battleship map</option> : state.mode === 'treasure_map' ? <option value="treasure_map">Treasure map</option> : state.mode === 'archery' ? <option value="archery">Archery target</option> : <option value="curling">Curling sheet</option>}<option value="scores">High scores</option></select></label>}
         {(state.mode === 'matching' || state.mode === 'battleship' || state.mode === 'treasure_map') && (() => {
@@ -707,7 +751,7 @@ function HomeworkAttemptModal({ attempt, mode, onClose }: { attempt: HomeworkAtt
   return <div className="report-attempt-modal-backdrop" role="presentation" onMouseDown={onClose}><section className="report-attempt-modal" role="dialog" aria-modal="true" aria-labelledby="attempt-details-title" onMouseDown={(event) => event.stopPropagation()}><header><div><p className="eyebrow">STUDENT ATTEMPT</p><h2 id="attempt-details-title">{attempt.name} · Attempt details</h2><p>{formatNumber(attempt.score.correct)} / {formatNumber(attempt.score.total)} correct · Started {new Date(attempt.joinedAt).toLocaleString()}</p></div><button className="close-button" onClick={onClose} aria-label="Close">×</button></header>{(mode === 'archery' || mode === 'curling') && <p className="report-attempt-game-score">{mode === 'archery' ? 'Archery' : 'Curling'} score: <strong>{formatNumber(attempt.shootingScore ?? 0)} pts</strong></p>}<ol className="report-answer-list">{attempt.answers.map((answer, index) => <li key={answer.id} className={answer.isCorrect === true ? 'correct' : answer.isCorrect === false ? 'incorrect' : 'unanswered'}><span className="report-answer-number">{formatNumber(index + 1)}</span><div className="report-answer-content"><div className="report-answer-heading"><strong>{answer.matchingPairs ? 'Matching exercise' : answer.text}</strong><em>{answer.isCorrect === true ? 'Correct' : answer.isCorrect === false ? 'Incorrect' : 'Unanswered'}</em></div>{answer.matchingPairs && <MatchingPairPreview pairs={answer.matchingPairs} />}<dl><div><dt>Student answer</dt><dd>{answer.answer ?? 'No answer'}</dd></div><div><dt>Correct answer</dt><dd>{answer.correctAnswer}</dd></div></dl></div></li>)}</ol></section></div>;
 }
 
-function HomeworkReport({ state, onManage, sessionId, token }: { state: HomeworkTeacherState; onManage: () => void; sessionId: string; token: string }) {
+function HomeworkReport({ state, onManage, sessionId }: { state: HomeworkTeacherState; onManage: () => void; sessionId: string }) {
   const completed = state.participants.filter((participant) => participant.completed).length;
   const averageRate = state.participants.length ? Math.round((state.participants.reduce((total, participant) => total + participant.score.correct, 0) / Math.max(1, state.participants.reduce((total, participant) => total + participant.score.total, 0))) * 100) : 0;
   const [bestOnly, setBestOnly] = useState(false);
@@ -730,7 +774,7 @@ function HomeworkReport({ state, onManage, sessionId, token }: { state: Homework
   const visibleAttempts = bestOnly ? [...bestAttempts.values()].sort((a, b) => a.name.localeCompare(b.name)) : state.participants;
   async function showAttempt(participantId: string) {
     setAttemptLoading(participantId); setAttemptError('');
-    try { setAttempt(await homeworkRequest<HomeworkAttemptDetail>(`/${sessionId}/participants/${participantId}?token=${encodeURIComponent(token)}`)); }
+    try { setAttempt(await homeworkRequest<HomeworkAttemptDetail>(`/${sessionId}/participants/${participantId}`)); }
     catch (err) { setAttemptError(err instanceof Error ? err.message : 'Could not load this attempt'); }
     finally { setAttemptLoading(null); }
   }
@@ -796,31 +840,22 @@ function HomeworkStudent({ sessionId }: { sessionId: string }) {
 }
 
 export function HomeworkTeacher({ sessionId, token, initialView = 'manage' }: { sessionId: string; token: string; initialView?: 'manage' | 'report' }) {
+  teacherAccessToken = token;
   const [state, setState] = useState<HomeworkTeacherState | null>(null);
   const [view, setView] = useState<'manage' | 'report'>(initialView);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [ending, setEnding] = useState(false);
-  const [endDate, setEndDate] = useState('');
-  const [updatingDuration, setUpdatingDuration] = useState(false);
   const [summarizeByUser, setSummarizeByUser] = useState(false);
   const load = useCallback(async () => {
-    try { const next = await homeworkRequest<HomeworkTeacherState>(`/${sessionId}/teacher?token=${encodeURIComponent(token)}`); setState((current) => current?.sessionId === next.sessionId && current.ended && !next.ended ? current : next); setError(''); }
+    try { const next = await homeworkRequest<HomeworkTeacherState>(`/${sessionId}/teacher`); setState((current) => current?.sessionId === next.sessionId && current.ended && !next.ended ? current : next); setError(''); }
     catch (err) { setError(err instanceof Error ? err.message : 'Could not load homework results'); }
-  }, [sessionId, token]);
+  }, [sessionId]);
   useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 2000); return () => window.clearInterval(timer); }, [load]);
-  useEffect(() => { if (state?.sessionId) setEndDate(dateTimeLocalValue(state.endsAt)); }, [state?.sessionId]);
   async function copyStudentLink() { try { await navigator.clipboard.writeText(homeworkStudentUrl(sessionId)); setCopied(true); window.setTimeout(() => setCopied(false), 2000); } catch { setError('Could not copy the student link.'); } }
   function end() { confirmAction({ title: 'End homework?', copy: 'Students will no longer be able to answer or join.', confirmLabel: 'End homework', onConfirm: endNow }); }
-  async function endNow() { setEnding(true); setError(''); try { setState(await homeworkRequest<HomeworkTeacherState>(`/${sessionId}/end`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not end the homework'); } finally { setEnding(false); } }
-  async function updateDuration() {
-    const durationSeconds = Math.ceil((new Date(endDate).getTime() - Date.now()) / 1000);
-    if (!endDate || !Number.isFinite(durationSeconds) || durationSeconds < 300 || durationSeconds > 604800) { setError('Choose an end date between 5 minutes and 7 days from now.'); return; }
-    setUpdatingDuration(true); setError('');
-    try { setState(await homeworkRequest<HomeworkTeacherState>(`/${sessionId}/duration`, { method: 'POST', body: JSON.stringify({ facilitatorToken: token, durationSeconds }) })); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Could not update the homework deadline'); }
-    finally { setUpdatingDuration(false); }
-  }
+  async function endNow() { setEnding(true); setError(''); try { setState(await homeworkRequest<HomeworkTeacherState>(`/${sessionId}/end`, { method: 'POST' })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not end the homework'); } finally { setEnding(false); } }
+  async function updateDuration(durationSeconds: number) { setError(''); try { setState(await homeworkRequest<HomeworkTeacherState>(`/${sessionId}/duration`, { method: 'POST', body: JSON.stringify({ durationSeconds }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not update the homework deadline'); } }
   if (!state) return <main className="page status-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div>{error ? <section className="error-card"><h1>Teacher access unavailable.</h1><p>{error}</p></section> : <div className="loader" />}</main>;
   const completed = state.participants.filter((participant) => participant.completed).length;
   const studentUrl = homeworkStudentUrl(sessionId);
@@ -832,7 +867,7 @@ export function HomeworkTeacher({ sessionId, token, initialView = 'manage' }: { 
     participantSummaries.set(key, preferred ? { id: participant.id, name: participant.name, completed: participant.completed, completedItems: participant.completedItems, score: participant.score, shootingScore: participant.shootingScore, attemptCount: (current?.attemptCount ?? 0) + 1, completedAttempts: (current?.completedAttempts ?? 0) + Number(participant.completed) } : { ...current!, attemptCount: current!.attemptCount + 1, completedAttempts: current!.completedAttempts + Number(participant.completed) });
   }
   const displayedParticipants = summarizeByUser ? [...participantSummaries.values()].sort((a, b) => a.name.localeCompare(b.name)) : state.participants.map((participant) => ({ ...participant, attemptCount: 1, completedAttempts: Number(participant.completed) }));
-  if (view === 'report') return <HomeworkReport state={state} onManage={() => setView('manage')} sessionId={sessionId} token={token} />;
+  if (view === 'report') return <HomeworkReport state={state} onManage={() => setView('manage')} sessionId={sessionId} />;
   return <main className="page facilitator-page">
     <header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">HOMEWORK MANAGEMENT</span><button className="text-button" onClick={() => setView('report')}>Open report</button></header>
     <section className="facilitator-grid">
@@ -840,7 +875,7 @@ export function HomeworkTeacher({ sessionId, token, initialView = 'manage' }: { 
         <p className="eyebrow">{state.ended ? 'HOMEWORK ENDED' : 'HOMEWORK RUN'}</p><h1>{state.title}</h1><p>{state.expired ? 'Time expired' : 'Closes'}: {new Date(state.endsAt).toLocaleString()}</p>
         <p className="lede">{state.ended ? 'This homework has ended. Recorded work remains available below.' : 'Students work independently. This page updates as they join and complete the assignment.'}</p>
         <div className="score-so-far"><span>Completed</span><strong>{completed} / {state.participants.length}</strong><small>{state.questionCount} scored question{state.questionCount === 1 ? '' : 's'} per attempt</small></div>
-        {!state.ended && <section className="session-duration-control"><p className="eyebrow">SESSION CONTROLS</p><label>End date and time<input type="datetime-local" value={endDate} disabled={updatingDuration} onChange={(event) => setEndDate(event.target.value)} /></label><button className="primary-button" disabled={updatingDuration} onClick={() => void updateDuration()}>{updatingDuration ? 'Updating…' : 'Update deadline'}</button><small>Students will no longer be able to work after this time.</small></section>}
+        {!state.ended && <SessionEndEditor endsAt={state.endsAt} durationSeconds={60} mode="date" onUpdate={updateDuration} />}
         {(state.mode === 'archery' ? state.archeryLeaderboard : state.mode === 'curling' ? state.curlingLeaderboard : []).length > 0 && <section className="homework-archery-leaderboard"><p className="eyebrow">BEST {state.mode === 'archery' ? 'ARCHERY' : 'CURLING'} SCORES</p><ol>{(state.mode === 'archery' ? state.archeryLeaderboard : state.curlingLeaderboard).map((player, index) => <li key={player.name}><b>{index + 1}</b><span><strong>{player.name}</strong><small>{player.attempts} attempt{player.attempts === 1 ? '' : 's'}</small></span><em>{player.bestScore} pts</em></li>)}</ol></section>}
         {!state.ended && <div className="end-quiz-control"><button className="end-quiz-button" disabled={ending} onClick={() => void end()}>{ending ? 'Ending…' : 'End quiz'}</button><small>Stop homework for all participants.</small></div>}
         {error && <p className="form-error">{error}</p>}
@@ -859,12 +894,13 @@ export function HomeworkTeacher({ sessionId, token, initialView = 'manage' }: { 
 }
 
 export function HomeworkProjector({ sessionId, token }: { sessionId: string; token: string }) {
+  teacherAccessToken = token;
   const [state, setState] = useState<HomeworkTeacherState | null>(null);
   const [error, setError] = useState('');
   const load = useCallback(async () => {
-    try { setState(await homeworkRequest<HomeworkTeacherState>(`/${sessionId}/teacher?token=${encodeURIComponent(token)}`)); setError(''); }
+    try { setState(await homeworkRequest<HomeworkTeacherState>(`/${sessionId}/teacher`)); setError(''); }
     catch (err) { setError(err instanceof Error ? err.message : 'Could not load homework results'); }
-  }, [sessionId, token]);
+  }, [sessionId]);
   useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 2000); return () => window.clearInterval(timer); }, [load]);
   if (!state) return <main className="projector-scoreboard"><section className="projector-scoreboard-content">{error ? <p className="projector-empty">{error}</p> : <p className="projector-empty">Loading homework results…</p>}</section></main>;
   const classicScores = new Map<string, { name: string; attempts: number; correct: number; total: number }>();

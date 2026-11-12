@@ -2,7 +2,7 @@ import { IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Mi
 
 export class CreateHomeworkSessionDto {
   @IsInt()
-  @Min(300)
+  @Min(60)
   @Max(604800)
   durationSeconds!: number;
 
@@ -11,21 +11,20 @@ export class CreateHomeworkSessionDto {
   mode?: 'classic' | 'archery' | 'curling';
 }
 
-export class EndHomeworkSessionDto {
+class LegacyFacilitatorTokenDto {
+  // Kept only so an already-cached teacher frontend can complete its request
+  // while the new Authorization-header-only frontend is rolling out.
+  @IsOptional()
   @IsString()
-  @MinLength(1)
-  @MaxLength(100)
-  facilitatorToken!: string;
+  @MaxLength(8192)
+  facilitatorToken?: string;
 }
 
-export class UpdateHomeworkDurationDto {
-  @IsString()
-  @MinLength(1)
-  @MaxLength(100)
-  facilitatorToken!: string;
+export class EndHomeworkSessionDto extends LegacyFacilitatorTokenDto {}
 
+export class UpdateHomeworkDurationDto extends LegacyFacilitatorTokenDto {
   @IsInt()
-  @Min(300)
+  @Min(60)
   @Max(604800)
   durationSeconds!: number;
 }

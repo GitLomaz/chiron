@@ -5,6 +5,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { randomInt, randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReportModeratedGameScoreDto, SubmitModeratedAnswerDto } from './dto/moderated-session.dto';
+import { AuthUser } from '../auth/auth.types';
 
 type SessionQuestion = { id: string; text: string; itemType: 'question' | 'game' | 'text'; gameType: string | null; options: string[]; correctAnswer: string; timerSeconds: number | null; special?: SpecialQuestion | null };
 // Credits and a first selection are personal; the board itself is shared by
@@ -23,11 +24,11 @@ type CurlingPlayer = { stones: number; lastStone: CurlingStone | null };
 type CurlingStone = { id: string; participantId: string; participantName: string; direction: number; speed: number; x: number; y: number; score: number };
 type SharedCurlingGame = { stones: CurlingStone[] };
 const MATCHING_SYMBOLS = ['🍎', '🍌', '🍇', '🍓', '🍍', '🍉', '🍒', '🥝', '🍑', '🍐', '🍋', '🍊', '🍈', '🥭', '🍅', '🥕', '🌽', '🥑', '🥦', '🥥', '🍄', '🌶️', '🫐', '🍓‍❄️', '🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁', '🐮', '🐷', '🐸', '🐵', '🦄', '🐝', '🦋', '🐢', '🐬', '🐳', '🦉', '🦜', '🦖', '🌈', '⭐'];
-const TEACHER_PASSWORD = 'testing';
 type PointScore = { points: number; streak: number; maxStreak: number; lastAward: { base: number; streak: number; speed: number; total: number } | null };
 type Participant = { id: string; clientId: string; name: string; questions: SessionQuestion[]; answers: Map<string, string>; matchProgress: Map<string, MatchProgress>; gameScores: Map<string, number>; pointScore: PointScore; matching: MatchingGame | null; battleship: BattleshipPlayer | null; treasureMap: TreasureMapPlayer | null; archery: ArcheryPlayer | null; curling: CurlingPlayer | null; betweenQuestions: boolean; joinedAt: Date; currentQuestionIndex: number; currentQuestionOpenedAt: Date | null; autoAdvanceTimer: NodeJS.Timeout | null; completedAt: Date | null };
 type ModeratedSession = {
   id: string;
+  ownerId: string;
   pin: string;
   facilitatorToken: string;
   mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling';
@@ -62,10 +63,10 @@ export class ModeratedService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  listActive() {
+  listActive(user: AuthUser) {
     return [...this.sessions.values()].filter((session) => {
       this.expire(session);
-      return session.phase !== 'complete';
+      return (session.ownerId === user.id || user.canViewAllQuizzes) && session.phase !== 'complete';
     }).map((session) => ({
       sessionId: session.id, title: session.quiz.title, pin: session.pin,
       mode: session.mode, phase: session.phase, participantCount: session.participants.size,
@@ -73,17 +74,17 @@ export class ModeratedService {
     }));
   }
 
-  async create(quizId: number, mode: ModeratedSession['mode'] = 'classic', durationSeconds: number, endless = false, scoringEnabled = true) {
+  async create(quizId: number, mode: ModeratedSession['mode'] = 'classic', durationSeconds: number, endless = false, scoringEnabled = true, user: AuthUser) {
     if (endless && mode === 'facilitated') throw new BadRequestException('Endless mode is not available for facilitated tests');
     const quiz = await this.prisma.quiz.findUnique({
-      where: { id: quizId },
+      where: user.canViewAllQuizzes ? { id: quizId } : { id: quizId, ownerId: user.id },
       include: { questions: { where: { isEnabled: true, OR: [{ itemType: 'question' }, { itemType: 'text' }, { itemType: 'game', gameType: { in: ['coin_catch', 'match_pairs', 'tower_stack'] } }] }, orderBy: { position: 'asc' } } },
     });
     if (!quiz) throw new NotFoundException(`Quiz ${quizId} was not found`);
     if (!quiz.questions.length) throw new BadRequestException('Enable at least one question before creating a moderated test');
 
     const id = randomUUID();
-    const facilitatorToken = TEACHER_PASSWORD;
+    const facilitatorToken = user.id;
     const pin = this.createPin();
     const authoredQuestions = quiz.questions.map((question) => {
       if (question.itemType === 'game') return { id: String(question.id), text: question.text, itemType: 'game' as const, gameType: question.gameType, correctAnswer: '', options: [], timerSeconds: question.gameDurationSeconds ?? 20 };
@@ -105,15 +106,14 @@ export class ModeratedService {
     const activeQuestions = this.questionsForMode(authoredQuestions, mode);
     if (!activeQuestions.length) throw new BadRequestException('Enable at least one question before creating this test');
     if (endless && !activeQuestions.some((item) => item.itemType === 'question')) throw new BadRequestException('Enable at least one question for endless mode');
-    const matchingPairCount = quiz.matchingPairCount ?? 6;
-    const [matchingColumns, matchingRows] = this.matchingGridDimensions(matchingPairCount);
+    const matchingPairCount = this.supportedMatchingPairCount(quiz.matchingPairCount ?? 6);
     const battleshipBoardSize = quiz.battleshipBoardSize ?? 10;
     const creditEveryCorrectAnswers = quiz.creditEveryCorrectAnswers ?? 1;
     const session = {
-      id, pin, facilitatorToken, mode, endless, scoringEnabled, currentRoundIndex: -1, randomizeQuestionOrder: quiz.randomizeQuestionOrder,
+      id, ownerId: user.id, pin, facilitatorToken, mode, endless, scoringEnabled, currentRoundIndex: -1, randomizeQuestionOrder: quiz.randomizeQuestionOrder,
       quiz: { title: quiz.title, description: quiz.description, theme: quiz.theme, answerMatching: quiz.answerMatching === 'exact' ? 'exact' : 'close', matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers, questions: authoredQuestions },
-      phase: 'lobby', endedByTeacher: false, expired: false, durationSeconds, endsAt: new Date(Date.now() + durationSeconds * 1000), lobbyLocked: false, presentationMode: mode === 'matching' ? 'matching' : mode === 'battleship' ? 'battleship' : mode === 'treasure_map' ? 'treasure_map' : mode === 'archery' ? 'archery' : mode === 'curling' ? 'curling' : 'scores',
-      matching: mode === 'matching' ? { cards: this.shuffle([...MATCHING_SYMBOLS.slice(0, matchingPairCount), ...MATCHING_SYMBOLS.slice(0, matchingPairCount)], id), columns: matchingColumns, rows: matchingRows, matchedCards: new Set<number>(), attempt: null, completionId: null } : null,
+      phase: 'lobby', endedByTeacher: false, expired: false, durationSeconds, endsAt: null, lobbyLocked: false, presentationMode: mode === 'matching' ? 'matching' : mode === 'battleship' ? 'battleship' : mode === 'treasure_map' ? 'treasure_map' : mode === 'archery' ? 'archery' : mode === 'curling' ? 'curling' : 'scores',
+      matching: mode === 'matching' ? this.newMatchingGame(matchingPairCount, randomUUID()) : null,
       battleship: mode === 'battleship' ? this.newBattleshipGame(battleshipBoardSize, id) : null,
       treasureMap: mode === 'treasure_map' ? this.newTreasureMap(id) : null,
       archery: mode === 'archery' ? this.newArcheryGame() : null,
@@ -166,10 +166,10 @@ export class ModeratedService {
     };
   }
 
-  facilitatorState(sessionId: string, token: string) {
-    const session = this.authorize(sessionId, token);
+  facilitatorState(sessionId: string, user: AuthUser) {
+    const session = this.authorize(sessionId, user);
     const participants = [...session.participants.values()];
-    return {
+    const state = {
       sessionId: session.id, pin: session.pin, title: session.quiz.title, description: session.quiz.description, phase: session.phase, endedByTeacher: session.endedByTeacher, expired: session.expired, endsAt: session.endsAt?.toISOString() ?? null, durationSeconds: session.durationSeconds, lobbyLocked: session.lobbyLocked, presentationMode: session.presentationMode, mode: session.mode, endless: session.endless, scoringEnabled: session.scoringEnabled, currentRound: session.currentRoundIndex + 1, autoBoardReset: session.autoBoardReset, boardResetAt: session.boardResetAt?.toISOString() ?? null,
       questionCount: this.activeQuestions(session).length,
       matching: session.matching ? this.matchingState(session.matching, undefined, undefined, true) : null,
@@ -194,30 +194,42 @@ export class ModeratedService {
         })
         .sort((a, b) => (session.scoringEnabled ? b.score - a.score : b.correct - a.correct) || a.name.localeCompare(b.name)),
     };
+    if (session.ownerId === user.id) return state;
+    const aliases = new Map<string, string>();
+    for (const participant of participants) { if (!aliases.has(participant.name)) aliases.set(participant.name, `Student #${aliases.size + 1}`); }
+    return this.redactParticipantNames(state, aliases);
   }
 
-  start(sessionId: string, token: string) {
-    const session = this.authorize(sessionId, token);
+  start(sessionId: string, user: AuthUser) {
+    const session = this.authorize(sessionId, user);
     if (session.phase !== 'lobby') throw new BadRequestException('This test has already started');
-    if (!session.endsAt || Date.now() >= session.endsAt.getTime()) throw new BadRequestException('This test has reached its end date');
+    session.endsAt = new Date(Date.now() + session.durationSeconds * 1000);
     session.phase = 'question';
     session.currentRoundIndex = 0;
     for (const participant of session.participants.values()) this.openParticipantQuestion(session, participant);
-    return this.facilitatorState(sessionId, token);
+    return this.facilitatorState(sessionId, user);
   }
 
-  end(sessionId: string, token: string) {
-    const session = this.authorize(sessionId, token);
+  end(sessionId: string, user: AuthUser) {
+    const session = this.authorize(sessionId, user);
     if (session.phase !== 'complete') {
       session.phase = 'complete';
       session.endedByTeacher = true;
       for (const participant of session.participants.values()) this.clearParticipantTimer(participant);
     }
-    return this.facilitatorState(sessionId, token);
+    return this.facilitatorState(sessionId, user);
   }
 
-  restart(sessionId: string, token: string, mode: ModeratedSession['mode']) {
-    const session = this.authorize(sessionId, token);
+  updateDuration(sessionId: string, user: AuthUser, durationSeconds: number) {
+    const session = this.authorize(sessionId, user);
+    if (session.phase === 'complete') throw new BadRequestException('A completed test cannot be extended');
+    session.durationSeconds = durationSeconds;
+    session.endsAt = session.phase === 'lobby' ? null : new Date(Date.now() + durationSeconds * 1000);
+    return this.facilitatorState(sessionId, user);
+  }
+
+  restart(sessionId: string, user: AuthUser, mode: ModeratedSession['mode']) {
+    const session = this.authorize(sessionId, user);
     if (session.phase !== 'complete') throw new BadRequestException('End the quiz before launching it again');
     const questions = this.questionsForMode(session.quiz.questions, mode);
     if (!questions.length) throw new BadRequestException('There are no available quiz items for this mode');
@@ -257,60 +269,60 @@ export class ModeratedService {
       participant.completedAt = null;
       this.openParticipantQuestion(session, participant);
     }
-    return this.facilitatorState(sessionId, token);
+    return this.facilitatorState(sessionId, user);
   }
 
-  next(sessionId: string, token: string) {
-    const session = this.authorize(sessionId, token);
+  next(sessionId: string, user: AuthUser) {
+    const session = this.authorize(sessionId, user);
     if (session.mode !== 'facilitated' || session.phase !== 'question') throw new BadRequestException('There is no facilitated round to advance');
     session.currentRoundIndex += 1;
     for (const participant of session.participants.values()) this.openParticipantQuestion(session, participant);
     if (session.currentRoundIndex >= this.activeQuestions(session).length) session.phase = 'complete';
-    return this.facilitatorState(sessionId, token);
+    return this.facilitatorState(sessionId, user);
   }
 
-  updateLobbyLock(sessionId: string, token: string, lobbyLocked: boolean) {
-    const session = this.authorize(sessionId, token);
+  updateLobbyLock(sessionId: string, user: AuthUser, lobbyLocked: boolean) {
+    const session = this.authorize(sessionId, user);
     session.lobbyLocked = lobbyLocked;
-    return this.facilitatorState(sessionId, token);
+    return this.facilitatorState(sessionId, user);
   }
 
-  updatePresentationMode(sessionId: string, token: string, presentationMode: ModeratedSession['presentationMode']) {
-    const session = this.authorize(sessionId, token);
+  updatePresentationMode(sessionId: string, user: AuthUser, presentationMode: ModeratedSession['presentationMode']) {
+    const session = this.authorize(sessionId, user);
     if (presentationMode === 'matching' && !session.matching) throw new BadRequestException('The matching board is only available in Matching mode');
     if (presentationMode === 'battleship' && !session.battleship) throw new BadRequestException('The Battleship board is only available in Battleship mode');
     if (presentationMode === 'treasure_map' && !session.treasureMap) throw new BadRequestException('The Treasure Map is only available in Treasure Map mode');
     if (presentationMode === 'archery' && !session.archery) throw new BadRequestException('The archery board is only available in Archery mode');
     if (presentationMode === 'curling' && !session.curling) throw new BadRequestException('The curling sheet is only available in Curling mode');
     session.presentationMode = presentationMode;
-    return this.facilitatorState(sessionId, token);
+    return this.facilitatorState(sessionId, user);
   }
 
-  updateBoardAutoReset(sessionId: string, token: string, autoBoardReset: boolean) {
-    const session = this.authorize(sessionId, token);
+  updateBoardAutoReset(sessionId: string, user: AuthUser, autoBoardReset: boolean) {
+    const session = this.authorize(sessionId, user);
     if (session.mode !== 'matching' && session.mode !== 'battleship' && session.mode !== 'treasure_map') throw new BadRequestException('Automatic board reset is only available in shared game modes');
     session.autoBoardReset = autoBoardReset;
     if (autoBoardReset && this.boardComplete(session)) this.scheduleBoardReset(session);
     if (!autoBoardReset) session.boardResetAt = null;
-    return this.facilitatorState(sessionId, token);
+    return this.facilitatorState(sessionId, user);
   }
 
-  resetBoard(sessionId: string, token: string) {
-    const session = this.authorize(sessionId, token);
+  resetBoard(sessionId: string, user: AuthUser) {
+    const session = this.authorize(sessionId, user);
     if (!this.boardComplete(session)) throw new BadRequestException('Finish the shared board before starting a new one');
     this.startNewBoard(session);
-    return this.facilitatorState(sessionId, token);
+    return this.facilitatorState(sessionId, user);
   }
 
-  removeParticipant(sessionId: string, token: string, participantId: string) {
-    const session = this.authorize(sessionId, token);
+  removeParticipant(sessionId: string, user: AuthUser, participantId: string) {
+    const session = this.authorize(sessionId, user);
     const participant = session.participants.get(participantId);
     if (!participant) throw new NotFoundException('That participant is no longer in this test');
     session.bannedClientIds.add(participant.clientId);
     this.clearParticipantTimer(participant);
     session.participants.delete(participantId);
     this.completeSessionIfFinished(session);
-    return this.facilitatorState(sessionId, token);
+    return this.facilitatorState(sessionId, user);
   }
 
   join(pin: string, name: string, clientId: string) {
@@ -692,8 +704,11 @@ export class ModeratedService {
     if (pairCount === 8) return [4, 4];
     if (pairCount === 18) return [6, 6];
     if (pairCount === 32) return [8, 8];
-    if (pairCount === 50) return [10, 10];
     return [4, 3];
+  }
+
+  private supportedMatchingPairCount(pairCount: number) {
+    return [2, 4, 6, 8, 18, 32].includes(pairCount) ? pairCount : 32;
   }
 
   private questionsForMode(questions: SessionQuestion[], mode: ModeratedSession['mode']) {
@@ -709,9 +724,10 @@ export class ModeratedService {
   }
 
   private newMatchingGame(pairCount: number, seed: string): SharedMatchingGame {
-    const [columns, rows] = this.matchingGridDimensions(pairCount);
+    const supportedPairCount = this.supportedMatchingPairCount(pairCount);
+    const [columns, rows] = this.matchingGridDimensions(supportedPairCount);
     return {
-      cards: this.shuffle([...MATCHING_SYMBOLS.slice(0, pairCount), ...MATCHING_SYMBOLS.slice(0, pairCount)], seed),
+      cards: this.shuffle([...MATCHING_SYMBOLS.slice(0, supportedPairCount), ...MATCHING_SYMBOLS.slice(0, supportedPairCount)], seed),
       columns,
       rows,
       matchedCards: new Set<number>(),
@@ -835,10 +851,18 @@ export class ModeratedService {
     throw new BadRequestException('Could not create a unique join PIN. Please try again.');
   }
 
-  private authorize(sessionId: string, token: string) {
+  private authorize(sessionId: string, user: AuthUser) {
     const session = this.get(sessionId);
-    if (token !== TEACHER_PASSWORD) throw new ForbiddenException('That teacher password is not valid');
+    if (session.ownerId !== user.id && !user.canViewAllQuizzes) throw new ForbiddenException('You do not have access to this live quiz');
     return session;
+  }
+
+  private redactParticipantNames<T>(value: T, aliases: Map<string, string>): T {
+    if (Array.isArray(value)) return value.map((item) => this.redactParticipantNames(item, aliases)) as T;
+    if (!value || typeof value !== 'object') return value;
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [key,
+      (key === 'name' || key === 'participantName' || key === 'playerName') && typeof item === 'string' ? aliases.get(item) ?? item : this.redactParticipantNames(item, aliases),
+    ])) as T;
   }
 
   private effectiveTimer(questionTimerSeconds: number | null, defaultTimerSeconds: number) {

@@ -2,7 +2,7 @@ import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, M
 
 export class CreateModeratedSessionDto {
   @IsInt()
-  @Min(300)
+  @Min(60)
   @Max(604800)
   durationSeconds!: number;
 
@@ -45,10 +45,13 @@ export class SubmitModeratedAnswerDto {
 }
 
 export class FacilitatorActionDto {
+  // Google ID tokens used by pre-authentication clients were sent in the
+  // request body. Authentication now comes exclusively from Authorization,
+  // but tolerate that legacy field during a rolling frontend deployment.
+  @IsOptional()
   @IsString()
-  @MinLength(1)
-  @MaxLength(100)
-  facilitatorToken!: string;
+  @MaxLength(8192)
+  facilitatorToken?: string;
 }
 
 export class UpdateLobbyLockDto extends FacilitatorActionDto {
@@ -71,6 +74,13 @@ export class UpdateBoardAutoResetDto extends FacilitatorActionDto {
   autoBoardReset!: boolean;
 }
 
+export class UpdateModeratedDurationDto extends FacilitatorActionDto {
+  @IsInt()
+  @Min(60)
+  @Max(604800)
+  durationSeconds!: number;
+}
+
 export class ReportModeratedGameScoreDto {
   @IsUUID('4')
   participantId!: string;
@@ -91,7 +101,7 @@ export class FlipMatchingCardDto {
 
   @IsInt()
   @Min(0)
-  @Max(11)
+  @Max(99)
   card!: number;
 }
 

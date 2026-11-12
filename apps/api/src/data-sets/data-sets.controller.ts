@@ -1,16 +1,20 @@
-import { BadRequestException, Body, Controller, Delete, Get, NotFoundException, Param, ParseIntPipe, Post, Put } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, NotFoundException, Param, ParseIntPipe, Post, Put, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { GenerateQuizService } from './generate-quiz.service';
 import { GenerateQuizDto } from './generate-quiz.dto';
 import { DataSetDto } from './data-set.dto';
+import { GoogleAuthGuard } from '../auth/google-auth.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { AuthUser } from '../auth/auth.types';
 
 @Controller('data-sets')
+@UseGuards(GoogleAuthGuard)
 export class DataSetsController {
   constructor(private readonly prisma: PrismaService, private readonly quizGenerator: GenerateQuizService) {}
 
   @Get()
-  list() {
-    return this.prisma.dataSet.findMany({ orderBy: { updatedAt: 'desc' }, include: { pairs: { orderBy: { position: 'asc' } } } });
+  list(@CurrentUser() user: AuthUser) {
+    return this.prisma.dataSet.findMany({ where: { ownerId: user.id }, orderBy: { updatedAt: 'desc' }, include: { pairs: { orderBy: { position: 'asc' } } } });
   }
 
   private clean(data: DataSetDto) {
@@ -21,26 +25,26 @@ export class DataSetsController {
   }
 
   @Post()
-  create(@Body() data: DataSetDto) {
+  create(@Body() data: DataSetDto, @CurrentUser() user: AuthUser) {
     const { name, pairs } = this.clean(data);
-    return this.prisma.dataSet.create({ data: { name, pairs: { create: pairs } }, include: { pairs: { orderBy: { position: 'asc' } } } });
+    return this.prisma.dataSet.create({ data: { name, ownerId: user.id, pairs: { create: pairs } }, include: { pairs: { orderBy: { position: 'asc' } } } });
   }
 
   @Post(':id/generate-quiz')
-  generateQuiz(@Param('id', ParseIntPipe) id: number, @Body() data: GenerateQuizDto) {
-    return this.quizGenerator.generate(id, data);
+  generateQuiz(@Param('id', ParseIntPipe) id: number, @Body() data: GenerateQuizDto, @CurrentUser() user: AuthUser) {
+    return this.quizGenerator.generate(id, data, user);
   }
 
   @Put(':id')
-  async update(@Param('id', ParseIntPipe) id: number, @Body() data: DataSetDto) {
+  async update(@Param('id', ParseIntPipe) id: number, @Body() data: DataSetDto, @CurrentUser() user: AuthUser) {
     const { name, pairs } = this.clean(data);
-    if (!await this.prisma.dataSet.findUnique({ where: { id } })) throw new NotFoundException('Data set not found');
+    if (!await this.prisma.dataSet.findFirst({ where: { id, ownerId: user.id } })) throw new NotFoundException('Data set not found');
     return this.prisma.dataSet.update({ where: { id }, data: { name, pairs: { deleteMany: {}, create: pairs } }, include: { pairs: { orderBy: { position: 'asc' } } } });
   }
 
   @Delete(':id')
-  async remove(@Param('id', ParseIntPipe) id: number) {
-    if (!await this.prisma.dataSet.findUnique({ where: { id } })) throw new NotFoundException('Data set not found');
+  async remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: AuthUser) {
+    if (!await this.prisma.dataSet.findFirst({ where: { id, ownerId: user.id } })) throw new NotFoundException('Data set not found');
     await this.prisma.dataSet.delete({ where: { id } });
     return { deleted: true };
   }

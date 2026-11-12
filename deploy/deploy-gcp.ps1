@@ -3,10 +3,17 @@ param(
   [string]$ProjectId = 'static-lens-268201',
   [string]$Region = 'us-east1',
   [string]$Repository = 'trivia',
-  [string]$DatabaseSecret = 'trivia-database-url'
+  [string]$DatabaseSecret = 'trivia-database-url',
+  [string]$GoogleClientId = $env:GOOGLE_CLIENT_ID
 )
 
 $ErrorActionPreference = 'Stop'
+
+if (-not $GoogleClientId -and (Test-Path 'apps/api/.env')) {
+  $googleClientIdLine = Get-Content 'apps/api/.env' | Where-Object { $_ -match '^GOOGLE_CLIENT_ID=' } | Select-Object -Last 1
+  if ($googleClientIdLine) { $GoogleClientId = ($googleClientIdLine -replace '^GOOGLE_CLIENT_ID=["'']?', '' -replace '["'']?\s*$', '').Trim() }
+}
+if (-not $GoogleClientId) { throw 'Pass -GoogleClientId, set GOOGLE_CLIENT_ID, or add GOOGLE_CLIENT_ID to apps/api/.env before deploying.' }
 
 function Invoke-Gcloud {
   param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
@@ -61,23 +68,23 @@ if ($LASTEXITCODE -eq 0) {
 }
 Invoke-Gcloud run jobs execute trivia-migrate --project=$ProjectId --region=$Region --wait
 
-Invoke-Gcloud run deploy trivia-api --project=$ProjectId --region=$Region --image=$apiImage --service-account=$runtimeServiceAccount --set-secrets="DATABASE_URL=$DatabaseSecret:latest" --set-env-vars='CLIENT_ORIGIN=https://placeholder.invalid' --min-instances=1 --max-instances=1 --allow-unauthenticated
+Invoke-Gcloud run deploy trivia-api --project=$ProjectId --region=$Region --image=$apiImage --service-account=$runtimeServiceAccount --set-secrets="DATABASE_URL=$DatabaseSecret:latest" --set-env-vars="CLIENT_ORIGIN=https://placeholder.invalid,GOOGLE_CLIENT_ID=$GoogleClientId" --min-instances=1 --max-instances=1 --allow-unauthenticated
 $apiUrl = Get-RunUrl 'trivia-api'
 
 & gcloud run services describe trivia-teacher --project=$ProjectId --region=$Region *> $null
 $previousTeacherUrl = if ($LASTEXITCODE -eq 0) { Get-RunUrl 'trivia-teacher' } else { 'https://placeholder.invalid' }
 
-Invoke-Gcloud builds submit --project=$ProjectId --config=deploy/cloudbuild.frontend.yaml --substitutions="_IMAGE=$studentImage,_APP=student,_VITE_API_URL=$apiUrl,_VITE_STUDENT_APP_URL=https://placeholder.invalid,_VITE_TEACHER_APP_URL=$previousTeacherUrl"
+Invoke-Gcloud builds submit --project=$ProjectId --config=deploy/cloudbuild.frontend.yaml --substitutions="_IMAGE=$studentImage,_APP=student,_VITE_API_URL=$apiUrl,_VITE_STUDENT_APP_URL=https://placeholder.invalid,_VITE_TEACHER_APP_URL=$previousTeacherUrl,_VITE_GOOGLE_CLIENT_ID=$GoogleClientId"
 Invoke-Gcloud run deploy trivia-student --project=$ProjectId --region=$Region --image=$studentImage --allow-unauthenticated
 $studentUrl = Get-RunUrl 'trivia-student'
 
-Invoke-Gcloud builds submit --project=$ProjectId --config=deploy/cloudbuild.frontend.yaml --substitutions="_IMAGE=$teacherImage,_APP=web,_VITE_API_URL=$apiUrl,_VITE_STUDENT_APP_URL=$studentUrl,_VITE_TEACHER_APP_URL=https://placeholder.invalid"
+Invoke-Gcloud builds submit --project=$ProjectId --config=deploy/cloudbuild.frontend.yaml --substitutions="_IMAGE=$teacherImage,_APP=web,_VITE_API_URL=$apiUrl,_VITE_STUDENT_APP_URL=$studentUrl,_VITE_TEACHER_APP_URL=https://placeholder.invalid,_VITE_GOOGLE_CLIENT_ID=$GoogleClientId"
 Invoke-Gcloud run deploy trivia-teacher --project=$ProjectId --region=$Region --image=$teacherImage --allow-unauthenticated
 $teacherUrl = Get-RunUrl 'trivia-teacher'
 
 if ($previousTeacherUrl -eq 'https://placeholder.invalid') {
   # A brand-new deployment needs one final student build now that the teacher URL exists.
-  Invoke-Gcloud builds submit --project=$ProjectId --config=deploy/cloudbuild.frontend.yaml --substitutions="_IMAGE=$studentRedirectImage,_APP=student,_VITE_API_URL=$apiUrl,_VITE_STUDENT_APP_URL=https://placeholder.invalid,_VITE_TEACHER_APP_URL=$teacherUrl"
+  Invoke-Gcloud builds submit --project=$ProjectId --config=deploy/cloudbuild.frontend.yaml --substitutions="_IMAGE=$studentRedirectImage,_APP=student,_VITE_API_URL=$apiUrl,_VITE_STUDENT_APP_URL=https://placeholder.invalid,_VITE_TEACHER_APP_URL=$teacherUrl,_VITE_GOOGLE_CLIENT_ID=$GoogleClientId"
   Invoke-Gcloud run deploy trivia-student --project=$ProjectId --region=$Region --image=$studentRedirectImage --allow-unauthenticated
 }
 

@@ -5,6 +5,19 @@ PROJECT_ID="${PROJECT_ID:-static-lens-268201}"
 REGION="${REGION:-us-east1}"
 REPOSITORY="${REPOSITORY:-trivia}"
 DATABASE_SECRET="${DATABASE_SECRET:-trivia-database-url}"
+GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}"
+
+# Local developer convenience: use the API's ignored .env file when the value
+# was not supplied by the shell/CI environment. Do not source the file because
+# it can contain a database URL and other values unrelated to this deployment.
+if [[ -z "$GOOGLE_CLIENT_ID" && -f apps/api/.env ]]; then
+  GOOGLE_CLIENT_ID="$(sed -nE "s/^GOOGLE_CLIENT_ID=[\"']?([^\"'[:space:]]+)[\"']?[[:space:]]*$/\\1/p" apps/api/.env | tail -n 1)"
+fi
+
+if [[ -z "$GOOGLE_CLIENT_ID" ]]; then
+  echo 'Set GOOGLE_CLIENT_ID to the OAuth 2.0 Web client ID before deploying.' >&2
+  exit 1
+fi
 
 run() {
   gcloud "$@"
@@ -77,7 +90,7 @@ run run deploy trivia-api \
   --image="$API_IMAGE" \
   --service-account="$RUNTIME_SERVICE_ACCOUNT" \
   --set-secrets="DATABASE_URL=${DATABASE_SECRET}:latest" \
-  --set-env-vars='CLIENT_ORIGIN=https://placeholder.invalid' \
+  --set-env-vars="CLIENT_ORIGIN=https://placeholder.invalid,GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}" \
   --min-instances=1 \
   --max-instances=1 \
   --allow-unauthenticated
@@ -92,14 +105,14 @@ fi
 run builds submit \
   --project="$PROJECT_ID" \
   --config=deploy/cloudbuild.frontend.yaml \
-  --substitutions="_IMAGE=${STUDENT_IMAGE},_APP=student,_VITE_API_URL=${API_URL},_VITE_STUDENT_APP_URL=https://placeholder.invalid,_VITE_TEACHER_APP_URL=${PREVIOUS_TEACHER_URL}"
+  --substitutions="_IMAGE=${STUDENT_IMAGE},_APP=student,_VITE_API_URL=${API_URL},_VITE_STUDENT_APP_URL=https://placeholder.invalid,_VITE_TEACHER_APP_URL=${PREVIOUS_TEACHER_URL},_VITE_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}"
 run run deploy trivia-student --project="$PROJECT_ID" --region="$REGION" --image="$STUDENT_IMAGE" --allow-unauthenticated
 STUDENT_URL="$(service_url trivia-student)"
 
 run builds submit \
   --project="$PROJECT_ID" \
   --config=deploy/cloudbuild.frontend.yaml \
-  --substitutions="_IMAGE=${TEACHER_IMAGE},_APP=web,_VITE_API_URL=${API_URL},_VITE_STUDENT_APP_URL=${STUDENT_URL},_VITE_TEACHER_APP_URL=https://placeholder.invalid"
+  --substitutions="_IMAGE=${TEACHER_IMAGE},_APP=web,_VITE_API_URL=${API_URL},_VITE_STUDENT_APP_URL=${STUDENT_URL},_VITE_TEACHER_APP_URL=https://placeholder.invalid,_VITE_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}"
 run run deploy trivia-teacher --project="$PROJECT_ID" --region="$REGION" --image="$TEACHER_IMAGE" --allow-unauthenticated
 TEACHER_URL="$(service_url trivia-teacher)"
 
@@ -108,7 +121,7 @@ if [[ "$PREVIOUS_TEACHER_URL" == 'https://placeholder.invalid' ]]; then
   run builds submit \
     --project="$PROJECT_ID" \
     --config=deploy/cloudbuild.frontend.yaml \
-    --substitutions="_IMAGE=${STUDENT_REDIRECT_IMAGE},_APP=student,_VITE_API_URL=${API_URL},_VITE_STUDENT_APP_URL=https://placeholder.invalid,_VITE_TEACHER_APP_URL=${TEACHER_URL}"
+    --substitutions="_IMAGE=${STUDENT_REDIRECT_IMAGE},_APP=student,_VITE_API_URL=${API_URL},_VITE_STUDENT_APP_URL=https://placeholder.invalid,_VITE_TEACHER_APP_URL=${TEACHER_URL},_VITE_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}"
   run run deploy trivia-student --project="$PROJECT_ID" --region="$REGION" --image="$STUDENT_REDIRECT_IMAGE" --allow-unauthenticated
 fi
 

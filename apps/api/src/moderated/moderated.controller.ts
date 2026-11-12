@@ -1,17 +1,22 @@
-import { Body, Controller, Get, Param, ParseIntPipe, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { AdvanceModeratedQuestionDto, ArcheryNextDto, ArcheryShotDto, BattleshipAttackDto, BattleshipNextDto, CreateModeratedSessionDto, CurlingNextDto, CurlingReleaseDto, FacilitatorActionDto, FlipMatchingCardDto, JoinModeratedSessionDto, MatchingNextDto, ReportModeratedGameScoreDto, RestartModeratedSessionDto, SubmitModeratedAnswerDto, TreasureMapDigDto, TreasureMapNextDto, UpdateBoardAutoResetDto, UpdateLobbyLockDto, UpdatePresentationModeDto } from './dto/moderated-session.dto';
+import { Body, Controller, Get, Param, ParseIntPipe, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
+import { AdvanceModeratedQuestionDto, ArcheryNextDto, ArcheryShotDto, BattleshipAttackDto, BattleshipNextDto, CreateModeratedSessionDto, CurlingNextDto, CurlingReleaseDto, FacilitatorActionDto, FlipMatchingCardDto, JoinModeratedSessionDto, MatchingNextDto, ReportModeratedGameScoreDto, RestartModeratedSessionDto, SubmitModeratedAnswerDto, TreasureMapDigDto, TreasureMapNextDto, UpdateBoardAutoResetDto, UpdateLobbyLockDto, UpdateModeratedDurationDto, UpdatePresentationModeDto } from './dto/moderated-session.dto';
 import { ModeratedService } from './moderated.service';
+import { GoogleAuthGuard } from '../auth/google-auth.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { AuthUser } from '../auth/auth.types';
 
 @Controller('moderated-sessions')
 export class ModeratedController {
   constructor(private readonly moderatedService: ModeratedService) {}
 
   @Get()
-  listActive() { return this.moderatedService.listActive(); }
+  @UseGuards(GoogleAuthGuard)
+  listActive(@CurrentUser() user: AuthUser) { return this.moderatedService.listActive(user); }
 
   @Post('quiz/:quizId')
-  create(@Param('quizId', ParseIntPipe) quizId: number, @Body() body: CreateModeratedSessionDto) {
-    return this.moderatedService.create(quizId, body?.mode, body.durationSeconds, body.endless, body.scoringEnabled);
+  @UseGuards(GoogleAuthGuard)
+  create(@Param('quizId', ParseIntPipe) quizId: number, @Body() body: CreateModeratedSessionDto, @CurrentUser() user: AuthUser) {
+    return this.moderatedService.create(quizId, body?.mode, body.durationSeconds, body.endless, body.scoringEnabled, user);
   }
 
   @Post('pin/:pin/participants')
@@ -100,69 +105,85 @@ export class ModeratedController {
   }
 
   @Get(':sessionId/facilitator')
+  @UseGuards(GoogleAuthGuard)
   facilitatorState(
     @Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string,
-    @Query('token') token: string,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.moderatedService.facilitatorState(sessionId, token);
+    return this.moderatedService.facilitatorState(sessionId, user);
   }
 
   @Post(':sessionId/start')
+  @UseGuards(GoogleAuthGuard)
   start(
     @Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string,
-    @Body() body: FacilitatorActionDto,
+    @Body() _: FacilitatorActionDto, @CurrentUser() user: AuthUser,
   ) {
-    return this.moderatedService.start(sessionId, body.facilitatorToken);
+    return this.moderatedService.start(sessionId, user);
   }
 
   @Post(':sessionId/end')
-  end(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: FacilitatorActionDto) {
-    return this.moderatedService.end(sessionId, body.facilitatorToken);
+  @UseGuards(GoogleAuthGuard)
+  end(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() _: FacilitatorActionDto, @CurrentUser() user: AuthUser) {
+    return this.moderatedService.end(sessionId, user);
+  }
+
+  @Post(':sessionId/duration')
+  @UseGuards(GoogleAuthGuard)
+  updateDuration(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: UpdateModeratedDurationDto, @CurrentUser() user: AuthUser) {
+    return this.moderatedService.updateDuration(sessionId, user, body.durationSeconds);
   }
 
   @Post(':sessionId/restart')
-  restart(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: RestartModeratedSessionDto) {
-    return this.moderatedService.restart(sessionId, body.facilitatorToken, body.mode);
+  @UseGuards(GoogleAuthGuard)
+  restart(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: RestartModeratedSessionDto, @CurrentUser() user: AuthUser) {
+    return this.moderatedService.restart(sessionId, user, body.mode);
   }
 
   @Post(':sessionId/board/reset')
-  resetBoard(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: FacilitatorActionDto) {
-    return this.moderatedService.resetBoard(sessionId, body.facilitatorToken);
+  @UseGuards(GoogleAuthGuard)
+  resetBoard(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() _: FacilitatorActionDto, @CurrentUser() user: AuthUser) {
+    return this.moderatedService.resetBoard(sessionId, user);
   }
 
   @Post(':sessionId/board/auto-reset')
-  updateBoardAutoReset(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: UpdateBoardAutoResetDto) {
-    return this.moderatedService.updateBoardAutoReset(sessionId, body.facilitatorToken, body.autoBoardReset);
+  @UseGuards(GoogleAuthGuard)
+  updateBoardAutoReset(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: UpdateBoardAutoResetDto, @CurrentUser() user: AuthUser) {
+    return this.moderatedService.updateBoardAutoReset(sessionId, user, body.autoBoardReset);
   }
 
   @Post(':sessionId/next')
-  next(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: FacilitatorActionDto) {
-    return this.moderatedService.next(sessionId, body.facilitatorToken);
+  @UseGuards(GoogleAuthGuard)
+  next(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() _: FacilitatorActionDto, @CurrentUser() user: AuthUser) {
+    return this.moderatedService.next(sessionId, user);
   }
 
   @Post(':sessionId/lobby')
+  @UseGuards(GoogleAuthGuard)
   updateLobbyLock(
     @Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string,
-    @Body() body: UpdateLobbyLockDto,
+    @Body() body: UpdateLobbyLockDto, @CurrentUser() user: AuthUser,
   ) {
-    return this.moderatedService.updateLobbyLock(sessionId, body.facilitatorToken, body.lobbyLocked);
+    return this.moderatedService.updateLobbyLock(sessionId, user, body.lobbyLocked);
   }
 
   @Post(':sessionId/presentation')
+  @UseGuards(GoogleAuthGuard)
   updatePresentationMode(
     @Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string,
-    @Body() body: UpdatePresentationModeDto,
+    @Body() body: UpdatePresentationModeDto, @CurrentUser() user: AuthUser,
   ) {
-    return this.moderatedService.updatePresentationMode(sessionId, body.facilitatorToken, body.presentationMode);
+    return this.moderatedService.updatePresentationMode(sessionId, user, body.presentationMode);
   }
 
   @Post(':sessionId/participants/:participantId/remove')
+  @UseGuards(GoogleAuthGuard)
   removeParticipant(
     @Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string,
     @Param('participantId', new ParseUUIDPipe({ version: '4' })) participantId: string,
-    @Body() body: FacilitatorActionDto,
+    @Body() _: FacilitatorActionDto, @CurrentUser() user: AuthUser,
   ) {
-    return this.moderatedService.removeParticipant(sessionId, body.facilitatorToken, participantId);
+    return this.moderatedService.removeParticipant(sessionId, user, participantId);
   }
 
 }

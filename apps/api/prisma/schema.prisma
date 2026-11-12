@@ -15,7 +15,7 @@ model Quiz {
   randomizeQuestionOrder Boolean @default(false)
   theme       String     @default("standard")
   answerMatching String  @default("close")
-  // Number of pairs on the shared Matching-mode board, from a 2×2 board through 10×10.
+  // Number of pairs on the shared Matching-mode board, from a 2×2 board through 8×8.
   matchingPairCount Int @default(6)
   // Square grid used by the shared Battleship-mode board. The fleet size is
   // derived from this setting so the editor can present one sensible preset.
@@ -29,7 +29,27 @@ model Quiz {
   archivedAt  DateTime?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
+  ownerId     String?
+  owner       User?      @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   questions   Question[]
+
+  @@index([ownerId, createdAt])
+}
+
+model User {
+  id                String            @id @default(uuid()) @db.Uuid
+  googleSubject     String            @unique
+  email             String            @unique
+  name              String
+  picture           String?
+  canViewAllQuizzes Boolean           @default(false)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  quizzes           Quiz[]
+  dataSets          DataSet[]
+  answerPools       AnswerPool[]
+  commonQuestions   CommonQuestion[]
+  homeworkSessions  HomeworkSession[]
 }
 
 model HomeworkSession {
@@ -42,9 +62,12 @@ model HomeworkSession {
   endsAt           DateTime
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
+  ownerId          String?
+  owner            User?                 @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   participants     HomeworkParticipant[]
 
   @@index([ended, endsAt])
+  @@index([ownerId, createdAt])
 }
 
 model HomeworkParticipant {
@@ -100,19 +123,27 @@ model CommonQuestion {
   correctAnswer String
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
+  ownerId      String?
+  owner        User?       @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   answerPool   AnswerPool? @relation(fields: [answerPoolId], references: [id], onDelete: SetNull)
 
   @@index([answerPoolId])
+  @@index([ownerId])
 }
 
 model AnswerPool {
   id              Int                 @id @default(autoincrement())
-  name            String              @unique
+  name            String
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
+  ownerId         String?
+  owner           User?               @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   answers         AnswerPoolAnswer[]
   questions       Question[]
   commonQuestions CommonQuestion[]
+
+  @@index([ownerId])
+  @@unique([ownerId, name])
 }
 
 model AnswerPoolAnswer {
@@ -131,7 +162,11 @@ model DataSet {
   name      String
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
+  ownerId   String?
+  owner     User?         @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   pairs     DataSetPair[]
+
+  @@index([ownerId, updatedAt])
 }
 
 model DataSetPair {

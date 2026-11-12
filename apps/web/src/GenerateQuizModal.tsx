@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
+import { AUTH_TOKEN_KEY, expireAuthSession } from './auth-session';
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+const API_URL = import.meta.env.VITE_API_URL ?? (['localhost', '127.0.0.1'].includes(window.location.hostname)
+  ? `${window.location.protocol}//${window.location.hostname}:3000`
+  : window.location.origin);
 type QuestionType = 'multiple_choice' | 'true_false' | 'matching' | 'short_answer';
 const QUESTION_TYPES: { value: QuestionType; label: string }[] = [
   { value: 'multiple_choice', label: 'Multiple choice' },
@@ -23,7 +26,9 @@ export function GenerateQuizModal({ dataSet, onClose, onCreated }: { dataSet: { 
     if (Number(questionCount) < types.length) { setError('Choose at least one question for each selected type.'); return; }
     setSaving(true); setError('');
     try {
-      const response = await fetch(`${API_URL}/data-sets/${dataSet.id}/generate-quiz`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, questionCount: Number(questionCount), questionTypes: types, gameCount: Number(gameCount) }) });
+      const token = localStorage.getItem(AUTH_TOKEN_KEY);
+      const response = await fetch(`${API_URL}/data-sets/${dataSet.id}/generate-quiz`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ title, questionCount: Number(questionCount), questionTypes: types, gameCount: Number(gameCount) }) });
+      if (response.status === 401) expireAuthSession();
       const result = await response.json().catch(() => null);
       if (!response.ok) throw new Error(Array.isArray(result?.message) ? result.message.join(', ') : result?.message || 'Could not generate quiz');
       onCreated(result.id);
