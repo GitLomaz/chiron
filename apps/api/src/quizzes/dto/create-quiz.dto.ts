@@ -1,7 +1,7 @@
 import { IsBoolean, IsIn, IsInt, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { ANSWER_MATCHING_MODES, AnswerMatching } from '../../question-types/answer-matching';
 
-export const QUIZ_THEMES = ['standard', 'kids', 'christmas', 'halloween'] as const;
+export const QUIZ_THEMES = ['standard', 'kids', 'christmas', 'halloween', 'night'] as const;
 export type QuizTheme = typeof QUIZ_THEMES[number];
 
 export const TIMER_SECONDS = [-1, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180] as const;

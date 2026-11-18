@@ -28,8 +28,10 @@ test('battleship awards attack tokens and shares only resolved attacks', async (
   const afterAttack = service.attackBattleship(run.pin, student.participantId, 0);
   assert.equal(afterAttack.tokens, 0);
   assert.equal(afterAttack.cells[0].result, 'hit');
+  assert.equal(afterAttack.score, 100);
   assert.equal(service.facilitatorState(run.sessionId, run.facilitatorToken).battleship.hits, 1);
   assert.equal(service.facilitatorState(run.sessionId, run.facilitatorToken).battleship.lastHit.participantName, 'Student');
+  assert.deepEqual(service.facilitatorState(run.sessionId, run.facilitatorToken).gameLeaderboard, [{ id: student.participantId, name: 'Student', score: 100 }]);
   assert.throws(() => service.attackBattleship(run.pin, student.participantId, 0), /attack token/);
 });
 
@@ -53,6 +55,7 @@ test('battleship uses the selected preset and starts a clean board after the fle
   assert.equal(reset.battleship.complete, false);
   assert.equal(reset.battleship.cells.length, 36);
   assert.equal(service.studentState(run.pin, student.participantId).battleship.tokens, 0);
+  assert.equal(service.studentState(run.pin, student.participantId).battleship.score, 100);
 });
 
 test('automatic reset starts a fresh Battleship board after the completion fanfare window', async () => {

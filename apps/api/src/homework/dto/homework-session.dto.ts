@@ -7,8 +7,12 @@ export class CreateHomeworkSessionDto {
   durationSeconds!: number;
 
   @IsOptional()
-  @IsIn(['classic', 'archery', 'curling'])
-  mode?: 'classic' | 'archery' | 'curling';
+  @IsIn(['classic', 'archery', 'curling', 'speak'])
+  mode?: 'classic' | 'archery' | 'curling' | 'speak';
+
+  @IsOptional()
+  @IsIn(['en-US', 'fr-FR', 'es-ES'])
+  speechLanguage?: 'en-US' | 'fr-FR' | 'es-ES';
 }
 
 class LegacyFacilitatorTokenDto {
@@ -47,6 +51,15 @@ export class SubmitHomeworkAnswerDto {
   @IsString()
   @MaxLength(500)
   answer!: string;
+}
+
+export class SubmitSpokenHomeworkAnswerDto {
+  @IsUUID('4')
+  participantId!: string;
+
+  @IsString()
+  @MinLength(1)
+  questionId!: string;
 }
 
 export class CompleteHomeworkItemDto {

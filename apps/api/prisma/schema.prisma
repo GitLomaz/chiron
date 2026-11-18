@@ -105,6 +105,7 @@ model Question {
   text         String
   options      Json
   correctAnswer String
+  acceptedAnswers Json @default("[]")
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
   quiz         Quiz        @relation(fields: [quizId], references: [id], onDelete: Cascade)
@@ -121,6 +122,7 @@ model CommonQuestion {
   text         String
   options      Json
   correctAnswer String
+  acceptedAnswers Json @default("[]")
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
   ownerId      String?

@@ -328,3 +328,80 @@
 :is(.theme-christmas, .theme-halloween) .option-key { background: #fff; color: var(--season-ink); }
 :is(.theme-christmas, .theme-halloween) .score-ring { background: conic-gradient(var(--season-accent) var(--score), var(--season-track) 0); }
 :is(.theme-christmas, .theme-halloween) .question-card.timed-question { --timer-ring-color: var(--season-accent); border-color: transparent; }
+
+/* Night uses the same navy surface, border, and accent palette as the admin panel's dark mode. */
+.theme-night { color-scheme: dark; color: #dbe5f5; background: #111827; }
+body:has(.theme-night) { background: #111827; }
+.theme-night.quiz-page,
+.theme-night .quiz-page,
+.theme-night .student-app { background: #111827; }
+.theme-night :is(.brand, .welcome-card h1, .intro-card h1, .question-card h1, .results-card h1, .error-card h1, .game-heading h1) { color: #edf3ff; }
+.theme-night :is(.welcome-card, .intro-card, .question-card, .results-card, .error-card, .game-card) { border-color: #2b3950; background: #182235; box-shadow: 0 22px 55px #060b1455; }
+.theme-night :is(.lede, .question-count, .score-copy, .footer-note, .question-label, .game-heading p:last-child, .game-tip, .error-card > p:not(.eyebrow)) { color: #aebed5; }
+.theme-night :is(.eyebrow, .question-count strong, .back-button, .text-button) { color: #a9ccff; }
+.theme-night .brand-mark,
+.theme-night .primary-button { background: #4d7ec2; box-shadow: 0 8px 18px #060b1455; }
+.theme-night .primary-button:hover:not(:disabled) { background: #3d6bab; }
+.theme-night .progress { background: #33435f; }
+.theme-night .progress span { background: #4d7ec2; }
+.theme-night .option { border-color: #2b3950; background: #182235; color: #e7effc; }
+.theme-night .option:hover { border-color: #6e9bd7; background: #202e45; }
+.theme-night .option.selected { border-color: #5b9cff; background: #213a5d; box-shadow: inset 0 0 0 1px #5b9cff; }
+.theme-night .option-key { background: #33435f; color: #d5e2f7; }
+.theme-night .option.selected .option-key { background: #4d7ec2; }
+.theme-night .score-ring { background: conic-gradient(#4d7ec2 var(--score), #33435f 0); }
+.theme-night .score-ring::after { background: #182235; }
+.theme-night :is(.score-ring span, .score-copy strong) { color: #edf3ff; }
+.theme-night :is(.join-form label, .short-answer-form > label) { color: #c8d5e8; }
+.theme-night :is(.join-row input, .short-answer-form input, .moderated-join-form input) { border-color: #3a4b66; background: #101827; color: #eef4ff; }
+.theme-night :is(.join-row input, .short-answer-form input, .moderated-join-form input):focus { border-color: #71a6ef; box-shadow: 0 0 0 3px #5793e42e; }
+.theme-night .volume-control,
+body:has(.theme-night) .volume-control,
+.theme-night .run-deadline,
+.theme-night .timer-badge { border-color: #405371; background: #202e45; color: #c8d5e8; box-shadow: 0 4px 16px #060b1455; }
+.theme-night .volume-control output,
+body:has(.theme-night) .volume-control output,
+.theme-night .timer-badge { color: #a9ccff; }
+.theme-night .game-heading .eyebrow,
+.theme-night .game-stats strong { color: #a9ccff; }
+.theme-night .game-stats span { background: #202e45; color: #b8c6dc; }
+.theme-night .matching-option { border-color: #2b3950; background: #182235; color: #e7effc; }
+.theme-night .matching-option.is-selected { border-color: #5b9cff; background: #213a5d; }
+.theme-night .matching-option.is-matched { border-color: #35745d; background: #173127; color: #9dd7b4; }
+.theme-night .score-so-far { border-color: #33435f; background: #202e45; color: #c8d5e8; }
+.theme-night .score-so-far strong { color: #f5f8ff; }
+.theme-night .score-so-far small { color: #9fb0ca; }
+.theme-night .answer-summary.correct { border-color: #2e795d; background: #17382f; color: #9dd7b4; }
+.theme-night .answer-summary.incorrect { border-color: #874758; background: #3a232e; color: #ffb5c0; }
+.theme-night .question-card.timed-question { --timer-ring-color: #71a6ef; border-color: transparent; }
+.theme-night .spoken-answer { border-color: #2b3950; background: #202e45; }
+.theme-night .voice-wave { background: #101827; }
+.theme-night .voice-wave i { background: #405371; }
+.theme-night .voice-wave.is-listening { background: #162b45; }
+.theme-night .voice-wave.is-listening i { background: #71a6ef; }
+.theme-night :is(.spoken-status, .spoken-answer small, .spoken-transcript) { color: #aebed5; }
+.theme-night .speak-button { background: #4d7ec2; box-shadow: 0 8px 0 #345d94, 0 14px 26px #060b1455; }
+.theme-night .speak-button.recording { background: #b85037; box-shadow: 0 8px 0 #803a2a, 0 14px 26px #060b1455; }
+.theme-night .spoken-retry { border-color: #405371; background: #202e45; color: #a9ccff; box-shadow: 0 8px 0 #111827; }
+.theme-night .spoken-skip { color: #aebed5; }
+.theme-night .spoken-playback { border-color: #405371; background: #101827; color: #c8d5e8; }
+
+.theme-night.spoken-mode-page { background: #111827; color: #dbe5f5; }
+.theme-night .spoken-exit { color: #aebed5; }
+.theme-night .spoken-progress { background: #33435f; box-shadow: inset 0 0 0 1px #405371; }
+.theme-night .spoken-progress span { background: #4d7ec2; box-shadow: inset 0 9px 0 #71a6ef; }
+.theme-night .spoken-hud { color: #c8d5e8; }
+.theme-night .spoken-hud i { background: #4d7ec2; }
+.theme-night .spoken-energy { background: #202e45; box-shadow: 0 4px 0 #101827; }
+.theme-night .spoken-mode-card > h1,
+.theme-night .spoken-prompt-card span { color: #edf3ff; }
+.theme-night .spoken-prompt-card { border-color: #2b3950; background: #182235; box-shadow: inset 0 15px 0 #202e45; }
+.theme-night .spoken-mode-card .spoken-answer { background: transparent; }
+.theme-night .spoken-mode-card .voice-wave { background: #101827; }
+.theme-night .spoken-mode-card .voice-wave.is-listening { background: #162b45; }
+.theme-night .spoken-mode-card .voice-wave i { background: #405371; }
+.theme-night .spoken-mode-card .voice-wave.is-listening i { background: #71a6ef; }
+.theme-night .spoken-mode-card .speak-button,
+.theme-night .spoken-mode-card .speak-button.recording { background: #4d7ec2; box-shadow: 0 11px 0 #345d94, 0 18px 30px #060b1455; }
+.theme-night .spoken-result.correct { background: #17382f; color: #9dd7b4; }
+.theme-night .spoken-result.incorrect { background: #3a232e; color: #ffb5c0; }

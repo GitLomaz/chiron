@@ -31,7 +31,7 @@ service_url() {
 }
 
 run config set project "$PROJECT_ID"
-run services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com
+run services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com speech.googleapis.com
 
 if ! gcloud artifacts repositories describe "$REPOSITORY" --project="$PROJECT_ID" --location="$REGION" >/dev/null 2>&1; then
   run artifacts repositories create "$REPOSITORY" \
@@ -58,6 +58,10 @@ run secrets add-iam-policy-binding "$DATABASE_SECRET" \
   --project="$PROJECT_ID" \
   --member="serviceAccount:${RUNTIME_SERVICE_ACCOUNT}" \
   --role='roles/secretmanager.secretAccessor'
+run projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:${RUNTIME_SERVICE_ACCOUNT}" \
+  --role='roles/speech.client' \
+  --condition=None
 
 TAG="$(date -u +%Y%m%d%H%M%S)"
 REGISTRY="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}"

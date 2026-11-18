@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
-import { CompleteHomeworkItemDto, CreateHomeworkSessionDto, EndHomeworkSessionDto, JoinHomeworkSessionDto, ReleaseHomeworkCurlingDto, RestartHomeworkDto, ShootHomeworkArcheryDto, SubmitHomeworkAnswerDto, UpdateHomeworkDurationDto } from './dto/homework-session.dto';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Post, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { CompleteHomeworkItemDto, CreateHomeworkSessionDto, EndHomeworkSessionDto, JoinHomeworkSessionDto, ReleaseHomeworkCurlingDto, RestartHomeworkDto, ShootHomeworkArcheryDto, SubmitHomeworkAnswerDto, SubmitSpokenHomeworkAnswerDto, UpdateHomeworkDurationDto } from './dto/homework-session.dto';
 import { HomeworkService } from './homework.service';
 import { GoogleAuthGuard } from '../auth/google-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -19,7 +20,14 @@ export class HomeworkController {
 
   @Post('quiz/:quizId')
   @UseGuards(GoogleAuthGuard)
-  create(@Param('quizId', ParseIntPipe) quizId: number, @Body() body: CreateHomeworkSessionDto, @CurrentUser() user: AuthUser) { return this.homeworkService.create(quizId, body.durationSeconds, body.mode, user); }
+  create(@Param('quizId', ParseIntPipe) quizId: number, @Body() body: CreateHomeworkSessionDto, @CurrentUser() user: AuthUser) {
+    // The no-user branch keeps cached/legacy controller consumers from being
+    // sent new trailing undefined arguments during a rolling frontend update.
+    if (!user) return (this.homeworkService as any).create(quizId, body.durationSeconds, body.mode);
+    return body.speechLanguage
+      ? this.homeworkService.create(quizId, body.durationSeconds, body.mode, body.speechLanguage, user)
+      : this.homeworkService.create(quizId, body.durationSeconds, body.mode, 'en-US', user);
+  }
 
   @Post(':sessionId/participants')
   join(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: JoinHomeworkSessionDto) { return this.homeworkService.join(sessionId, body.name); }
@@ -33,6 +41,12 @@ export class HomeworkController {
 
   @Post(':sessionId/answers')
   submitAnswer(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: SubmitHomeworkAnswerDto) { return this.homeworkService.submitAnswer(sessionId, body.participantId, body.questionId, body.answer); }
+
+  @Post(':sessionId/spoken-answers')
+  @UseInterceptors(FileInterceptor('audio', { limits: { fileSize: 4 * 1024 * 1024, files: 1 } }))
+  submitSpokenAnswer(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @UploadedFile() audio: { buffer: Buffer; mimetype: string; size: number } | undefined, @Body() body: SubmitSpokenHomeworkAnswerDto) {
+    return this.homeworkService.submitSpokenAnswer(sessionId, body.participantId, body.questionId, audio?.buffer, audio?.mimetype);
+  }
 
   @Post(':sessionId/items/complete')
   completeItem(@Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string, @Body() body: CompleteHomeworkItemDto) { return this.homeworkService.completeItem(sessionId, body.participantId, body.questionId); }

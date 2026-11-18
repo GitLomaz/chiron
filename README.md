@@ -22,7 +22,7 @@ Quizboard is a teacher-led quiz and learning-game platform. Teachers use an admi
 - Complete homework through a private link before its deadline.
 - Receive per-question feedback, score updates, timers, progress indicators, and end-of-quiz results.
 - Use matching interactions and the available game activities when they are part of the quiz.
-- View the selected quiz theme: Standard, Kid-friendly, Christmas, or Halloween.
+- View the selected quiz theme: Standard, Kid-friendly, Christmas, Halloween, or Night.
 
 ### Teacher-led activities
 
@@ -34,6 +34,7 @@ Quizboard is a teacher-led quiz and learning-game platform. Teachers use an admi
 - Monitor participant progress and scores during a live activity.
 - End a session or remove a participant when needed.
 - Create homework runs with a closing time and review the results while the API process is running.
+- Create **Speak the Answer** homework in English, French, or Spanish. Students record a short spoken response; Google Cloud Speech-to-Text Chirp 3 returns a transcript for scoring, while recordings are never stored.
 
 ## Architecture
 

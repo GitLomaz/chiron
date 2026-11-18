@@ -35,10 +35,15 @@ test('matching mode shares one board and only broadcasts a completed two-card at
 
   const attempt = service.flipMatchingCard(run.pin, alice.participantId, 2);
   assert.equal(attempt.attempt.isMatch, true);
+  assert.equal(attempt.score, 100);
   assert.equal(attempt.attempt.isActor, true);
   assert.deepEqual(attempt.attempt.cards, [{ id: 0, symbol: 'A' }, { id: 2, symbol: 'A' }]);
   assert.equal(service.facilitatorState(run.sessionId, run.facilitatorToken).matching.attempt.id, attempt.attempt.id);
   assert.equal(service.facilitatorState(run.sessionId, run.facilitatorToken).matching.attempt.playerName, 'Alice');
+  assert.deepEqual(service.facilitatorState(run.sessionId, run.facilitatorToken).gameLeaderboard, [
+    { id: alice.participantId, name: 'Alice', score: 100 },
+    { id: bob.participantId, name: 'Bob', score: 0 },
+  ]);
 
   session.matching.attempt.startedAt = new Date(0);
   const shared = service.studentState(run.pin, bob.participantId).matching;
@@ -91,4 +96,5 @@ test('matching announces completion and lets the facilitator start a clean board
   assert.equal(reset.matching.complete, false);
   assert.equal(reset.matching.cards.length, 4);
   assert.equal(service.studentState(run.pin, student.participantId).matching.credits, 0);
+  assert.equal(service.studentState(run.pin, student.participantId).matching.score, 100);
 });

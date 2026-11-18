@@ -29,7 +29,7 @@ function Get-RunUrl {
 }
 
 Invoke-Gcloud config set project $ProjectId
-Invoke-Gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com
+Invoke-Gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com speech.googleapis.com
 
 & gcloud artifacts repositories describe $Repository --project=$ProjectId --location=$Region *> $null
 if ($LASTEXITCODE -ne 0) {
@@ -50,6 +50,7 @@ if ($LASTEXITCODE -ne 0) {
   Invoke-Gcloud iam service-accounts create trivia-runtime --project=$ProjectId --display-name='Trivia Cloud Run runtime'
 }
 Invoke-Gcloud secrets add-iam-policy-binding $DatabaseSecret --project=$ProjectId --member="serviceAccount:$runtimeServiceAccount" --role='roles/secretmanager.secretAccessor'
+Invoke-Gcloud projects add-iam-policy-binding $ProjectId --member="serviceAccount:$runtimeServiceAccount" --role='roles/speech.client' --condition=None
 
 $tag = (Get-Date).ToUniversalTime().ToString('yyyyMMddHHmmss')
 $registry = "$Region-docker.pkg.dev/$ProjectId/$Repository"

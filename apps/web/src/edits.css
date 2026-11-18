@@ -607,6 +607,82 @@ body:has(.admin-shell.dark-mode) .report-answer-list li.unanswered em { color: #
 .dark-mode .quiz-item-settings :is(.checkbox-label, .theme-select) { background: transparent; }
 .dark-mode .question-list { background: #182235; }
 
+/* Keep quiz items compact and scannable in the dark editor. */
+.dark-mode .question-list {
+  padding: 10px 14px 16px;
+  background: #141e30;
+}
+
+.dark-mode .question-list > li { border-bottom: 0; }
+
+.dark-mode .question-list > li[class*="quiz-item-"] {
+  overflow: hidden;
+  border: 1px solid #2b3950;
+  border-radius: 10px;
+  background: #182235;
+  transition: border-color .15s, box-shadow .15s;
+}
+
+.dark-mode .question-list > li[class*="quiz-item-"]:hover,
+.dark-mode .question-list > li[class*="quiz-item-"]:focus-within {
+  border-color: #405371;
+  box-shadow: 0 5px 16px #060b1430;
+}
+
+.dark-mode .question-list > .item-insert-slot {
+  height: 14px;
+  min-height: 14px;
+}
+
+.dark-mode .question-select,
+.dark-mode .quiz-item-question .question-select,
+.dark-mode .quiz-item-question .question-select:hover {
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 11px;
+  padding: 16px 116px 17px 16px;
+  background: #182235;
+}
+
+.dark-mode .question-select:hover { background: #1d2a40; }
+
+.dark-mode .selected-question .question-select,
+.dark-mode .selected-question .question-select:hover {
+  background: #1d304b;
+  box-shadow: inset 3px 0 #5b9cff;
+}
+
+.dark-mode .question-number {
+  padding-top: 4px;
+  color: #8fa1ba;
+}
+
+.dark-mode .question-list strong {
+  margin-bottom: 6px;
+  color: #f1f5fc;
+}
+
+.dark-mode .question-timer-setting { margin-top: 6px; color: #9fb0ca; }
+.dark-mode .question-item-badge { border: 1px solid #3b5b89; background: #213a5d; color: #a9ccff; }
+.dark-mode .game-item-badge { border: 1px solid #3d725f; background: #173127; color: #9dd7b4; }
+.dark-mode .text-item-badge { border: 1px solid #765a38; background: #342b20; color: #f0c17c; }
+
+.dark-mode .question-toggle {
+  top: 18px;
+  right: 61px;
+  color: #aebed5;
+}
+
+.dark-mode .question-toggle input { accent-color: #5b9cff; }
+.dark-mode .question-delete { top: 13px; right: 30px; color: #d97a8d; }
+.dark-mode .question-delete:hover:not(:disabled),
+.dark-mode .question-delete:focus-visible { color: #ffb5c0; background: #3a232e; }
+.dark-mode .question-grip { top: 13px; right: 3px; color: #91a3bf; }
+.dark-mode .question-grip:hover,
+.dark-mode .question-grip:focus-visible { color: #b9d3ff; background: #263958; }
+
+.dark-mode .answer-chip { padding: 4px 7px; }
+.dark-mode .disabled-question .question-list-content { opacity: .48; }
+
 body:has(.dark-mode) { background: #111827; }
 
 @media (max-width: 600px) {
@@ -812,6 +888,16 @@ body:has(.dark-mode) { background: #111827; }
 :is(.preview-theme-christmas, .preview-theme-halloween) .preview-card h3 { color: var(--season-ink); }
 :is(.preview-theme-christmas, .preview-theme-halloween) .preview-option { border: 2px solid var(--season-border); background: var(--season-light); color: var(--season-ink); }
 :is(.preview-theme-christmas, .preview-theme-halloween) .preview-option span { background: #fff; color: var(--season-ink); }
+.preview-theme-night { background: #111827; color: #dbe5f5; }
+.preview-theme-night .preview-brand { color: #edf3ff; }
+.preview-theme-night .preview-brand b { background: #4d7ec2; }
+.preview-theme-night .preview-progress { background: #33435f; }
+.preview-theme-night .preview-progress span { background: #4d7ec2; }
+.preview-theme-night .preview-card { border-color: #2b3950; background: #182235; box-shadow: 0 12px 28px #060b1455; }
+.preview-theme-night .preview-card > p { color: #a9ccff; }
+.preview-theme-night .preview-card h3 { color: #edf3ff; }
+.preview-theme-night .preview-option { border-color: #2b3950; background: #202e45; color: #e7effc; }
+.preview-theme-night .preview-option span { background: #33435f; color: #d5e2f7; }
 .session-history { margin-top: 24px; }
 .running-session-row { min-height: 72px; }
 .running-session-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-left: auto; }

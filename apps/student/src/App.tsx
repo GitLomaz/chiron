@@ -26,16 +26,20 @@ type QuizQuestion = {
   answer?: string | null;
   completed?: boolean;
   correctAnswer: string;
+  acceptedAnswers?: string[];
   answerCount: number | null;
   timerSeconds: number | null;
 };
+
+type QuizTheme = 'standard' | 'kids' | 'christmas' | 'halloween' | 'night';
 
 type Quiz = {
   guid: string;
   title: string;
   description: string | null;
-  theme: 'standard' | 'kids' | 'christmas' | 'halloween';
+  theme: QuizTheme;
   answerMatching?: 'exact' | 'close';
+  speechLanguage?: 'en-US' | 'fr-FR' | 'es-ES';
   defaultTimerSeconds: number;
   questions: QuizQuestion[];
 };
@@ -100,7 +104,7 @@ function VolumeControl() {
   </aside>;
 }
 
-function AnswerFeedbackEffects({ outcome, showConfetti = false }: { outcome?: boolean; showConfetti?: boolean }) {
+function AnswerFeedbackEffects({ outcome, showConfetti = false, pronounceAnswer, speechLanguage = 'en-US' }: { outcome?: boolean; showConfetti?: boolean; pronounceAnswer?: string; speechLanguage?: 'en-US' | 'fr-FR' | 'es-ES' }) {
   const { volume } = useAudioSettings();
   const sounds = useRef<{ correct: HTMLAudioElement; incorrect: HTMLAudioElement } | null>(null);
   const playedOutcome = useRef<boolean | null>(null);
@@ -125,14 +129,32 @@ function AnswerFeedbackEffects({ outcome, showConfetti = false }: { outcome?: bo
   }, [volume]);
 
   useEffect(() => {
+    const stopFeedbackAudio = () => {
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+      for (const sound of Object.values(sounds.current ?? {})) { sound.pause(); sound.currentTime = 0; }
+    };
+    window.addEventListener('quizboard:recording-start', stopFeedbackAudio);
+    return () => window.removeEventListener('quizboard:recording-start', stopFeedbackAudio);
+  }, []);
+
+  useEffect(() => {
     if (outcome === undefined) { playedOutcome.current = null; return; }
     if (playedOutcome.current === outcome) return;
     playedOutcome.current = outcome;
+    if (!outcome && pronounceAnswer?.trim() && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(pronounceAnswer.trim());
+      utterance.lang = speechLanguage;
+      utterance.rate = 0.82;
+      utterance.volume = volume / 100;
+      window.speechSynthesis.speak(utterance);
+      return;
+    }
     const audio = sounds.current?.[outcome ? 'correct' : 'incorrect'];
     if (!audio) return;
     audio.currentTime = 0;
     void audio.play().catch(() => { /* Sound is optional if audio playback is unavailable. */ });
-  }, [outcome]);
+  }, [outcome, pronounceAnswer, speechLanguage, volume]);
 
   return <KidsConfetti active={showConfetti && outcome === true} />;
 }
@@ -172,6 +194,10 @@ function KidsConfetti({ active }: { active: boolean }) {
     {shower.map(({ x, delay, drift, tilt, size, color }, index) => <i key={`shower-${index}`} style={{ '--confetti-x': `${x}%`, '--confetti-delay': `${delay}ms`, '--confetti-drift': `${drift}vw`, '--confetti-color': color, '--confetti-tilt': `${tilt}deg`, '--confetti-size': `${size}px` } as CSSProperties} />)}
     <div className="kids-confetti-burst" style={{ left: origin.x, top: origin.y }}>{burst.map(({ x, y, delay, tilt, size, color }, index) => <i key={index} style={{ '--burst-x': `${x}px`, '--burst-y': `${y}px`, '--confetti-delay': `${delay}ms`, '--confetti-color': color, '--confetti-tilt': `${tilt}deg`, '--confetti-size': `${size}px` } as CSSProperties} />)}</div>
   </div>;
+}
+
+function SpokenComboBurst({ combo }: { combo: number }) {
+  return <div className="spoken-combo-burst" aria-hidden="true"><i className="combo-spark combo-spark-one">✦</i><i className="combo-spark combo-spark-two">✦</i><i className="combo-spark combo-spark-three">✦</i><span>COMBO</span><strong>{combo}×</strong></div>;
 }
 
 async function getQuiz(guid: string) {
@@ -218,9 +244,10 @@ function effectiveTimerSeconds(questionTimerSeconds: number | null, defaultTimer
   return value === null || value === -1 ? null : value;
 }
 
-function timerText(seconds: number) {
-  const minutes = Math.floor(seconds / 60);
-  const remainder = seconds % 60;
+function timerText(seconds: number | null) {
+  const displaySeconds = seconds ?? 0;
+  const minutes = Math.floor(displaySeconds / 60);
+  const remainder = displaySeconds % 60;
   return minutes ? `${minutes}:${String(remainder).padStart(2, '0')}` : `0:${String(remainder).padStart(2, '0')}`;
 }
 
@@ -228,7 +255,7 @@ function personalizeText(text: string, name?: string) {
   return text.replace(/{{\s*name\s*}}/gi, name?.trim() || 'friend');
 }
 
-function TimerBadge({ seconds, expired = false }: { seconds: number; expired?: boolean }) {
+function TimerBadge({ seconds, expired = false }: { seconds: number | null; expired?: boolean }) {
   return <span className={`timer-badge${expired ? ' expired' : ''}`} role="timer" aria-label={expired ? 'Time expired' : `${seconds} seconds remaining`}>{expired ? 'Time’s up' : `⏱ ${timerText(seconds)}`}</span>;
 }
 
@@ -322,13 +349,22 @@ type ModeratedAnswerResult = { answer: string; correctAnswer: string; isCorrect:
 type ModeratedScore = { correct: number; answered: number; points?: number; streak?: number; lastAward?: { base: number; streak: number; speed: number; total: number } | null };
 type ModeratedQuestion = TimedQuestion & { special?: SpecialQuestion | null; matchProgress?: MatchProgress | null; id: string; text: string; itemType: 'question' | 'game' | 'text'; gameType: 'coin_catch' | 'match_pairs' | 'tower_stack' | null; options: string[]; number: number; total?: number; answered?: boolean; timedOut?: boolean; gameScore?: number | null; result?: ModeratedAnswerResult | null };
 type MatchingAttempt = { id: string; cards: { id: number; symbol: string }[]; startedAt: string; isMatch: boolean; isActor: boolean; playerName?: string };
-type MatchingState = { credits: number | null; columns: number; rows: number; selectedCard: { id: number; symbol: string } | null; cards: { symbol: string | null; matched: boolean }[]; attempt: MatchingAttempt | null; complete: boolean; completionId: string | null };
-type BattleshipState = { size: number; tokens: number | null; shipCells: number; hits: number; cells: { result: 'hit' | 'miss' | null }[]; lastHit: { id: string; cell: number; participantName: string } | null; complete: boolean; completionId: string | null };
+type MatchingState = { credits: number | null; score: number | null; columns: number; rows: number; selectedCard: { id: number; symbol: string } | null; cards: { symbol: string | null; matched: boolean }[]; attempt: MatchingAttempt | null; complete: boolean; completionId: string | null };
+type BattleshipState = { size: number; tokens: number | null; score: number | null; shipCells: number; hits: number; cells: { result: 'hit' | 'miss' | null }[]; lastHit: { id: string; cell: number; participantName: string } | null; complete: boolean; completionId: string | null };
+type GameLeaderboardEntry = { id: string; name: string; score: number };
 type TreasureMapState = { size: number; tokens: number | null; cells: { result: 'clue' | 'treasure' | null; hint: string | null; terrain: 'land' | 'stream' }[]; lastDig: { id: string; cell: number; participantName: string } | null; complete: boolean; completionId: string | null };
 type ArcheryState = { arrows: number | null; lastShot: { id: string; x: number; y: number; score: number; participantName?: string } | null; attempts: { id: string; x: number; y: number; score: number; participantName?: string }[] };
 type CurlingState = { stones: number | null; lastStone: { id: string; direction: number; speed: number; x: number; y: number; score: number; participantName?: string } | null; attempts: { id: string; direction: number; speed: number; x: number; y: number; score: number; participantName?: string }[] };
-type ModeratedStudentState = { endless: boolean; scoringEnabled: boolean; pin: string; title: string; description: string | null; theme: 'standard' | 'kids' | 'christmas' | 'halloween'; mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling'; matching: MatchingState | null; battleship: BattleshipState | null; treasureMap: TreasureMapState | null; archery: ArcheryState | null; curling: CurlingState | null; betweenQuestions: boolean; phase: 'lobby' | 'question' | 'complete'; endedByTeacher: boolean; expired: boolean; endsAt: string | null; removed: boolean; participant: { id: string; name: string } | null; score: ModeratedScore | null; currentQuestion: ModeratedQuestion | null };
-type FacilitatorState = { endless: boolean; scoringEnabled: boolean; sessionId: string; pin: string; title: string; description: string | null; mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling'; presentationMode: 'scores' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling'; matching: MatchingState | null; battleship: BattleshipState | null; treasureMap: TreasureMapState | null; archery: ArcheryState | null; curling: CurlingState | null; currentRound: number; phase: 'lobby' | 'question' | 'complete'; endedByTeacher: boolean; expired: boolean; endsAt: string | null; durationSeconds: number; lobbyLocked: boolean; autoBoardReset: boolean; boardResetAt: string | null; questionCount: number; completedCount: number; participants: { id: string; name: string; completed: boolean; completedItems: number; currentItemType: 'question' | 'game' | 'text' | null; currentAnswered: boolean; score: ModeratedScore }[]; scoreLeaderboard: { id: string; name: string; score: number; correct: number; answered: number; longestStreak: number }[] };
+type ModeratedStudentState = { endless: boolean; scoringEnabled: boolean; pin: string; title: string; description: string | null; theme: QuizTheme; mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling'; matching: MatchingState | null; battleship: BattleshipState | null; treasureMap: TreasureMapState | null; archery: ArcheryState | null; curling: CurlingState | null; gameLeaderboard: GameLeaderboardEntry[]; betweenQuestions: boolean; phase: 'lobby' | 'question' | 'complete'; endedByTeacher: boolean; expired: boolean; endsAt: string | null; removed: boolean; participant: { id: string; name: string } | null; score: ModeratedScore | null; currentQuestion: ModeratedQuestion | null };
+type FacilitatorState = { endless: boolean; scoringEnabled: boolean; sessionId: string; pin: string; title: string; description: string | null; mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling'; presentationMode: 'scores' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling'; matching: MatchingState | null; battleship: BattleshipState | null; treasureMap: TreasureMapState | null; archery: ArcheryState | null; curling: CurlingState | null; gameLeaderboard: GameLeaderboardEntry[]; currentRound: number; phase: 'lobby' | 'question' | 'complete'; endedByTeacher: boolean; expired: boolean; endsAt: string | null; durationSeconds: number; lobbyLocked: boolean; autoBoardReset: boolean; boardResetAt: string | null; questionCount: number; completedCount: number; participants: { id: string; name: string; completed: boolean; completedItems: number; currentItemType: 'question' | 'game' | 'text' | null; currentAnswered: boolean; score: ModeratedScore }[]; scoreLeaderboard: { id: string; name: string; score: number; correct: number; answered: number; longestStreak: number }[] };
+
+function GameLeaderboard({ leaderboard, playerId, game, projector = false }: { leaderboard: GameLeaderboardEntry[]; playerId?: string; game: 'Matching' | 'Battleship'; projector?: boolean }) {
+  const visible = projector ? leaderboard : leaderboard.slice(0, 5);
+  return <section className={`game-leaderboard${projector ? ' projector-game-leaderboard' : ''}`} aria-label={`${game} leaderboard`}>
+    <p>{game.toUpperCase()} LEADERBOARD</p>
+    {visible.length ? <ol>{visible.map((player, index) => <li key={player.id} className={player.id === playerId ? 'current-player' : ''}><b>{index + 1}</b><span>{player.name}</span><strong>{formatNumber(player.score)} pts</strong></li>)}</ol> : <small>Scores will appear here.</small>}
+  </section>;
+}
 
 async function moderatedRequest<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}/moderated-sessions${path}`, { ...options, headers: { 'Content-Type': 'application/json', ...(teacherAccessToken ? { Authorization: `Bearer ${teacherAccessToken}` } : {}), ...options?.headers } });
@@ -337,7 +373,7 @@ async function moderatedRequest<T>(path: string, options?: RequestInit): Promise
 }
 
 async function homeworkRequest<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}/homework-sessions${path}`, { ...options, headers: { 'Content-Type': 'application/json', ...(teacherAccessToken ? { Authorization: `Bearer ${teacherAccessToken}` } : {}), ...options?.headers } });
+  const response = await fetch(`${API_URL}/homework-sessions${path}`, { ...options, headers: { ...(options?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...(teacherAccessToken ? { Authorization: `Bearer ${teacherAccessToken}` } : {}), ...options?.headers } });
   if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(Array.isArray(body?.message) ? body.message.join(', ') : body?.message || 'Something went wrong'); }
   return response.json() as Promise<T>;
 }
@@ -379,14 +415,14 @@ function homeworkStudentUrl(sessionId: string) { return `${studentAppUrl()}/home
 function dateTimeLocalValue(value: string) { const date = new Date(value); return new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().slice(0, 16); }
 function LegacyTeacherRedirect({ path }: { path: string }) { useEffect(() => { window.location.replace(`${teacherAppUrl()}${path}`); }, [path]); return <main className="page status-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><div className="loader" /><p>Opening teacher controls…</p></main>; }
 
-function ModeratedCoinCatch({ pin, participantId, question, theme, facilitated }: { pin: string; participantId: string; question: ModeratedQuestion; theme: 'standard' | 'kids' | 'christmas' | 'halloween'; facilitated: boolean }) {
+function ModeratedCoinCatch({ pin, participantId, question, theme, facilitated }: { pin: string; participantId: string; question: ModeratedQuestion; theme: QuizTheme; facilitated: boolean }) {
   const [things, setThings] = useState<FallingThing[]>([]); const [score, setScore] = useState(question.gameScore ?? 0);
   useEffect(() => { const spawn = window.setInterval(() => { const kind: FallingThing['kind'] = Math.random() < .7 ? 'coin' : 'veggie'; const vegetables = ['🥕', '🥦', '🌽']; setThings((current) => [...current, { id: Date.now() + Math.random(), kind, left: 5 + Math.random() * 82, duration: 3 + Math.random() * 1.6, emoji: kind === 'coin' ? '🪙' : vegetables[Math.floor(Math.random() * vegetables.length)] }].slice(-14)); }, 610); return () => window.clearInterval(spawn); }, []);
   async function catchThing(thing: FallingThing) { setThings((current) => current.filter((item) => item.id !== thing.id)); const nextScore = thing.kind === 'coin' ? score + 1 : Math.max(0, score - 1); setScore(nextScore); try { await moderatedRequest(`/pin/${pin}/games/scores`, { method: 'POST', body: JSON.stringify({ participantId, questionId: question.id, score: nextScore }) }); } catch { /* The next state refresh will surface any session error. */ } }
 return <main className={`page quiz-page moderated-quiz-page theme-${theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-header-meta"><span className="question-label">LIVE GAME</span></span></header><div className="progress"><span style={{ width: `${(question.number / (question.total ?? 1)) * 100}%` }} /></div><section className="game-card moderated-game-card"><div className="game-heading"><div><p className="eyebrow">LIVE COIN CATCH</p><h1>{question.text}</h1><p>Catch coins and avoid veggies. Your score is live on the leaderboard.</p></div><div className="game-stats"><span>Score <strong>{score}</strong></span></div></div><div className="coin-catch-board">{things.map((thing) => <button key={thing.id} className={`falling-thing ${thing.kind}`} style={{ left: `${thing.left}%`, animationDuration: `${thing.duration}s` }} onClick={() => void catchThing(thing)} aria-label={thing.kind === 'coin' ? 'Catch coin' : 'Avoid vegetable'}>{thing.emoji}</button>)}</div><p className="game-tip">{facilitated ? 'Your facilitator will release the next round.' : 'The next round starts automatically when time is up.'}</p></section></main>;
 }
 
-function RemovedFromLiveTest({ theme, title }: { theme: 'standard' | 'kids' | 'christmas' | 'halloween'; title: string }) {
+function RemovedFromLiveTest({ theme, title }: { theme: QuizTheme; title: string }) {
   return <main className={`page quiz-page moderated-quiz-page theme-${theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="intro-card removal-card"><p className="eyebrow">LIVE TEST</p><h1>You’ve been removed.</h1><p className="lede">You no longer have access to <strong>{title}</strong>. Please speak with your facilitator if you think this was a mistake.</p></section></main>;
 }
 
@@ -454,7 +490,7 @@ function ModeratedStudent({ pin }: { pin: string }) {
     return <main className={`page quiz-page moderated-quiz-page matching-player-page${denseBoard ? ' dense-matching-player-page' : ''} theme-${state.theme}`}>
       <header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">MATCHING BREAK</span></header>
       <section className="game-card match-game-card matching-credit-game">
-        <div className="game-heading"><div><p className="eyebrow">MEMORY GAME</p><h1>Match Pairs</h1><p>Flip two cards to find a pair. A wrong match costs one credit.</p></div><div className="game-stats"><span className="matching-credit-stat">Credits <strong>{matching.credits}</strong></span><span>Pairs <strong>{matchedPairs} / {matching.cards.length / 2}</strong></span></div></div>
+        <div className="game-heading"><div><p className="eyebrow">MEMORY GAME</p><h1>Match Pairs</h1><p>Flip two cards to find a pair. Each pair is worth 100 points; a wrong match costs one credit.</p></div><div className="game-stats"><span className="matching-credit-stat">Credits <strong>{matching.credits}</strong></span><span>Score <strong>{formatNumber(matching.score ?? 0)}</strong></span><span>Pairs <strong>{matchedPairs} / {matching.cards.length / 2}</strong></span></div></div>
         <div className="matching-board-frame"><SharedMatchBoard matching={matching} disabled={flipping} onFlip={(id) => void flip(id)} /></div>
         <p className="game-tip" aria-live="polite">{matchedPairs * 2 === matching.cards.length ? 'The class found all the pairs!' : matching.credits === 0 ? 'You are out of credits. Answer more questions to earn another.' : matching.attempt ? 'The shared board is revealing a pair.' : 'Your first pick stays on your screen. Pick a second card to reveal the pair to the class.'}</p>
         {error && <p className="form-error">{error}</p>}
@@ -462,8 +498,8 @@ function ModeratedStudent({ pin }: { pin: string }) {
       </section>
     </main>;
   }
-  if (playingBattleship && state.battleship) return <main className={`page quiz-page moderated-quiz-page theme-${state.theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">BATTLESHIP BREAK</span></header><section className="game-card battleship-game-card"><div className="game-heading"><div><p className="eyebrow">CLASSIC BATTLESHIP</p><h1>Take a shot</h1><p>Spend one attack token to fire at the shared fleet.</p></div><div className="game-stats"><span>Tokens <strong>{state.battleship.tokens}</strong></span><span>Hits <strong>{state.battleship.hits} / {state.battleship.shipCells}</strong></span></div></div><SharedBattleshipBoard battleship={state.battleship} disabled={flipping} onAttack={(cell) => void attack(cell)} /><p className="game-tip" aria-live="polite">{state.battleship.complete ? 'The fleet is sunk! Your teacher will start the next board.' : state.battleship.tokens ? 'Choose an unmarked square to attack.' : 'You are out of attack tokens. Answer more questions correctly to earn one.'}</p>{error && <p className="form-error">{error}</p>}<div className="matching-game-actions"><button className="matching-secondary-button" disabled={submitting} onClick={() => void nextBattleshipQuestion()}>{submitting ? 'Loading…' : 'Next question →'}</button></div></section></main>;
-  if (playingTreasureMap && state.treasureMap) return <main className={`page quiz-page moderated-quiz-page treasure-map-page theme-${state.theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">TREASURE MAP BREAK</span></header><section className="game-card treasure-map-game-card"><div className="game-heading"><div><p className="eyebrow">CLASS TREASURE HUNT</p><h1>Choose where to scout</h1><p>Spend a scout token to uncover a clue or find the treasure.</p></div><div className="game-stats"><span>Scout tokens <strong>{state.treasureMap.tokens}</strong></span><span>Clues <strong>{state.treasureMap.cells.filter((cell) => cell.result === 'clue').length}</strong></span></div></div><SharedTreasureMap map={state.treasureMap} disabled={flipping} onDig={(cell) => void dig(cell)} /><p className="game-tip" aria-live="polite">{state.treasureMap.complete ? 'Treasure found! Your teacher will start the next map.' : state.treasureMap.tokens ? 'Choose an unexplored square. Each miss reveals a shared clue.' : 'Answer more questions correctly to earn a scout token.'}</p>{error && <p className="form-error">{error}</p>}<div className="matching-game-actions"><button className="matching-secondary-button" disabled={submitting} onClick={() => void nextTreasureMapQuestion()}>{submitting ? 'Loading…' : 'Next question →'}</button></div></section></main>;
+  if (playingBattleship && state.battleship) return <main className={`page quiz-page moderated-quiz-page battleship-player-page theme-${state.theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">BATTLESHIP BREAK</span></header><section className="game-card battleship-game-card"><div className="game-heading"><div><p className="eyebrow">CLASSIC BATTLESHIP</p><h1>Take a shot</h1><p>Spend one attack token to fire at the shared fleet. Each hit is worth 100 points.</p></div><div className="game-stats"><span>Tokens <strong>{state.battleship.tokens}</strong></span><span>Score <strong>{formatNumber(state.battleship.score ?? 0)}</strong></span><span>Hits <strong>{state.battleship.hits} / {state.battleship.shipCells}</strong></span></div></div><div className="battleship-board-frame"><SharedBattleshipBoard battleship={state.battleship} disabled={flipping} onAttack={(cell) => void attack(cell)} /></div><p className="game-tip" aria-live="polite">{state.battleship.complete ? 'The fleet is sunk! Your teacher will start the next board.' : state.battleship.tokens ? 'Choose an unmarked square to attack.' : 'You are out of attack tokens. Answer more questions correctly to earn one.'}</p>{error && <p className="form-error">{error}</p>}<div className="matching-game-actions"><button className="matching-secondary-button" disabled={submitting} onClick={() => void nextBattleshipQuestion()}>{submitting ? 'Loading…' : 'Next question →'}</button></div></section></main>;
+  if (playingTreasureMap && state.treasureMap) return <main className={`page quiz-page moderated-quiz-page treasure-map-page theme-${state.theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">TREASURE MAP BREAK</span></header><section className="game-card treasure-map-game-card"><div className="game-heading"><div><p className="eyebrow">CLASS TREASURE HUNT</p><h1>Choose where to scout</h1><p>Spend one scout token to uncover a clue or find the treasure.</p></div><div className="game-stats"><span>Scout tokens <strong>{state.treasureMap.tokens}</strong></span><span>Clues <strong>{state.treasureMap.cells.filter((cell) => cell.result === 'clue').length}</strong></span></div></div><div className="treasure-map-board-frame"><SharedTreasureMap map={state.treasureMap} disabled={flipping} onDig={(cell) => void dig(cell)} /></div><p className="game-tip" aria-live="polite">{state.treasureMap.complete ? 'Treasure found! Your teacher will start the next map.' : state.treasureMap.tokens ? 'Choose an unexplored square. Each miss reveals a shared clue.' : 'Answer more questions correctly to earn a scout token.'}</p>{error && <p className="form-error">{error}</p>}<div className="matching-game-actions"><button className="matching-secondary-button" disabled={submitting} onClick={() => void nextTreasureMapQuestion()}>{submitting ? 'Loading…' : 'Next question →'}</button></div></section></main>;
   if (playingArchery && state.archery) return <main className={`page quiz-page moderated-quiz-page archery-player-page theme-${state.theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">ARCHERY BREAK</span></header><section className="game-card archery-game-card"><div className="game-heading"><div><p className="eyebrow">SHARED ARCHERY RANGE</p><h1>Aim your arrow</h1><p>Watch the lower bar, then tap the target to lock it. Repeat for the side bar.</p></div><div className="game-stats"><span>Arrows <strong>{state.archery.arrows}</strong></span><span>Best <strong>{state.archery.attempts[0]?.score ?? '—'}</strong></span></div></div><ArcheryAim archery={state.archery} disabled={flipping || (state.archery.arrows ?? 0) < 1} hideControls={(state.archery.arrows ?? 0) < 1} onShoot={(x, y) => void shootArchery(x, y)} /><p className={`game-tip archery-token-tip${(state.archery.arrows ?? 0) > 0 ? ' is-reserved' : ''}`} aria-live={(state.archery.arrows ?? 0) < 1 ? 'polite' : undefined}>Answer more questions correctly to earn another arrow.</p>{error && <p className="form-error">{error}</p>}<div className="matching-game-actions"><button className="matching-secondary-button" disabled={submitting} onClick={() => void nextArcheryQuestion()}>{submitting ? 'Loading…' : 'Next question →'}</button></div></section></main>;
   if (playingCurling && state.curling) return <main className={`page quiz-page moderated-quiz-page curling-player-page theme-${state.theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">CURLING BREAK</span></header><section className="game-card curling-game-card"><div className="game-heading"><div><p className="eyebrow">SHARED CURLING SHEET</p><h1>Slide your stone</h1><p>Choose its direction and speed, then release it toward the house.</p></div><div className="game-stats"><span>Stones <strong>{state.curling.stones}</strong></span><span>Best <strong>{state.curling.attempts[0]?.score ?? '—'}</strong></span></div></div><CurlingAim curling={state.curling} disabled={flipping || (state.curling.stones ?? 0) < 1} onRelease={(direction, speed) => void releaseCurlingStone(direction, speed)} /><p className="game-tip" aria-live="polite">Stones do not affect one another. Answer more questions correctly to earn another stone.</p>{error && <p className="form-error">{error}</p>}<div className="matching-game-actions"><button className="matching-secondary-button" disabled={submitting} onClick={() => void nextCurlingQuestion()}>{submitting ? 'Loading…' : 'Next question →'}</button></div></section></main>;
   if (state.phase === 'complete') return <WaitingScreen theme={state.theme} title={state.title} name={state.participant.name} copy="The test is complete. Thanks for taking part." score={state.score} scoreLabel="Final score" complete />;
@@ -524,13 +560,13 @@ function ModeratedStudent({ pin }: { pin: string }) {
   return <>{state?.phase === 'question' && !state.removed && !state.endedByTeacher && state.endsAt && <RunDeadline endsAt={state.endsAt} />}{render()}</>;
 }
 
-function QuizEnded({ theme, title, score, expired = false }: { theme: 'standard' | 'kids' | 'christmas' | 'halloween'; title: string; score?: ModeratedScore | null; expired?: boolean }) {
+function QuizEnded({ theme, title, score, expired = false }: { theme: QuizTheme; title: string; score?: ModeratedScore | null; expired?: boolean }) {
   return <main className={`page quiz-page moderated-quiz-page theme-${theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="intro-card waiting-card"><p className="eyebrow">{title}</p><h1>The quiz has ended.</h1><p className="lede">{expired ? 'Time is up for this quiz.' : 'Your teacher has ended this quiz.'}</p>{score && <div className="score-so-far"><span>Your score</span><strong>{score.points === undefined ? `${score.correct} / ${score.answered}` : `${score.points} pts`}</strong><small>{score.points === undefined ? 'correct answers recorded' : `${score.correct} correct answers recorded`}</small></div>}</section></main>;
 }
 
-function WaitingScreen({ theme, title, name, copy, questionText, result, score, scoreLabel = 'Score so far', complete = false, action, heading }: { theme: 'standard' | 'kids' | 'christmas' | 'halloween'; title: string; name: string; copy: string; questionText?: string; result?: ModeratedAnswerResult | null; score?: ModeratedScore | null; scoreLabel?: string; complete?: boolean; action?: ReactNode; heading?: ReactNode }) { return <main className={`page quiz-page moderated-quiz-page theme-${theme}`}><AnswerFeedbackEffects showConfetti={theme === 'kids'} outcome={result?.isCorrect} /><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="intro-card waiting-card"><p className="eyebrow">{title}</p><h1 data-confetti-origin={result?.isCorrect ? '' : undefined}>{heading ?? (complete ? `All done, ${name}!` : result ? result.isCorrect ? `Correct, ${name}!` : `Not quite, ${name}.` : `You’re in, ${name}.`)}</h1>{result && <div className={`answer-summary ${result.isCorrect ? 'correct' : 'incorrect'}`}><strong>{result.isCorrect ? 'You got it right.' : 'Here’s the answer.'}</strong>{!result.isCorrect && questionText && <div className="answer-summary-question"><span>Question</span><p>{questionText}</p></div>}<dl><div><dt>Your answer</dt><dd>{result.answer}</dd></div>{!result.isCorrect && <div><dt>Correct answer</dt><dd>{result.correctAnswer}</dd></div>}</dl></div>}<p className="lede">{copy}</p>{score && (complete || score.answered > 0) && <div className="score-so-far"><span>{scoreLabel}</span><strong>{score.points === undefined ? `${score.correct} / ${score.answered}` : `${score.points} pts`}</strong><small>{score.points === undefined ? `correct answer${score.answered === 1 ? '' : 's'}` : `${score.correct} correct${score.streak ? ` · ${score.streak} streak` : ''}`}</small>{score.lastAward && <small>+{score.lastAward.total}: {score.lastAward.base} correct, {score.lastAward.streak} streak, {score.lastAward.speed} speed</small>}</div>}{action ?? (!complete && <div className="loader small-loader" aria-label="Waiting" />)}</section></main>; }
+function WaitingScreen({ theme, title, name, copy, questionText, result, score, scoreLabel = 'Score so far', complete = false, action, heading }: { theme: QuizTheme; title: string; name: string; copy: string; questionText?: string; result?: ModeratedAnswerResult | null; score?: ModeratedScore | null; scoreLabel?: string; complete?: boolean; action?: ReactNode; heading?: ReactNode }) { return <main className={`page quiz-page moderated-quiz-page theme-${theme}`}><AnswerFeedbackEffects showConfetti={theme === 'kids'} outcome={result?.isCorrect} /><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="intro-card waiting-card"><p className="eyebrow">{title}</p><h1 data-confetti-origin={result?.isCorrect ? '' : undefined}>{heading ?? (complete ? `All done, ${name}!` : result ? result.isCorrect ? `Correct, ${name}!` : `Not quite, ${name}.` : `You’re in, ${name}.`)}</h1>{result && <div className={`answer-summary ${result.isCorrect ? 'correct' : 'incorrect'}`}><strong>{result.isCorrect ? 'You got it right.' : 'Here’s the answer.'}</strong>{!result.isCorrect && questionText && <div className="answer-summary-question"><span>Question</span><p>{questionText}</p></div>}<dl><div><dt>Your answer</dt><dd>{result.answer}</dd></div>{!result.isCorrect && <div><dt>Correct answer</dt><dd>{result.correctAnswer}</dd></div>}</dl></div>}<p className="lede">{copy}</p>{score && (complete || score.answered > 0) && <div className="score-so-far"><span>{scoreLabel}</span><strong>{score.points === undefined ? `${score.correct} / ${score.answered}` : `${score.points} pts`}</strong><small>{score.points === undefined ? `correct answer${score.answered === 1 ? '' : 's'}` : `${score.correct} correct${score.streak ? ` · ${score.streak} streak` : ''}`}</small>{score.lastAward && <small>+{score.lastAward.total}: {score.lastAward.base} correct, {score.lastAward.streak} streak, {score.lastAward.speed} speed</small>}</div>}{action ?? (!complete && <div className="loader small-loader" aria-label="Waiting" />)}</section></main>; }
 
-function MatchingWaitingScreen({ theme, title, name, questionText, pairs, progress, score, action }: { theme: 'standard' | 'kids' | 'christmas' | 'halloween'; title: string; name: string; questionText: string; pairs: { question: string; answer: string }[]; progress: MatchProgress | null | undefined; score: ModeratedScore | null; action?: ReactNode }) {
+function MatchingWaitingScreen({ theme, title, name, questionText, pairs, progress, score, action }: { theme: QuizTheme; title: string; name: string; questionText: string; pairs: { question: string; answer: string }[]; progress: MatchProgress | null | undefined; score: ModeratedScore | null; action?: ReactNode }) {
   const wrongMatches = progress?.wrongMatches ?? [];
   return <main className={`page quiz-page moderated-quiz-page theme-${theme}`}><AnswerFeedbackEffects outcome={false} /><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="intro-card waiting-card"><p className="eyebrow">{title}</p><h1>Not quite, {name}.</h1><div className="answer-summary incorrect matching-answer-summary"><strong>Here are the correct matches.</strong><div className="answer-summary-question"><span>Question</span><p>{questionText}</p></div>{wrongMatches.length > 0 && <section><span>Your incorrect match{wrongMatches.length === 1 ? '' : 'es'}</span><ol>{wrongMatches.map(({ left, right }, index) => <li key={`${left}-${right}-${index}`}><b>{pairs[left]?.question}</b><i>→</i><em>{pairs[right]?.answer}</em></li>)}</ol></section>}<section><span>Correct matches</span><ol>{pairs.map((pair, index) => <li key={index}><b>{pair.question}</b><i>→</i><em>{pair.answer}</em></li>)}</ol></section></div><p className="lede">Your answer is recorded. Choose next question when you are ready.</p>{score && score.answered > 0 && <div className="score-so-far"><span>Score so far</span><strong>{score.points === undefined ? `${score.correct} / ${score.answered}` : `${score.points} pts`}</strong><small>{score.points === undefined ? `correct answer${score.answered === 1 ? '' : 's'}` : `${score.correct} correct${score.streak ? ` · ${score.streak} streak` : ''}`}</small>{score.lastAward && <small>+{score.lastAward.total}: {score.lastAward.base} correct, {score.lastAward.streak} streak, {score.lastAward.speed} speed</small>}</div>}{action}</section></main>;
 }
@@ -598,14 +634,14 @@ export function Facilitator({ sessionId, token, projector = false, metrics = fal
     if (state.phase !== 'complete' && state.presentationMode === 'matching' && state.matching) {
       const matchedPairs = state.matching.cards.filter((card) => card.matched).length / 2;
       const denseBoard = state.matching.rows > 4;
-      return <main className={`projector-match-screen${denseBoard ? ' projector-dense-match-screen' : ''}`} aria-live="polite"><section className="projector-match-content"><header><div className="projector-title"><p>SHARED MEMORY BOARD</p><h1>Match Pairs</h1><span>{state.title}</span></div><div className="projector-match-header-stats"><ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} /><div className="projector-match-score"><span>PAIRS FOUND</span><strong>{matchedPairs} / {state.matching.cards.length / 2}</strong></div></div></header><div className="projector-match-board-frame"><SharedMatchBoard matching={state.matching} projector /></div><p className="projector-match-tip">Students choose two cards on their own screens. The pair is revealed here for everyone.</p></section></main>;
+      return <main className={`projector-match-screen${denseBoard ? ' projector-dense-match-screen' : ''}`} aria-live="polite"><section className="projector-match-content"><header><div className="projector-title"><p>SHARED MEMORY BOARD</p><h1>Match Pairs</h1><span>{state.title}</span></div><div className="projector-match-header-stats"><ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} /><div className="projector-match-score"><span>PAIRS FOUND</span><strong>{matchedPairs} / {state.matching.cards.length / 2}</strong></div></div></header><div className="projector-match-game-layout"><div className="projector-match-board-frame"><SharedMatchBoard matching={state.matching} projector /></div><GameLeaderboard leaderboard={state.gameLeaderboard} game="Matching" projector /></div><p className="projector-match-tip">Each pair is worth 100 points. Students choose two cards on their own screens, and the pair is revealed here for everyone.</p></section></main>;
     }
     if (state.phase !== 'complete' && state.presentationMode === 'battleship' && state.battleship) {
-      return <main className="projector-match-screen projector-battleship-screen" aria-live="polite"><ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} /><section className="projector-match-content"><header><div className="projector-title"><p>SHARED BATTLE MAP</p><h1>Battleship</h1><span>{state.title}</span></div><div className="projector-match-score"><span>FLEET HIT</span><strong>{state.battleship.hits} / {state.battleship.shipCells}</strong></div></header><SharedBattleshipBoard battleship={state.battleship} projector /><p className="projector-match-tip">Students earn attack tokens by answering correctly, then choose a square to fire on the shared map.</p></section></main>;
+      return <main className="projector-match-screen projector-battleship-screen" aria-live="polite"><ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} /><section className="projector-match-content"><header><div className="projector-title"><p>SHARED BATTLE MAP</p><h1>Battleship</h1><span>{state.title}</span></div><div className="projector-match-header-stats"><div className="projector-match-score"><span>FLEET HIT</span><strong>{state.battleship.hits} / {state.battleship.shipCells}</strong></div></div></header><div className="projector-match-game-layout"><div className="projector-grid-board-frame"><SharedBattleshipBoard battleship={state.battleship} projector /></div><GameLeaderboard leaderboard={state.gameLeaderboard} game="Battleship" projector /></div><p className="projector-match-tip">Each hit is worth 100 points. Students earn attack tokens by answering correctly, then choose a square to fire on the shared map.</p></section></main>;
     }
     if (state.phase !== 'complete' && state.presentationMode === 'treasure_map' && state.treasureMap) {
       const clues = state.treasureMap.cells.filter((cell) => cell.result === 'clue').length;
-      return <main className="projector-match-screen projector-treasure-map-screen" aria-live="polite"><ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} /><section className="projector-match-content"><header><div className="projector-title"><p>SHARED TREASURE HUNT</p><h1>Treasure Map</h1><span>{state.title}</span></div><div className="projector-match-score"><span>CLUES FOUND</span><strong>{clues}</strong></div></header><SharedTreasureMap map={state.treasureMap} projector /><p className="projector-match-tip">Students earn scout tokens with correct answers, then uncover clues to find the treasure together.</p></section></main>;
+      return <main className="projector-match-screen projector-treasure-map-screen" aria-live="polite"><ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} /><section className="projector-match-content"><header><div className="projector-title"><p>SHARED TREASURE HUNT</p><h1>Treasure Map</h1><span>{state.title}</span></div><div className="projector-match-score"><span>CLUES FOUND</span><strong>{clues}</strong></div></header><div className="projector-grid-board-frame"><SharedTreasureMap map={state.treasureMap} projector /></div><p className="projector-match-tip">Students earn scout tokens with correct answers, then uncover clues to find the treasure together.</p></section></main>;
     }
     if (state.phase !== 'complete' && state.presentationMode === 'archery' && state.archery) {
       return <main className="projector-match-screen projector-archery-screen" aria-live="polite"><ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} /><section className="projector-match-content"><header><div className="projector-title"><p>SHARED ARCHERY RANGE</p><h1>Archery</h1><span>{state.title}</span></div><div className="projector-match-score"><span>BEST BULLSEYE</span><strong>{state.archery.attempts[0]?.score ?? '—'}</strong></div></header><SharedArcheryBoard archery={state.archery} projector /><p className="projector-match-tip">Students place their shot using the bars beside and below the target.</p></section></main>;
@@ -715,9 +751,10 @@ type HomeworkStudentState = {
   sessionId: string;
   title: string;
   description: string | null;
-  theme: 'standard' | 'kids' | 'christmas' | 'halloween';
+  theme: QuizTheme;
   answerMatching?: 'exact' | 'close';
-  mode: 'classic' | 'archery' | 'curling';
+  mode: 'classic' | 'archery' | 'curling' | 'speak';
+  speechLanguage?: 'en-US' | 'fr-FR' | 'es-ES';
   ended: boolean;
   expired: boolean;
   endsAt: string;
@@ -733,7 +770,7 @@ type HomeworkTeacherState = {
   endsAt: string;
   questionCount: number;
   itemCount: number;
-  mode: 'classic' | 'archery' | 'curling';
+  mode: 'classic' | 'archery' | 'curling' | 'speak';
   participants: { id: string; name: string; attemptNumber: number; joinedAt: string; completed: boolean; completedAt: string | null; completedItems: number; score: { correct: number; answered: number; total: number }; shootingScore: number | null }[];
   questionStats: { id: string; text: string; matchingPairs?: { question: string; answer: string }[]; answered: number; correct: number; correctRate: number }[];
   archeryLeaderboard: { name: string; attempts: number; bestScore: number }[];
@@ -831,12 +868,17 @@ function HomeworkStudent({ sessionId }: { sessionId: string }) {
   const hasPendingCurlingStone = state.mode === 'curling' && (state.participant.curling?.stones ?? 0) > 0;
   if (state.participant.completed && !playerStarted.current && !hasPendingArcheryShot && !hasPendingCurlingStone) return <main className={`page quiz-page theme-${state.theme}`}><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header><section className="results-card"><p className="eyebrow">HOMEWORK COMPLETE</p><h1>Nice work, {state.participant.name}!</h1><p className="score-copy">Your teacher has your score: <strong>{state.participant.score.correct} of {state.participant.score.total}</strong>{state.mode === 'archery' ? <> · <strong>{state.participant.archery?.shootingScore ?? 0}</strong> archery points</> : state.mode === 'curling' ? <> · <strong>{state.participant.curling?.shootingScore ?? 0}</strong> curling points</> : null}.</p><div className="results-actions"><button className="primary-button" onClick={() => void restart()}>Take quiz again</button></div>{error && <p className="form-error">{error}</p>}</section></main>;
   playerStarted.current = true;
-  const quiz: Quiz = { guid: sessionId, title: state.title, description: state.description, theme: state.theme, answerMatching: state.answerMatching, defaultTimerSeconds: -1, questions: state.questions };
+  const quiz: Quiz = { guid: sessionId, title: state.title, description: state.description, theme: state.theme, answerMatching: state.answerMatching, speechLanguage: state.speechLanguage, defaultTimerSeconds: -1, questions: state.questions };
   const submitAnswer = (questionId: string, answer: string) => homeworkRequest(`/${sessionId}/answers`, { method: 'POST', body: JSON.stringify({ participantId, questionId, answer }) });
+  const submitSpokenAnswer = async (questionId: string, audio: Blob) => {
+    const form = new FormData();
+    form.append('participantId', participantId); form.append('questionId', questionId); form.append('audio', audio, 'answer.webm');
+    return homeworkRequest<{ detected: boolean; transcript?: string; isCorrect?: boolean; correctAnswer?: string }>(`/${sessionId}/spoken-answers`, { method: 'POST', body: form });
+  };
   const completeItem = (questionId: string) => homeworkRequest(`/${sessionId}/items/complete`, { method: 'POST', body: JSON.stringify({ participantId, questionId }) });
   const shootArchery = (x: number, y: number) => homeworkRequest<ArcheryState & { shootingScore: number }>(`/${sessionId}/archery/shoot`, { method: 'POST', body: JSON.stringify({ participantId, x, y }) });
   const releaseCurling = (direction: number, speed: number) => homeworkRequest<CurlingState & { shootingScore: number }>(`/${sessionId}/curling/release`, { method: 'POST', body: JSON.stringify({ participantId, direction, speed }) });
-  return <div className={`student-app theme-${state.theme}`}>{!playerFinished && <RunDeadline endsAt={state.endsAt} />}<Player key={participantId} quiz={quiz} studentName={state.participant.name} onSubmitAnswer={submitAnswer} onCompleteItem={completeItem} onFinished={() => setPlayerFinished(true)} onRestart={() => void restart()} archery={state.participant.archery ?? undefined} onShootArchery={state.mode === 'archery' ? shootArchery : undefined} curling={state.participant.curling ?? undefined} onReleaseCurling={state.mode === 'curling' ? releaseCurling : undefined} /></div>;
+  return <div className={`student-app theme-${state.theme}`}>{!playerFinished && <RunDeadline endsAt={state.endsAt} />}<Player key={participantId} quiz={quiz} studentName={state.participant.name} onSubmitAnswer={submitAnswer} onSubmitSpokenAnswer={state.mode === 'speak' ? submitSpokenAnswer : undefined} onCompleteItem={completeItem} onFinished={() => setPlayerFinished(true)} onRestart={() => void restart()} archery={state.participant.archery ?? undefined} onShootArchery={state.mode === 'archery' ? shootArchery : undefined} curling={state.participant.curling ?? undefined} onReleaseCurling={state.mode === 'curling' ? releaseCurling : undefined} /></div>;
 }
 
 export function HomeworkTeacher({ sessionId, token, initialView = 'manage' }: { sessionId: string; token: string; initialView?: 'manage' | 'report' }) {
@@ -923,9 +965,9 @@ export function HomeworkProjector({ sessionId, token }: { sessionId: string; tok
   return <main className="projector-scoreboard" aria-live="polite"><section className="projector-scoreboard-content"><header><div className="projector-title"><p>{state.mode === 'archery' ? 'ARCHERY HOMEWORK' : state.mode === 'curling' ? 'CURLING HOMEWORK' : 'HOMEWORK RESULTS'}</p><h1>{state.mode === 'archery' || state.mode === 'curling' ? 'Top scores' : 'Completion standings'}</h1><span>{state.title}</span></div><div className="projector-joined-count"><span>COMPLETED</span><strong>{state.participants.filter((participant) => participant.completed).length} / {state.participants.length}</strong></div></header>{standings.length ? <div className="projector-leaderboard"><ol className="projector-podium">{standings.slice(0, 3).map((player, index) => <li key={player.name} className={`podium-place podium-${index + 1}`}><span className="projector-rank">{index + 1}</span><strong title={player.name}>{player.name}</strong><em>{player.score}<small>{scoreLabel}</small></em></li>)}</ol>{standings.length > 3 && <ol className="projector-top-five">{standings.slice(3, 5).map((player, index) => <li key={player.name}><span className="projector-rank">{index + 4}</span><strong title={player.name}>{player.name}</strong><em>{player.score}<small>{scoreLabel}</small></em></li>)}</ol>}{standings.length > 5 && <section className="projector-more"><h2>More students</h2><ol>{standings.slice(5).map((player, index) => <li key={player.name}><span>{index + 6}</span><strong title={player.name}>{player.name}</strong><em>{player.score}</em></li>)}</ol></section>}<p className="projector-homework-note">{state.mode === 'archery' ? 'Each student’s best Archery attempt is shown.' : state.mode === 'curling' ? 'Each student’s best Curling attempt is shown.' : 'Each student’s best completed quiz attempt is shown.'}</p></div> : <p className="projector-empty">No homework attempts have been recorded yet.</p>}</section></main>;
 }
 
-function Results({ quiz, answers, onRestart, onLeave }: { quiz: Quiz; answers: Record<string, string>; onRestart?: () => void; onLeave: () => void }) {
+function Results({ quiz, answers, correctOverrides, onRestart, onLeave }: { quiz: Quiz; answers: Record<string, string>; correctOverrides?: Record<string, boolean>; onRestart?: () => void; onLeave: () => void }) {
   const quizQuestions = quiz.questions.filter((question) => question.itemType === 'question');
-  const score = quizQuestions.filter((question) => answers[question.id] === question.correctAnswer).length;
+  const score = quizQuestions.filter((question) => correctOverrides?.[String(question.id)] ?? (answers[question.id] === question.correctAnswer)).length;
   const percent = quizQuestions.length ? Math.round((score / quizQuestions.length) * 100) : 0;
   const message = percent === 100 ? 'Perfect score!' : percent >= 75 ? 'Great work!' : percent >= 50 ? 'Nice effort!' : 'Thanks for giving it a go!';
 
@@ -1394,19 +1436,161 @@ function TowerStackGame({ title, durationSeconds, onComplete }: { title: string;
   </section>;
 }
 
-function Player({ quiz, onSubmitAnswer, onCompleteItem, onFinished, allowRestart = true, onRestart, studentName, archery, onShootArchery, curling, onReleaseCurling }: { quiz: Quiz; onSubmitAnswer?: (questionId: string, answer: string) => Promise<unknown>; onCompleteItem?: (questionId: string) => Promise<unknown>; onFinished?: () => void; allowRestart?: boolean; onRestart?: () => void; studentName?: string; archery?: ArcheryState & { shootingScore?: number }; onShootArchery?: (x: number, y: number) => Promise<ArcheryState & { shootingScore?: number }>; curling?: CurlingState & { shootingScore?: number }; onReleaseCurling?: (direction: number, speed: number) => Promise<CurlingState & { shootingScore?: number }> }) {
+function LegacySpokenAnswer({ disabled, onRecord }: { disabled: boolean; onRecord: (audio: Blob) => Promise<{ detected: boolean }> }) {
+  const recorder = useRef<MediaRecorder | null>(null), stream = useRef<MediaStream | null>(null), context = useRef<AudioContext | null>(null), animationFrame = useRef(0), retryTimer = useRef<number | null>(null), onRecordRef = useRef(onRecord), heardSpeech = useRef(false), soundFrames = useRef(0), voicePeak = useRef(0), noiseFloor = useRef(.03), silentRetries = useRef(0), lastSoundAt = useRef(0), startedAt = useRef(0), startListeningRef = useRef<() => Promise<void>>(async () => {}), retryAfterSilence = useRef<() => void>(() => {});
+  const [listening, setListening] = useState(false), [message, setMessage] = useState('Starting your microphone…'), [wave, setWave] = useState<number[]>(() => Array(24).fill(4));
+  onRecordRef.current = onRecord;
+  const cleanUp = useCallback(() => { cancelAnimationFrame(animationFrame.current); stream.current?.getTracks().forEach((track) => track.stop()); stream.current = null; void context.current?.close(); context.current = null; }, []);
+  useEffect(() => () => { if (retryTimer.current !== null) window.clearTimeout(retryTimer.current); if (recorder.current?.state === 'recording') recorder.current.stop(); cleanUp(); }, [cleanUp]);
+  const startListening = useCallback(async () => {
+    if (disabled || recorder.current?.state === 'recording') return;
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder || !MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) { setMessage('This browser cannot record the audio format needed for speech recognition. Try the latest Chrome or Edge.'); return; }
+    try {
+      stream.current = await navigator.mediaDevices.getUserMedia({ audio: { autoGainControl: true, noiseSuppression: true, echoCancellation: true } });
+      const audioContext = new AudioContext(), analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256; audioContext.createMediaStreamSource(stream.current).connect(analyser); context.current = audioContext;
+      const next = new MediaRecorder(stream.current, { mimeType: 'audio/webm;codecs=opus' }), captureChunks: Blob[] = [];
+      heardSpeech.current = false; soundFrames.current = 0; voicePeak.current = 0; noiseFloor.current = .03; lastSoundAt.current = 0; startedAt.current = performance.now();
+      next.ondataavailable = (event) => { if (event.data.size) captureChunks.push(event.data); };
+      next.onstop = () => { const shouldSend = heardSpeech.current; setListening(false); cleanUp(); const audio = new Blob(captureChunks, { type: 'audio/webm' }); if (shouldSend && audio.size) { setMessage('Checking what you said…'); void onRecordRef.current(audio).then((result) => { if (!result.detected) retryAfterSilence.current(); }).catch(() => setMessage('We could not check that response. Please try again.')); } else retryAfterSilence.current(); };
+      const samples = new Uint8Array(analyser.frequencyBinCount);
+      const monitor = (now: number) => {
+        analyser.getByteTimeDomainData(samples);
+        let energy = 0; for (const sample of samples) energy += ((sample - 128) / 128) ** 2;
+        const volume = Math.sqrt(energy / samples.length);
+        const bars = Array.from({ length: 24 }, (_, index) => Math.max(4, Math.min(100, volume * 1200 * (0.6 + ((index % 5) / 10)))));
+        setWave(bars);
+        // A low threshold keeps quiet, short answers such as “ou” from being
+        // treated as dead air. Requiring three frames filters brief clicks.
+        if (volume > .01) soundFrames.current += 1; else soundFrames.current = 0;
+        if (soundFrames.current >= 3) { heardSpeech.current = true; lastSoundAt.current = now; setMessage('Listening…'); }
+        // Leave a small tail after speech so codec buffering cannot trim the
+        // last phoneme of a short answer.
+        if (heardSpeech.current && now - lastSoundAt.current > 1400 && now - startedAt.current > 800) { if (next.state === 'recording') next.stop(); return; }
+        if (now - startedAt.current > 15000) { if (next.state === 'recording') next.stop(); return; }
+        animationFrame.current = requestAnimationFrame(monitor);
+      };
+      recorder.current = next; next.start(250); setListening(true); setMessage('Listening — say your answer naturally.'); animationFrame.current = requestAnimationFrame(monitor);
+    } catch { cleanUp(); setMessage('Microphone access is needed to speak your answer. Allow it in your browser, then try again.'); }
+  }, [cleanUp, disabled]);
+  startListeningRef.current = startListening;
+  retryAfterSilence.current = () => {
+    if (silentRetries.current >= 2) { setMessage('Sorry, I didn’t hear that. Tap Listen again when you’re ready.'); return; }
+    silentRetries.current += 1;
+    setMessage(`Sorry, I didn’t hear that. Please try again. (${silentRetries.current} of 2)`);
+    retryTimer.current = window.setTimeout(() => void startListeningRef.current(), 900);
+  };
+  useEffect(() => { void startListeningRef.current(); }, []);
+  return <div className="spoken-answer"><div className={`voice-wave${listening ? ' is-listening' : ''}`} aria-hidden="true">{wave.map((height, index) => <i key={index} style={{ height: `${height}%` }} />)}</div><p className="spoken-status" role="status">{message}</p><button type="button" className={`speak-button${listening ? ' recording' : ''}`} disabled={disabled || listening} onClick={() => void startListening()}><span aria-hidden="true">🎙</span>{listening ? 'Listening…' : 'Listen again'}</button><small>When you finish speaking, your response is checked automatically. Silence is never submitted.</small></div>;
+}
+
+function SpokenAnswer({ disabled, onRecord, onSkip }: { disabled: boolean; onRecord: (audio: Blob) => Promise<{ detected: boolean; retry?: boolean }>; onSkip?: () => void }) {
+  const recorder = useRef<MediaRecorder | null>(null), stream = useRef<MediaStream | null>(null), context = useRef<AudioContext | null>(null), animationFrame = useRef(0), retryTimer = useRef<number | null>(null), onRecordRef = useRef(onRecord), heardSpeech = useRef(false), soundFrames = useRef(0), voicePeak = useRef(0), noiseFloor = useRef(.03), silentRetries = useRef(0), lastSoundAt = useRef(0), voiceStartedAt = useRef(0), startedAt = useRef(0), sendingAnswer = useRef(false), startListeningRef = useRef<() => Promise<void>>(async () => {}), retryAfterSilence = useRef<() => void>(() => {});
+  const [listening, setListening] = useState(false), [message, setMessage] = useState('Starting your microphone...'), [wave, setWave] = useState<number[]>(() => Array(32).fill(4));
+  onRecordRef.current = onRecord;
+  const cleanUp = useCallback(() => { cancelAnimationFrame(animationFrame.current); stream.current?.getTracks().forEach((track) => track.stop()); stream.current = null; void context.current?.close(); context.current = null; }, []);
+  useEffect(() => () => { if (retryTimer.current !== null) window.clearTimeout(retryTimer.current); if (recorder.current?.state === 'recording') recorder.current.stop(); cleanUp(); }, [cleanUp]);
+  const startListening = useCallback(async () => {
+    if (disabled || recorder.current?.state === 'recording') return;
+    if (retryTimer.current !== null) { window.clearTimeout(retryTimer.current); retryTimer.current = null; }
+    // Do not let the prior prompt's feedback or pronunciation bleed into the
+    // microphone capture when this answer starts.
+    window.dispatchEvent(new Event('quizboard:recording-start'));
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder || !MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) { setMessage('This browser cannot record the audio format needed for speech recognition. Try the latest Chrome or Edge.'); return; }
+    try {
+      stream.current = await navigator.mediaDevices.getUserMedia({ audio: { autoGainControl: true, noiseSuppression: true, echoCancellation: true } });
+      const audioContext = new AudioContext(), analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256; audioContext.createMediaStreamSource(stream.current).connect(analyser); context.current = audioContext;
+      const next = new MediaRecorder(stream.current, { mimeType: 'audio/webm;codecs=opus' }), captureChunks: Blob[] = [];
+      heardSpeech.current = false; soundFrames.current = 0; voicePeak.current = 0; noiseFloor.current = .03; lastSoundAt.current = 0; voiceStartedAt.current = 0; startedAt.current = performance.now();
+      next.ondataavailable = (event) => { if (event.data.size) captureChunks.push(event.data); };
+      next.onstop = () => { const shouldSend = heardSpeech.current; setListening(false); cleanUp(); const audio = new Blob(captureChunks, { type: 'audio/webm' }); if (shouldSend && audio.size) { setMessage('Checking your answer...'); sendingAnswer.current = true; void onRecordRef.current(audio).then((result) => { sendingAnswer.current = false; if (!result.detected) retryAfterSilence.current(); else if (result.retry) { silentRetries.current = 0; setMessage('Not quite. Try again.'); } else silentRetries.current = 0; }).catch(() => { sendingAnswer.current = false; setMessage('We could not check that response. Please try again.'); }); } else retryAfterSilence.current(); };
+      const samples = new Uint8Array(analyser.frequencyBinCount);
+      const monitor = (now: number) => {
+        analyser.getByteTimeDomainData(samples);
+        let energy = 0; for (const sample of samples) energy += ((sample - 128) / 128) ** 2;
+        const volume = Math.sqrt(energy / samples.length);
+        setWave(Array.from({ length: 32 }, (_, index) => Math.max(4, Math.min(100, volume * 1200 * (.6 + ((index % 5) / 10))))));
+        // Ignore the first moment after opening the mic: a click or tap on
+        // the microphone button can otherwise be mistaken for an answer.
+        if (now - startedAt.current < 650) {
+          noiseFloor.current = Math.min(noiseFloor.current, Math.max(.003, volume));
+          animationFrame.current = requestAnimationFrame(monitor);
+          return;
+        }
+        // Calibrate against room noise, then require a sustained voice
+        // segment. This prevents a silent/noisy clip from being sent to STT
+        // where answer hints could otherwise look like a valid response.
+        const voiceThreshold = Math.max(.018, Math.min(.035, (noiseFloor.current * 2.2) + .008));
+        // Short vocabulary can be only a few analyser frames long. Let brief
+        // dips decay the counter instead of discarding the whole utterance.
+        if (volume > voiceThreshold) { if (soundFrames.current === 0) voiceStartedAt.current = now; soundFrames.current += 1; voicePeak.current = Math.max(voicePeak.current, volume); } else { soundFrames.current = Math.max(0, soundFrames.current - 1); if (soundFrames.current === 0) voiceStartedAt.current = 0; }
+        if (soundFrames.current >= 8 && voiceStartedAt.current > 0 && now - voiceStartedAt.current >= 160 && voicePeak.current > voiceThreshold * 1.1) { heardSpeech.current = true; lastSoundAt.current = now; setMessage('Listening...'); }
+        if (heardSpeech.current && now - lastSoundAt.current > 1400 && now - startedAt.current > 800) { if (next.state === 'recording') next.stop(); return; }
+        if (now - startedAt.current > 30000) { if (next.state === 'recording') next.stop(); return; }
+        animationFrame.current = requestAnimationFrame(monitor);
+      };
+      recorder.current = next; next.start(250); setListening(true); setMessage('Listening... say your answer naturally.'); animationFrame.current = requestAnimationFrame(monitor);
+    } catch { cleanUp(); setMessage('Microphone access is needed to speak your answer. Allow it in your browser, then try again.'); }
+  }, [cleanUp, disabled]);
+  startListeningRef.current = startListening;
+  retryAfterSilence.current = () => {
+    if (sendingAnswer.current) return;
+    if (silentRetries.current >= 2) { setMessage("Sorry, I didn't hear that. Tap the microphone when you're ready."); return; }
+    silentRetries.current += 1;
+    // The first quiet clip is usually just a learner taking a moment before
+    // answering. Restart unobtrusively rather than suggesting their answer
+    // was missed while a valid response is still being processed.
+    setMessage('Listening... say your answer naturally.');
+    retryTimer.current = window.setTimeout(() => void startListeningRef.current(), 900);
+  };
+  useEffect(() => {
+    // A new prompt can mount while the previous answer is still saving. Once
+    // that brief disabled state clears, start its microphone instead of
+    // leaving the prompt waiting for a manual tap.
+    if (!disabled && retryTimer.current === null && !sendingAnswer.current) void startListeningRef.current();
+  }, [disabled]);
+  const skip = () => {
+    if (!onSkip) return;
+    if (recorder.current?.state === 'recording') {
+      recorder.current.onstop = null;
+      recorder.current.stop();
+    }
+    cleanUp();
+    setListening(false);
+    onSkip();
+  };
+  return <div className="spoken-answer">
+    <div className={`voice-wave${listening ? ' is-listening' : ''}`} aria-hidden="true">{wave.map((height, index) => <i key={index} style={{ height: `${height}%` }} />)}</div>
+    <p className="spoken-status" role="status">{message}</p>
+    <div className="spoken-controls"><button type="button" className={`speak-button${listening ? ' recording' : ''}`} disabled={disabled || listening} onClick={() => void startListening()} aria-label={listening ? 'Listening' : 'Listen again'}><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="16" y="5" width="16" height="25" rx="8" /><path d="M10 25a14 14 0 0 0 28 0M24 39v5M17 44h14" /></svg></button></div>
+    <button type="button" className="spoken-skip" disabled={disabled || !onSkip} onClick={skip}>SHOW ANSWER</button>
+  </div>;
+}
+
+function Player({ quiz, onSubmitAnswer, onSubmitSpokenAnswer, onCompleteItem, onFinished, allowRestart = true, onRestart, studentName, archery, onShootArchery, curling, onReleaseCurling }: { quiz: Quiz; onSubmitAnswer?: (questionId: string, answer: string) => Promise<unknown>; onSubmitSpokenAnswer?: (questionId: string, audio: Blob) => Promise<{ detected: boolean; transcript?: string; isCorrect?: boolean; correctAnswer?: string }>; onCompleteItem?: (questionId: string) => Promise<unknown>; onFinished?: () => void; allowRestart?: boolean; onRestart?: () => void; studentName?: string; archery?: ArcheryState & { shootingScore?: number }; onShootArchery?: (x: number, y: number) => Promise<ArcheryState & { shootingScore?: number }>; curling?: CurlingState & { shootingScore?: number }; onReleaseCurling?: (direction: number, speed: number) => Promise<CurlingState & { shootingScore?: number }> }) {
   const savedProgress = quiz.questions.some((item) => item.completed);
   const firstUnfinishedItem = quiz.questions.findIndex((item) => !item.completed);
   const resumeItem = firstUnfinishedItem === -1 ? Math.max(0, quiz.questions.length - 1) : firstUnfinishedItem;
+  const speakingPractice = onSubmitSpokenAnswer !== undefined;
   const [screen, setScreen] = useState<Screen>(() => quiz.questions.length ? savedProgress ? 'question' : 'intro' : 'results');
   const [current, setCurrent] = useState(() => resumeItem);
-  const [answers, setAnswers] = useState<Record<string, string>>(() => Object.fromEntries(quiz.questions.flatMap((item) => item.answer === null || item.answer === undefined ? [] : [[String(item.id), item.answer]])));
-  const [revealedQuestionIds, setRevealedQuestionIds] = useState<Set<string | number>>(() => new Set(quiz.questions.filter((item) => item.answer !== null && item.answer !== undefined).map((item) => item.id)));
+  // Spoken homework is an endless practice loop. Its latest transcript is
+  // saved for the teacher, but must not become a revealed answer when the
+  // player reloads after an API restart.
+  const [answers, setAnswers] = useState<Record<string, string>>(() => speakingPractice ? {} : Object.fromEntries(quiz.questions.flatMap((item) => item.answer === null || item.answer === undefined ? [] : [[String(item.id), item.answer]])));
+  const [revealedQuestionIds, setRevealedQuestionIds] = useState<Set<string | number>>(() => new Set(speakingPractice ? [] : quiz.questions.filter((item) => item.answer !== null && item.answer !== undefined).map((item) => item.id)));
   const [timedOutQuestionIds, setTimedOutQuestionIds] = useState<Set<string | number>>(() => new Set());
   const [submitting, setSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState('');
   const [remainingMilliseconds, setRemainingMilliseconds] = useState<number | null>(null);
   const [matchingProgress, setMatchingProgress] = useState<Record<string, MatchProgress>>({});
+  const [spokenOutcomes, setSpokenOutcomes] = useState<Record<string, boolean>>({});
+  const [spokenAttempts, setSpokenAttempts] = useState<Record<string, number>>({});
+  const [spokenCombo, setSpokenCombo] = useState(0);
+  const [spokenComboBurst, setSpokenComboBurst] = useState<number | null>(null);
+  const spokenComboRef = useRef(0);
+  const [spokenRecordings, setSpokenRecordings] = useState<Record<string, string>>({});
   const [archeryState, setArcheryState] = useState<(ArcheryState & { shootingScore?: number }) | undefined>(archery);
   const [playingHomeworkArchery, setPlayingHomeworkArchery] = useState(false);
   const [curlingState, setCurlingState] = useState<(CurlingState & { shootingScore?: number }) | undefined>(curling);
@@ -1418,12 +1602,30 @@ function Player({ quiz, onSubmitAnswer, onCompleteItem, onFinished, allowRestart
   const selected = question ? answers[question.id] : undefined;
   const revealed = question ? revealedQuestionIds.has(question.id) : false;
   const isFinalQuestion = current === quiz.questions.length - 1;
+  const updateSpokenCombo = (value: number) => { spokenComboRef.current = value; setSpokenCombo(value); };
+  const currentSpokenAnswerCorrect = question ? spokenOutcomes[String(question.id)] ?? selected === question.correctAnswer : false;
 
   useEffect(() => {
-    if (screen !== 'question' || !question || question.itemType !== 'question' || !revealed || submitting || (archeryState && onShootArchery) || (curlingState && onReleaseCurling)) return;
+    if (!speakingPractice || !question || !revealed || timedOutQuestionIds.has(question.id) || !currentSpokenAnswerCorrect || spokenCombo < 3) { setSpokenComboBurst(null); return; }
+    // Let the answer and combo state commit first; rendering the burst in the
+    // following animation frame prevents an intermediate combo total flashing.
+    const frame = window.requestAnimationFrame(() => setSpokenComboBurst(spokenCombo));
+    return () => window.cancelAnimationFrame(frame);
+  }, [currentSpokenAnswerCorrect, question?.id, revealed, speakingPractice, spokenCombo, timedOutQuestionIds]);
+
+  useEffect(() => {
+    if (screen !== 'question' || !question || question.itemType !== 'question' || !revealed || submitting || onSubmitSpokenAnswer || (archeryState && onShootArchery) || (curlingState && onReleaseCurling)) return;
     const timer = window.setTimeout(() => void checkOrAdvance(), 5000);
     return () => window.clearTimeout(timer);
-  }, [screen, question, revealed, submitting, current, archeryState, onShootArchery, curlingState, onReleaseCurling]);
+  }, [screen, question, revealed, submitting, current, onSubmitSpokenAnswer, archeryState, onShootArchery, curlingState, onReleaseCurling]);
+
+  useEffect(() => {
+    if (screen !== 'question' || !question || !onSubmitSpokenAnswer || !revealed || submitting) return;
+    // Keep feedback visible long enough to read, then immediately continue
+    // without asking the player to operate a Next button.
+    const timer = window.setTimeout(() => void advanceSpokenAnswer(), 1400);
+    return () => window.clearTimeout(timer);
+  }, [screen, question, onSubmitSpokenAnswer, revealed, submitting, current]);
 
   useEffect(() => {
     if (screen !== 'question' || !question || timerSeconds === null || revealedQuestionIds.has(question.id) || submitting) {
@@ -1438,6 +1640,7 @@ function Player({ quiz, onSubmitAnswer, onCompleteItem, onFinished, allowRestart
       if (remaining === 0) {
         setRevealedQuestionIds((ids) => new Set(ids).add(question.id));
         setTimedOutQuestionIds((ids) => new Set(ids).add(question.id));
+        if (onSubmitSpokenAnswer) updateSpokenCombo(0);
       }
     };
     tick();
@@ -1451,10 +1654,16 @@ function Player({ quiz, onSubmitAnswer, onCompleteItem, onFinished, allowRestart
   useEffect(() => { setCurlingState(curling); }, [curling]);
   useEffect(() => { setPlayingHomeworkArchery(false); }, [question?.id]);
   useEffect(() => { setPlayingHomeworkCurling(false); }, [question?.id]);
+  useEffect(() => () => { Object.values(spokenRecordings).forEach((url) => URL.revokeObjectURL(url)); }, [spokenRecordings]);
 
   function restart() {
     setAnswers({});
     setMatchingProgress({});
+    setSpokenOutcomes({});
+    setSpokenAttempts({});
+    updateSpokenCombo(0);
+    setSpokenComboBurst(null);
+    setSpokenRecordings((recordings) => { Object.values(recordings).forEach((url) => URL.revokeObjectURL(url)); return {}; });
     questionDeadline.current = null;
     setRevealedQuestionIds(new Set());
     setTimedOutQuestionIds(new Set());
@@ -1492,6 +1701,35 @@ function Player({ quiz, onSubmitAnswer, onCompleteItem, onFinished, allowRestart
     } finally { setSubmitting(false); }
   }
 
+  async function submitSpokenRecording(audio: Blob): Promise<{ detected: boolean; retry?: boolean }> {
+    if (!onSubmitSpokenAnswer || submitting || revealed) return { detected: false };
+    setSubmissionError(''); setSubmitting(true);
+    try {
+      const recordingUrl = URL.createObjectURL(audio);
+      setSpokenRecordings((recordings) => {
+        const previous = recordings[String(question.id)];
+        if (previous) URL.revokeObjectURL(previous);
+        return { ...recordings, [String(question.id)]: recordingUrl };
+      });
+      const result = await onSubmitSpokenAnswer(String(question.id), audio);
+      if (!result.detected) { setSubmissionError(''); return { detected: false }; }
+      const storedAnswer = result.transcript ?? '';
+      setAnswers((currentAnswers) => ({ ...currentAnswers, [question.id]: storedAnswer }));
+      setSpokenOutcomes((outcomes) => ({ ...outcomes, [String(question.id)]: result.isCorrect === true }));
+      const previousAttempts = spokenAttempts[String(question.id)] ?? 0;
+      if (!result.isCorrect && previousAttempts === 0) {
+        setSpokenAttempts((attempts) => ({ ...attempts, [String(question.id)]: 1 }));
+        updateSpokenCombo(0);
+        return { detected: true, retry: true };
+      }
+      updateSpokenCombo(result.isCorrect ? spokenComboRef.current + 1 : 0);
+      setRevealedQuestionIds((ids) => new Set(ids).add(question.id));
+      return { detected: true };
+    } catch (error) { setSubmissionError(error instanceof Error ? error.message : 'Could not check your spoken answer'); }
+    finally { setSubmitting(false); }
+    return { detected: false };
+  }
+
   async function shootArrow(x: number, y: number) {
     if (!onShootArchery) return;
     setSubmissionError(''); setSubmitting(true);
@@ -1517,16 +1755,43 @@ function Player({ quiz, onSubmitAnswer, onCompleteItem, onFinished, allowRestart
     finally { setSubmitting(false); }
   }
 
-  if (screen === 'results') return <Results quiz={quiz} answers={answers} onRestart={onRestart ?? (allowRestart ? restart : undefined)} onLeave={() => goToQuiz('')} />;
+  async function advanceSpokenAnswer() {
+    setSubmissionError('');
+    setSubmitting(true);
+    try {
+      // This mode is deliberately endless. Clear the next prompt's local
+      // result before it returns to the front of the practice queue.
+      const nextIndex = (current + 1) % quiz.questions.length;
+      const nextId = quiz.questions[nextIndex].id;
+      setAnswers((currentAnswers) => { const next = { ...currentAnswers }; delete next[nextId]; return next; });
+      setSpokenOutcomes((outcomes) => { const next = { ...outcomes }; delete next[String(nextId)]; return next; });
+      setSpokenAttempts((attempts) => { const next = { ...attempts }; delete next[String(nextId)]; return next; });
+      setRevealedQuestionIds((ids) => { const next = new Set(ids); next.delete(nextId); return next; });
+      setTimedOutQuestionIds((ids) => { const next = new Set(ids); next.delete(nextId); return next; });
+      setCurrent(nextIndex);
+    } finally { setSubmitting(false); }
+  }
 
-  if (screen === 'intro') return <main className="page quiz-page">
+  function skipSpokenAnswer() {
+    if (submitting || revealed) return;
+    setSubmissionError('');
+    updateSpokenCombo(0);
+    setSpokenOutcomes((outcomes) => ({ ...outcomes, [String(question.id)]: false }));
+    setRevealedQuestionIds((ids) => new Set(ids).add(question.id));
+  }
+
+  if (screen === 'results') return <Results quiz={quiz} answers={answers} correctOverrides={spokenOutcomes} onRestart={onRestart ?? (allowRestart ? restart : undefined)} onLeave={() => goToQuiz('')} />;
+
+  if (screen === 'intro') return <main className="page quiz-page quiz-intro-page">
     <header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div></header>
-    <section className="intro-card">
-      <p className="eyebrow">YOU’VE BEEN INVITED TO</p>
-      <h1>{quiz.title}</h1>
-      {quiz.description && <p className="lede">{quiz.description}</p>}
-      <p className="question-count"><strong>{quiz.questions.filter((item) => item.itemType === 'question').length}</strong> quiz questions{quiz.questions.some((item) => item.itemType === 'game') && ` · ${quiz.questions.filter((item) => item.itemType === 'game').length} game break${quiz.questions.filter((item) => item.itemType === 'game').length === 1 ? '' : 's'}`}</p>
-      <button className="primary-button start-button" onClick={() => setScreen('question')}>Start quiz <span aria-hidden="true">→</span></button>
+    <section className="intro-card quiz-intro-card">
+      <div className="quiz-intro-copy">
+        <p className="eyebrow">YOU’VE BEEN INVITED TO</p>
+        <h1>{quiz.title}</h1>
+        {quiz.description && <p className="lede">{quiz.description}</p>}
+        <p className="question-count"><strong>{quiz.questions.filter((item) => item.itemType === 'question').length}</strong> quiz questions{quiz.questions.some((item) => item.itemType === 'game') && ` · ${quiz.questions.filter((item) => item.itemType === 'game').length} game break${quiz.questions.filter((item) => item.itemType === 'game').length === 1 ? '' : 's'}`}</p>
+        <button className="primary-button start-button" onClick={() => setScreen('question')}>Start quiz <span aria-hidden="true">→</span></button>
+      </div>
     </section>
   </main>;
 
@@ -1558,6 +1823,40 @@ function Player({ quiz, onSubmitAnswer, onCompleteItem, onFinished, allowRestart
   if (revealed && curlingState && onReleaseCurling) {
     const canPlay = (curlingState.stones ?? 0) > 0;
     return <main className={`page quiz-page theme-${quiz.theme}`}><AnswerFeedbackEffects showConfetti={quiz.theme === 'kids'} outcome={!timedOut ? question.special?.kind === 'matching' ? selected === 'Matched' : selected === question.correctAnswer : undefined} /><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-label">CURLING BREAK</span></header><section className="intro-card waiting-card matching-break-card"><p className="eyebrow">QUESTION {String(current + 1).padStart(2, '0')}</p><h1 data-confetti-origin={selected === question.correctAnswer && !timedOut ? '' : undefined}>{timedOut ? "Time's up." : selected === question.correctAnswer ? 'Correct!' : 'Not quite.'}</h1>{selected !== question.correctAnswer && <p className="matching-answer">The correct answer was <strong>{question.correctAnswer}</strong>.</p>}<div className="matching-credit-summary"><span>YOUR STONES</span><strong>{curlingState.stones}</strong><small>{canPlay ? 'Ready to slide a stone toward the house' : 'Answer more questions correctly to earn a stone'}</small></div><div className="matching-actions">{canPlay && <button className="matching-secondary-button" onClick={() => setPlayingHomeworkCurling(true)}>Slide a stone</button>}<button className="primary-button" disabled={submitting} onClick={() => void checkOrAdvance()}>{submitting ? 'Saving…' : isFinalQuestion ? 'See my score' : 'Next question'} <span aria-hidden="true">→</span></button></div>{submissionError && <p className="form-error">{submissionError}</p>}</section></main>;
+  }
+  if (onSubmitSpokenAnswer) {
+    const isCorrect = spokenOutcomes[String(question.id)] ?? selected === question.correctAnswer;
+    return <main className={`page quiz-page theme-${quiz.theme}`}>
+      <AnswerFeedbackEffects showConfetti={quiz.theme === 'kids'} outcome={revealed && !timedOut ? isCorrect : undefined} pronounceAnswer={revealed && !timedOut && !isCorrect ? question.correctAnswer : undefined} speechLanguage={quiz.speechLanguage} />
+      <header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-header-meta"><span className="question-label">Speak the Answer · {current + 1} of {quiz.questions.length}</span>{remainingSeconds !== null && <TimerBadge seconds={remainingSeconds} expired={remainingSeconds === 0} />}</span></header>
+      <div className="progress" aria-hidden="true"><span style={{ width: `${((current + 1) / quiz.questions.length) * 100}%` }} /></div>
+      {spokenComboBurst !== null && <SpokenComboBurst key={`${question.id}-${spokenComboBurst}`} combo={spokenComboBurst} />}
+      <section className={`question-card spoken-question-card${timerStyle ? ' timed-question' : ''}`} style={timerStyle}>
+        <p className="eyebrow">SPEAK YOUR ANSWER</p>
+        <h1 data-confetti-origin={revealed && isCorrect ? '' : undefined}>{question.text}</h1>
+        {!revealed ? <SpokenAnswer disabled={submitting || timedOut} onRecord={submitSpokenRecording} onSkip={skipSpokenAnswer} /> : <p className={isCorrect && !timedOut ? 'answer-feedback correct-feedback' : 'answer-feedback incorrect-feedback'} role="status">{timedOut ? "Time's up." : isCorrect ? 'Correct — nice work!' : 'Not quite.'}<br />Expected answer: <strong>{question.correctAnswer}</strong>.</p>}
+        {submissionError && <p className="form-error">{submissionError}</p>}
+      </section>
+    </main>;
+    const correctCount = Object.values(spokenOutcomes).filter(Boolean).length;
+    return <main className={`spoken-mode-page theme-${quiz.theme}`}>
+      <AnswerFeedbackEffects showConfetti={quiz.theme === 'kids'} outcome={revealed && !timedOut ? isCorrect : undefined} />
+      <header className="spoken-mode-header">
+        <button type="button" className="spoken-exit" onClick={() => goToQuiz('')} aria-label="Leave homework">×</button>
+        <div className="spoken-progress" aria-label={`Question ${current + 1} of ${quiz.questions.length}`}><span style={{ width: `${((current + 1) / quiz.questions.length) * 100}%` }} /></div>
+        <div className="spoken-hud" aria-label={`${correctCount} correct answers`}><span className="spoken-energy" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="m18 2-11 16h8l-1 12 11-17h-8z" /></svg></span><strong>{correctCount}</strong><i /><span aria-hidden="true">∞</span></div>
+      </header>
+      <section className="spoken-mode-card">
+        <h1 data-confetti-origin={revealed && isCorrect ? '' : undefined}>Speak the answer</h1>
+        <div className="spoken-prompt-card"><span>{question.text}</span></div>
+        {!revealed ? <SpokenAnswer disabled={submitting || timedOut} onRecord={submitSpokenRecording} onSkip={() => void checkOrAdvance()} /> : <div className={`spoken-result ${isCorrect && !timedOut ? 'correct' : 'incorrect'}`} role="status"><strong>{timedOut ? "Time's up." : isCorrect ? 'Correct!' : 'Not quite.'}</strong><span>Expected answer: <b>{question.correctAnswer}</b></span></div>}
+        {submissionError && <p className="form-error">{submissionError}</p>}
+      </section>
+    </main>;
+  }
+  if (onSubmitSpokenAnswer && remainingSeconds !== null && false) {
+    const isCorrect = spokenOutcomes[String(question.id)] ?? selected === question.correctAnswer;
+    return <main className={`page quiz-page theme-${quiz.theme}`}><AnswerFeedbackEffects showConfetti={quiz.theme === 'kids'} outcome={revealed && !timedOut ? isCorrect : undefined} /><header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-header-meta"><span className="question-label">Speak the Answer · {current + 1} of {quiz.questions.length}</span>{remainingSeconds !== null && <TimerBadge seconds={remainingSeconds} expired={remainingSeconds === 0} />}</span></header><div className="progress" aria-hidden="true"><span style={{ width: `${((current + 1) / quiz.questions.length) * 100}%` }} /></div><section className={`question-card spoken-question-card${timerStyle ? ' timed-question' : ''}`} style={timerStyle}><p className="eyebrow">SPEAK YOUR ANSWER</p><h1 data-confetti-origin={revealed && isCorrect ? '' : undefined}>{question.text}</h1>{!revealed ? <><SpokenAnswer disabled={submitting || timedOut} onRecord={submitSpokenRecording} />{spokenRecordings[String(question.id)] && <div className="spoken-playback"><span>Debug: last captured audio</span><audio controls src={spokenRecordings[String(question.id)]}>Your browser cannot play this recording.</audio></div>}</> : <><p className={isCorrect && !timedOut ? 'answer-feedback correct-feedback' : 'answer-feedback incorrect-feedback'} role="status">{timedOut ? "Time's up." : isCorrect ? 'Correct — nice work!' : <>Not quite. The expected answer is <strong>{question.correctAnswer}</strong>.</>}</p>{selected && <p className="spoken-transcript">We heard: <strong>{selected}</strong></p>}{spokenRecordings[String(question.id)] && <div className="spoken-playback"><span>Debug: captured audio</span><audio controls src={spokenRecordings[String(question.id)]}>Your browser cannot play this recording.</audio></div>}</>}{submissionError && <p className="form-error">{submissionError}</p>}<div className="question-actions"><span />{revealed && <button key={question.id} className={`primary-button${!submitting ? ' advance-timer' : ''}`} disabled={submitting} onClick={() => void checkOrAdvance()}>{!submitting && <AdvanceTimer />}{submitting ? 'Saving…' : isFinalQuestion ? 'See my score' : 'Next question'} <span aria-hidden="true">→</span></button>}</div></section></main>;
   }
   if (question.special?.kind === 'short_answer') {
     const isCorrect = selected === question.correctAnswer;

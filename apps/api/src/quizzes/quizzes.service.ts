@@ -84,7 +84,7 @@ export class QuizzesService {
 
   async addQuestion(quizId: number, question: CreateQuestionDto, user: AuthUser) {
     await this.findOne(quizId, user);
-    const { text, correctAnswer, options, answerPoolId, answerCount } = await this.prepareQuestion(question, user);
+    const { text, correctAnswer, acceptedAnswers, options, answerPoolId, answerCount } = await this.prepareQuestion(question, user);
     const { _max } = await this.prisma.question.aggregate({ where: { quizId }, _max: { position: true } });
 
     return this.prisma.question.create({
@@ -94,6 +94,7 @@ export class QuizzesService {
         text,
         options: options as Prisma.InputJsonValue,
         correctAnswer,
+        acceptedAnswers: acceptedAnswers as Prisma.InputJsonValue,
         answerPoolId,
         answerCount,
         timerSeconds: question.timerSeconds ?? null,
@@ -165,10 +166,10 @@ export class QuizzesService {
     await this.findOne(quizId, user);
     const existing = await this.prisma.question.findFirst({ where: { id: questionId, quizId } });
     if (!existing) throw new NotFoundException(`Question ${questionId} was not found in quiz ${quizId}`);
-    const { text, correctAnswer, options, answerPoolId, answerCount } = await this.prepareQuestion(question, user);
+    const { text, correctAnswer, acceptedAnswers, options, answerPoolId, answerCount } = await this.prepareQuestion(question, user);
     return this.prisma.question.update({
       where: { id: questionId },
-      data: { text, correctAnswer, options: options as Prisma.InputJsonValue, answerPoolId, answerCount, timerSeconds: question.timerSeconds ?? null },
+      data: { text, correctAnswer, acceptedAnswers: acceptedAnswers as Prisma.InputJsonValue, options: options as Prisma.InputJsonValue, answerPoolId, answerCount, timerSeconds: question.timerSeconds ?? null },
     });
   }
 
@@ -210,9 +211,9 @@ export class QuizzesService {
   }
 
   async createCommonQuestion(question: CreateQuestionDto, user: AuthUser) {
-    const { text, correctAnswer, options, answerPoolId, answerCount } = await this.prepareQuestion(question, user);
+    const { text, correctAnswer, acceptedAnswers, options, answerPoolId, answerCount } = await this.prepareQuestion(question, user);
     return this.prisma.commonQuestion.create({
-      data: { text, correctAnswer, options: options as Prisma.InputJsonValue, answerPoolId, answerCount, ownerId: user.id },
+      data: { text, correctAnswer, acceptedAnswers: acceptedAnswers as Prisma.InputJsonValue, options: options as Prisma.InputJsonValue, answerPoolId, answerCount, ownerId: user.id },
       include: { answerPool: { include: { answers: true } } },
     });
   }
@@ -220,10 +221,10 @@ export class QuizzesService {
   async updateCommonQuestion(id: number, question: CreateQuestionDto, user: AuthUser) {
     const existing = await this.prisma.commonQuestion.findFirst({ where: { id, ownerId: user.id } });
     if (!existing) throw new NotFoundException(`Common question ${id} was not found`);
-    const { text, correctAnswer, options, answerPoolId, answerCount } = await this.prepareQuestion(question, user);
+    const { text, correctAnswer, acceptedAnswers, options, answerPoolId, answerCount } = await this.prepareQuestion(question, user);
     return this.prisma.commonQuestion.update({
       where: { id },
-      data: { text, correctAnswer, options: options as Prisma.InputJsonValue, answerPoolId, answerCount },
+      data: { text, correctAnswer, acceptedAnswers: acceptedAnswers as Prisma.InputJsonValue, options: options as Prisma.InputJsonValue, answerPoolId, answerCount },
       include: { answerPool: { include: { answers: true } } },
     });
   }
@@ -285,6 +286,7 @@ export class QuizzesService {
         text: commonQuestion.text,
         options: commonQuestion.options as Prisma.InputJsonValue,
         correctAnswer: commonQuestion.correctAnswer,
+        acceptedAnswers: commonQuestion.acceptedAnswers as Prisma.InputJsonValue,
         answerPoolId: commonQuestion.answerPoolId,
         answerCount: commonQuestion.answerCount,
         timerSeconds: null,
@@ -295,21 +297,22 @@ export class QuizzesService {
   private async prepareQuestion(question: CreateQuestionDto, user: AuthUser) {
     const text = question.text.trim();
     const correctAnswer = question.correctAnswer.trim();
+    const acceptedAnswers = this.cleanUnique([correctAnswer, ...(question.acceptedAnswers ?? [])]);
     if (!text || !correctAnswer) throw new BadRequestException('Question text and the correct answer cannot be blank');
 
     if (question.questionType === 'true_false') {
       const statement = question.statement?.trim();
       if (!statement || !['True', 'False'].includes(correctAnswer)) throw new BadRequestException('Enter an answer and select True or False');
-      return { text, correctAnswer, options: { kind: 'true_false', statement }, answerPoolId: null, answerCount: null };
+      return { text, correctAnswer, acceptedAnswers, options: { kind: 'true_false', statement }, answerPoolId: null, answerCount: null };
     }
     if (question.questionType === 'matching') {
       const pairs = question.pairs?.map((pair) => ({ question: pair.question.trim(), answer: pair.answer.trim() })) ?? [];
       if (pairs.length < 2 || pairs.some((pair) => !pair.question || !pair.answer)) throw new BadRequestException('Provide at least two complete pairs');
       if (new Set(pairs.map((pair) => pair.question)).size !== pairs.length || new Set(pairs.map((pair) => pair.answer)).size !== pairs.length) throw new BadRequestException('Questions and answers must be unique within a matching question');
-      return { text, correctAnswer: 'Matched', options: { kind: 'matching', pairs }, answerPoolId: null, answerCount: null };
+      return { text, correctAnswer: 'Matched', acceptedAnswers: ['Matched'], options: { kind: 'matching', pairs }, answerPoolId: null, answerCount: null };
     }
     if (question.questionType === 'short_answer') {
-      return { text, correctAnswer, options: { kind: 'short_answer', pairs: [] }, answerPoolId: null, answerCount: null };
+      return { text, correctAnswer, acceptedAnswers, options: { kind: 'short_answer', pairs: [] }, answerPoolId: null, answerCount: null };
     }
 
     let wrongAnswers = this.cleanUnique(question.wrongAnswers ?? []).filter((answer) => answer !== correctAnswer);
@@ -327,7 +330,7 @@ export class QuizzesService {
       answerCount = question.answerCount;
     }
     if (wrongAnswers.length < 1) throw new BadRequestException('Provide at least one wrong answer or select an answer pool');
-    return { text, correctAnswer, options: this.cleanUnique([correctAnswer, ...wrongAnswers]), answerPoolId: question.answerPoolId, answerCount };
+    return { text, correctAnswer, acceptedAnswers, options: this.cleanUnique([correctAnswer, ...wrongAnswers]), answerPoolId: question.answerPoolId, answerCount };
   }
 
   private cleanUnique(values: string[]) {

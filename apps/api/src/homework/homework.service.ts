@@ -1,37 +1,38 @@
 import { specialQuestion, matchAttempt, SpecialQuestion } from '../question-types/special';
-import { answersMatch, AnswerMatching } from '../question-types/answer-matching';
+import { answersMatch, AnswerMatching, spokenAnswerMatch } from '../question-types/answer-matching';
 import { MatchProgress } from '../question-types/matching';
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '../auth/auth.types';
+import { SpeechLanguage, SpeechRecognitionService } from './speech-recognition.service';
 
 
-type HomeworkQuestion = { id: string; text: string; itemType: 'question' | 'game' | 'text'; gameType: 'coin_catch' | 'match_pairs' | 'tower_stack' | null; gameDurationSeconds: number | null; options: string[]; correctAnswer: string; timerSeconds: number | null; special?: SpecialQuestion | null };
-type HomeworkQuiz = { title: string; description: string | null; theme: string; answerMatching?: AnswerMatching; creditEveryCorrectAnswers: number; questions: HomeworkQuestion[] };
+type HomeworkQuestion = { id: string; text: string; itemType: 'question' | 'game' | 'text'; gameType: 'coin_catch' | 'match_pairs' | 'tower_stack' | null; gameDurationSeconds: number | null; options: string[]; correctAnswer: string; acceptedAnswers: string[]; timerSeconds: number | null; special?: SpecialQuestion | null };
+type HomeworkQuiz = { title: string; description: string | null; theme: string; answerMatching?: AnswerMatching; speechLanguage?: SpeechLanguage; creditEveryCorrectAnswers: number; questions: HomeworkQuestion[] };
 type ArcheryShot = { id: string; x: number; y: number; score: number };
 type CurlingShot = { id: string; direction: number; speed: number; x: number; y: number; score: number };
 type HomeworkParticipant = { id: string; name: string; answers: Record<string, string>; matchProgress: Record<string, MatchProgress>; completedItems: string[]; archeryArrows: number; archeryShots: ArcheryShot[]; shootingScore: number; curlingStones: number; curlingShots: CurlingShot[]; curlingScore: number; joinedAt: Date; completedAt: Date | null };
-type HomeworkSession = { id: string; ownerId: string | null; facilitatorToken: string; mode: 'classic' | 'archery' | 'curling'; quiz: HomeworkQuiz; participants: HomeworkParticipant[]; ended: boolean; expired: boolean; endsAt: Date; createdAt: Date };
+type HomeworkSession = { id: string; ownerId: string | null; facilitatorToken: string; mode: 'classic' | 'archery' | 'curling' | 'speak'; quiz: HomeworkQuiz; participants: HomeworkParticipant[]; ended: boolean; expired: boolean; endsAt: Date; createdAt: Date };
 
 /** Homework snapshots and attempts live in Postgres so they survive API restarts. */
 @Injectable()
 export class HomeworkService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly speech: SpeechRecognitionService) {}
 
   async listActive(user: AuthUser) {
     const sessions = await (this.prisma as any).homeworkSession.findMany({ where: { ...(user.canViewAllQuizzes ? {} : { ownerId: user.id }), ended: false, endsAt: { gt: new Date() } }, orderBy: { createdAt: 'desc' }, include: { _count: { select: { participants: true } } } });
-    return sessions.map((session: any) => ({ sessionId: session.id, title: (session.quizSnapshot as HomeworkQuiz).title, participantCount: session._count.participants, createdAt: session.createdAt.toISOString(), endsAt: session.endsAt.toISOString(), mode: session.mode === 'archery' || session.mode === 'curling' ? session.mode : 'classic' }));
+    return sessions.map((session: any) => ({ sessionId: session.id, title: (session.quizSnapshot as HomeworkQuiz).title, participantCount: session._count.participants, createdAt: session.createdAt.toISOString(), endsAt: session.endsAt.toISOString(), mode: this.homeworkMode(session.mode) }));
   }
 
   async listHistory(user: AuthUser) {
     const ownership = user.canViewAllQuizzes ? {} : { ownerId: user.id };
     await (this.prisma as any).homeworkSession.updateMany({ where: { ...ownership, ended: false, endsAt: { lte: new Date() } }, data: { ended: true, expired: true } });
     const sessions = await (this.prisma as any).homeworkSession.findMany({ where: { ...ownership, ended: true }, orderBy: { createdAt: 'desc' }, take: 100, include: { _count: { select: { participants: true } } } });
-    return sessions.map((session: any) => ({ sessionId: session.id, title: (session.quizSnapshot as HomeworkQuiz).title, participantCount: session._count.participants, createdAt: session.createdAt.toISOString(), endsAt: session.endsAt.toISOString(), mode: session.mode === 'archery' || session.mode === 'curling' ? session.mode : 'classic', ended: true, expired: session.expired }));
+    return sessions.map((session: any) => ({ sessionId: session.id, title: (session.quizSnapshot as HomeworkQuiz).title, participantCount: session._count.participants, createdAt: session.createdAt.toISOString(), endsAt: session.endsAt.toISOString(), mode: this.homeworkMode(session.mode), ended: true, expired: session.expired }));
   }
 
-  async create(quizId: number, durationSeconds: number, mode: 'classic' | 'archery' | 'curling' = 'classic', user: AuthUser) {
+  async create(quizId: number, durationSeconds: number, mode: 'classic' | 'archery' | 'curling' | 'speak' = 'classic', speechLanguage: SpeechLanguage = 'en-US', user: AuthUser) {
     const quiz = await this.prisma.quiz.findFirst({ where: user.canViewAllQuizzes ? { id: quizId } : { id: quizId, ownerId: user.id }, include: { questions: { where: { isEnabled: true }, orderBy: { position: 'asc' } } } });
     if (!quiz) throw new NotFoundException(`Quiz ${quizId} was not found`);
     if (!quiz.questions.length) throw new BadRequestException('Enable at least one item before creating homework');
@@ -41,11 +42,12 @@ export class HomeworkService {
       const storedOptions = Array.isArray(question.options) ? question.options.filter((value): value is string => typeof value === 'string') : [];
       const wrongAnswers = [...new Set(storedOptions.filter((option) => option !== question.correctAnswer))];
       const optionCount = Math.min(question.answerCount ?? wrongAnswers.length + 1, wrongAnswers.length + 1);
-      return { id: String(question.id), text: question.text, itemType, special, gameType: question.gameType === 'coin_catch' || question.gameType === 'match_pairs' || question.gameType === 'tower_stack' ? question.gameType : null, gameDurationSeconds: question.gameDurationSeconds, options: itemType !== 'question' || special?.kind === 'matching' || special?.kind === 'short_answer' ? [] : special?.kind === 'true_false' ? ['True', 'False'] : this.shuffle([question.correctAnswer, ...this.shuffle(wrongAnswers).slice(0, optionCount - 1)]), correctAnswer: question.correctAnswer, timerSeconds: this.effectiveTimer(question.timerSeconds, quiz.defaultTimerSeconds) };
+      return { id: String(question.id), text: question.text, itemType, special, gameType: question.gameType === 'coin_catch' || question.gameType === 'match_pairs' || question.gameType === 'tower_stack' ? question.gameType : null, gameDurationSeconds: question.gameDurationSeconds, options: itemType !== 'question' || special?.kind === 'matching' || special?.kind === 'short_answer' ? [] : special?.kind === 'true_false' ? ['True', 'False'] : this.shuffle([question.correctAnswer, ...this.shuffle(wrongAnswers).slice(0, optionCount - 1)]), correctAnswer: question.correctAnswer, acceptedAnswers: this.acceptedAnswers(question.correctAnswer, question.acceptedAnswers), timerSeconds: this.effectiveTimer(question.timerSeconds, quiz.defaultTimerSeconds) };
     });
+    if (mode === 'speak' && authoredQuestions.some((question) => question.special?.kind === 'matching')) throw new BadRequestException('Speak the Answer homework does not support matching exercises. Remove or disable matching items first.');
     const questions = quiz.randomizeQuestionOrder ? this.shuffleQuestionsInPlace(authoredQuestions) : authoredQuestions;
     const createdAt = new Date();
-    const session = await (this.prisma as any).homeworkSession.create({ data: { id: randomUUID(), ownerId: user.id, facilitatorToken: randomUUID(), mode, quizSnapshot: { title: quiz.title, description: quiz.description, theme: quiz.theme, answerMatching: quiz.answerMatching === 'exact' ? 'exact' : 'close', creditEveryCorrectAnswers: quiz.creditEveryCorrectAnswers ?? 1, questions }, endsAt: new Date(createdAt.getTime() + durationSeconds * 1000), createdAt } });
+    const session = await (this.prisma as any).homeworkSession.create({ data: { id: randomUUID(), ownerId: user.id, facilitatorToken: randomUUID(), mode, quizSnapshot: { title: quiz.title, description: quiz.description, theme: quiz.theme, answerMatching: quiz.answerMatching === 'exact' ? 'exact' : 'close', speechLanguage, creditEveryCorrectAnswers: quiz.creditEveryCorrectAnswers ?? 1, questions }, endsAt: new Date(createdAt.getTime() + durationSeconds * 1000), createdAt } });
     return { sessionId: session.id, facilitatorToken: user.id };
   }
 
@@ -65,7 +67,7 @@ export class HomeworkService {
 
   async studentState(sessionId: string, participantId?: string) {
     const session = await this.get(sessionId), participant = participantId ? session.participants.find((item) => item.id === participantId) : undefined;
-    return { sessionId: session.id, title: session.quiz.title, description: session.quiz.description, theme: session.quiz.theme, answerMatching: session.quiz.answerMatching ?? 'close', mode: session.mode, ended: session.ended, expired: session.expired, endsAt: session.endsAt.toISOString(), questions: session.quiz.questions.map((question) => ({ ...question, answer: participant?.answers[question.id] ?? null, completed: participant?.completedItems.includes(question.id) ?? false, matchProgress: participant?.matchProgress[question.id] ?? null })), participant: participant ? { id: participant.id, name: participant.name, score: this.score(session, participant), archery: session.mode === 'archery' ? this.archeryState(participant) : null, curling: session.mode === 'curling' ? this.curlingState(participant) : null, completed: participant.completedAt !== null } : null };
+    return { sessionId: session.id, title: session.quiz.title, description: session.quiz.description, theme: session.quiz.theme, answerMatching: session.quiz.answerMatching ?? 'close', speechLanguage: session.quiz.speechLanguage ?? 'en-US', mode: session.mode, ended: session.ended, expired: session.expired, endsAt: session.endsAt.toISOString(), questions: session.quiz.questions.map((question) => ({ ...question, answer: participant?.answers[question.id] ?? null, completed: participant?.completedItems.includes(question.id) ?? false, matchProgress: participant?.matchProgress[question.id] ?? null })), participant: participant ? { id: participant.id, name: participant.name, score: this.score(session, participant), archery: session.mode === 'archery' ? this.archeryState(participant) : null, curling: session.mode === 'curling' ? this.curlingState(participant) : null, completed: participant.completedAt !== null } : null };
   }
 
   async submitAnswer(sessionId: string, participantId: string, questionId: string, answer: string) {
@@ -84,19 +86,39 @@ export class HomeworkService {
     } else if (question.special?.kind === 'short_answer') {
       answer = answer.trim();
       if (!answer) throw new BadRequestException('Enter an answer');
-      if (answersMatch(answer, question.correctAnswer, session.quiz.answerMatching)) answer = question.correctAnswer;
+    } else if (session.mode === 'speak') {
+      answer = answer.trim();
+      if (!answer) throw new BadRequestException('No speech was detected. Please try again.');
     } else if (!question.options.includes(answer)) throw new BadRequestException('Choose one of the available answers');
-    if (answers[questionId]) throw new BadRequestException('That answer has already been submitted');
-    answers[questionId] = answer; completedItems.add(questionId);
-    const correct = answer === question.correctAnswer;
-    const correctAnswers = session.quiz.questions.filter((item) => item.itemType === 'question' && answers[item.id] === item.correctAnswer).length;
+    // Speak the Answer is an endless practice loop. It intentionally allows
+    // another attempt when this prompt comes around again.
+    const speakingPractice = session.mode === 'speak';
+    if (answers[questionId] && !speakingPractice) throw new BadRequestException('That answer has already been submitted');
+    answers[questionId] = answer;
+    if (!speakingPractice) completedItems.add(questionId);
+    const correct = this.isCorrectAnswer(session, question, answer);
+    const correctAnswers = session.quiz.questions.filter((item) => item.itemType === 'question' && answers[item.id] !== undefined && this.isCorrectAnswer(session, item, answers[item.id])).length;
     const earnsCredit = correct && correctAnswers % session.quiz.creditEveryCorrectAnswers === 0;
     const archeryArrows = participant.archeryArrows + (session.mode === 'archery' && earnsCredit ? 1 : 0);
     const curlingStones = (participant.curlingStones ?? 0) + (session.mode === 'curling' && earnsCredit ? 1 : 0);
-    const completedAt = completedItems.size === session.quiz.questions.length ? new Date() : null;
+    const completedAt = speakingPractice ? null : completedItems.size === session.quiz.questions.length ? new Date() : null;
     const updated = { ...participant, answers, matchProgress, completedItems: [...completedItems], archeryArrows, curlingStones, completedAt };
     await this.saveParticipant(participant.id, { answers, matchProgress, completedItems: [...completedItems], archeryArrows, curlingStones, completedAt });
     return { answered: true, matchProgress: progress, isCorrect: correct, correctAnswer: question.correctAnswer, score: this.score(session, updated), archery: session.mode === 'archery' ? this.archeryState(updated) : null, curling: session.mode === 'curling' ? this.curlingState(updated) : null, completed: completedAt !== null };
+  }
+
+  async submitSpokenAnswer(sessionId: string, participantId: string, questionId: string, audio: Buffer | undefined, mimeType?: string) {
+    const { session, participant } = await this.participant(sessionId, participantId);
+    this.assertActiveAttempt(session, participant);
+    if (session.mode !== 'speak') throw new BadRequestException('Speaking answers is not enabled for this homework');
+    const question = session.quiz.questions.find((item) => item.id === questionId);
+    if (!question || question.itemType !== 'question') throw new BadRequestException('That is not a homework question');
+    if (question.special?.kind === 'matching') throw new BadRequestException('Matching exercises cannot be answered by voice');
+    if (!audio?.length) return { detected: false };
+    if (mimeType && !mimeType.startsWith('audio/webm')) throw new BadRequestException('Please record using a browser that supports WebM audio');
+    const transcript = await this.speech.transcribe(audio, session.quiz.speechLanguage ?? 'en-US');
+    if (!transcript) return { detected: false };
+    return { detected: true, transcript, ...(await this.submitAnswer(sessionId, participantId, questionId, transcript)) };
   }
 
   async completeItem(sessionId: string, participantId: string, questionId: string) {
@@ -139,7 +161,7 @@ export class HomeworkService {
     });
     const questionStats = session.quiz.questions.filter((question) => question.itemType === 'question').map((question) => {
       const answered = session.participants.filter((participant) => Object.hasOwn(participant.answers, question.id));
-      const correct = answered.filter((participant) => participant.answers[question.id] === question.correctAnswer).length;
+      const correct = answered.filter((participant) => this.isCorrectAnswer(session, question, participant.answers[question.id])).length;
       const matchingPairs = question.special?.kind === 'matching' ? question.special.pairs : undefined;
       return { id: question.id, text: question.text, ...(matchingPairs ? { matchingPairs } : {}), answered: answered.length, correct, correctRate: answered.length ? Math.round((correct / answered.length) * 100) : 0 };
     });
@@ -176,7 +198,7 @@ export class HomeworkService {
       answers: session.quiz.questions.filter((question) => question.itemType === 'question').map((question) => {
         const answer = participant.answers[question.id];
         const matchingPairs = question.special?.kind === 'matching' ? question.special.pairs : undefined;
-        return { id: question.id, text: question.text, ...(matchingPairs ? { matchingPairs } : {}), answer: answer ?? null, correctAnswer: question.correctAnswer, isCorrect: answer === undefined ? null : answer === question.correctAnswer };
+        return { id: question.id, text: question.text, ...(matchingPairs ? { matchingPairs } : {}), answer: answer ?? null, correctAnswer: question.correctAnswer, isCorrect: answer === undefined ? null : this.isCorrectAnswer(session, question, answer) };
       }),
     };
   }
@@ -204,7 +226,7 @@ export class HomeworkService {
     let row = await (this.prisma as any).homeworkSession.findUnique({ where: { id: sessionId }, include });
     if (!row) throw new NotFoundException('That homework run is no longer available');
     if (!row.ended && Date.now() >= row.endsAt.getTime()) row = await (this.prisma as any).homeworkSession.update({ where: { id: row.id }, data: { ended: true, expired: true }, include });
-    return { id: row.id, ownerId: row.ownerId, facilitatorToken: row.facilitatorToken, mode: row.mode === 'archery' || row.mode === 'curling' ? row.mode : 'classic', quiz: row.quizSnapshot as HomeworkQuiz, ended: row.ended, expired: row.expired, endsAt: row.endsAt, createdAt: row.createdAt, participants: row.participants.map((participant: any) => ({ id: participant.id, name: participant.name, answers: participant.answers as Record<string, string>, matchProgress: participant.matchProgress as Record<string, MatchProgress>, completedItems: participant.completedItems as string[], archeryArrows: participant.archeryArrows, archeryShots: participant.archeryShots as ArcheryShot[], shootingScore: participant.shootingScore, curlingStones: participant.curlingStones ?? 0, curlingShots: Array.isArray(participant.curlingShots) ? participant.curlingShots as CurlingShot[] : [], curlingScore: participant.curlingScore ?? 0, joinedAt: participant.joinedAt, completedAt: participant.completedAt })) };
+    return { id: row.id, ownerId: row.ownerId, facilitatorToken: row.facilitatorToken, mode: this.homeworkMode(row.mode), quiz: row.quizSnapshot as HomeworkQuiz, ended: row.ended, expired: row.expired, endsAt: row.endsAt, createdAt: row.createdAt, participants: row.participants.map((participant: any) => ({ id: participant.id, name: participant.name, answers: participant.answers as Record<string, string>, matchProgress: participant.matchProgress as Record<string, MatchProgress>, completedItems: participant.completedItems as string[], archeryArrows: participant.archeryArrows, archeryShots: participant.archeryShots as ArcheryShot[], shootingScore: participant.shootingScore, curlingStones: participant.curlingStones ?? 0, curlingShots: Array.isArray(participant.curlingShots) ? participant.curlingShots as CurlingShot[] : [], curlingScore: participant.curlingScore ?? 0, joinedAt: participant.joinedAt, completedAt: participant.completedAt })) };
   }
 
   private async participant(sessionId: string, participantId: string) { const session = await this.get(sessionId), participant = session.participants.find((item) => item.id === participantId); if (!participant) throw new NotFoundException('Your homework attempt could not be found. Please begin again.'); return { session, participant }; }
@@ -212,9 +234,9 @@ export class HomeworkService {
   private displayName(name: string, aliases: Map<string, string>) { return aliases.get(name.trim().toLocaleLowerCase()) ?? name; }
   private authorizeTeacher(session: HomeworkSession, user: AuthUser) { if (session.ownerId !== user.id && !user.canViewAllQuizzes) throw new ForbiddenException('You do not have access to this homework run'); }
   private assertOpen(session: HomeworkSession) { if (session.ended) throw new BadRequestException('This homework has ended'); }
-  private assertActiveAttempt(session: HomeworkSession, participant: HomeworkParticipant) { this.assertOpen(session); if (participant.completedAt) throw new BadRequestException('This homework attempt is already complete'); }
+  private assertActiveAttempt(session: HomeworkSession, participant: HomeworkParticipant) { this.assertOpen(session); if (participant.completedAt && session.mode !== 'speak') throw new BadRequestException('This homework attempt is already complete'); }
   private saveParticipant(id: string, data: Record<string, unknown>) { return (this.prisma as any).homeworkParticipant.update({ where: { id }, data }); }
-  private score(session: HomeworkSession, participant: HomeworkParticipant) { const questions = session.quiz.questions.filter((question) => question.itemType === 'question'); return { correct: questions.filter((question) => participant.answers[question.id] === question.correctAnswer).length, answered: Object.keys(participant.answers).length, total: questions.length }; }
+  private score(session: HomeworkSession, participant: HomeworkParticipant) { const questions = session.quiz.questions.filter((question) => question.itemType === 'question'); return { correct: questions.filter((question) => participant.answers[question.id] !== undefined && this.isCorrectAnswer(session, question, participant.answers[question.id])).length, answered: Object.keys(participant.answers).length, total: questions.length }; }
   private archeryState(participant: HomeworkParticipant) { return { arrows: participant.archeryArrows, lastShot: participant.archeryShots.at(-1) ?? null, attempts: [...participant.archeryShots].sort((a, b) => b.score - a.score), shootingScore: participant.shootingScore }; }
   private archeryScore(x: number, y: number) { return Math.max(1, Math.round(1000 - (Math.sqrt((x * x) + (y * y)) * 10))); }
   private curlingState(participant: HomeworkParticipant) { return { stones: participant.curlingStones, lastStone: participant.curlingShots.at(-1) ?? null, attempts: [...participant.curlingShots].sort((a, b) => b.score - a.score), shootingScore: participant.curlingScore }; }
@@ -222,4 +244,17 @@ export class HomeworkService {
   private effectiveTimer(questionTimerSeconds: number | null, defaultTimerSeconds: number) { const value = questionTimerSeconds ?? defaultTimerSeconds; return value === -1 || value === null ? null : value; }
   private shuffleQuestionsInPlace(items: HomeworkQuestion[]) { const questions = items.filter((item) => item.itemType === 'question'); for (let index = questions.length - 1; index > 0; index -= 1) { const randomIndex = Math.floor(Math.random() * (index + 1)); [questions[index], questions[randomIndex]] = [questions[randomIndex], questions[index]]; } let questionIndex = 0; return items.map((item) => item.itemType === 'question' ? questions[questionIndex++] : item); }
   private shuffle<T>(items: T[]) { const result = [...items]; for (let index = result.length - 1; index > 0; index -= 1) { const randomIndex = Math.floor(Math.random() * (index + 1)); [result[index], result[randomIndex]] = [result[randomIndex], result[index]]; } return result; }
+  private homeworkMode(mode: unknown): HomeworkSession['mode'] { return mode === 'archery' || mode === 'curling' || mode === 'speak' ? mode : 'classic'; }
+  private acceptedAnswers(correctAnswer: string, values: unknown) { return [...new Set([correctAnswer, ...(Array.isArray(values) ? values.filter((value): value is string => typeof value === 'string') : [])].map((value) => value.trim()).filter(Boolean))]; }
+  private isAcceptedAnswer(answer: string, question: HomeworkQuestion, mode: AnswerMatching | undefined) { return this.acceptedAnswers(question.correctAnswer, question.acceptedAnswers).some((candidate) => answersMatch(answer, candidate, mode)); }
+  private isCorrectAnswer(session: HomeworkSession, question: HomeworkQuestion, answer: string) {
+    if (this.isAcceptedAnswer(answer, question, session.quiz.answerMatching)) return true;
+    if (session.mode === 'speak' && this.acceptedAnswers(question.correctAnswer, question.acceptedAnswers).some((candidate) => spokenAnswerMatch(answer, candidate, session.quiz.answerMatching))) return true;
+    if (session.mode !== 'speak' || session.quiz.speechLanguage !== 'fr-FR') return false;
+    const normalize = (value: string) => value.trim().normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/gu, ' ');
+    const expected = this.acceptedAnswers(question.correctAnswer, question.acceptedAnswers).map(normalize);
+    // Google occasionally renders the isolated French /u/ word “ou” as
+    // “heure”. Keep this alias deliberately narrow to the speech-only mode.
+    return expected.includes('ou') && ['heure', 'heures'].includes(normalize(answer));
+  }
 }

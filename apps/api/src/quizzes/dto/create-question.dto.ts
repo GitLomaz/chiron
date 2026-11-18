@@ -29,6 +29,14 @@ export class CreateQuestionDto {
   correctAnswer!: string;
 
   @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(12)
+  @IsString({ each: true })
+  @MinLength(1, { each: true })
+  @MaxLength(500, { each: true })
+  acceptedAnswers?: string[];
+
+  @IsOptional()
   @IsInt()
   @IsPositive()
   answerPoolId?: number;

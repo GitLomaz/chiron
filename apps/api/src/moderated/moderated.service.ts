@@ -10,10 +10,10 @@ import { AuthUser } from '../auth/auth.types';
 type SessionQuestion = { id: string; text: string; itemType: 'question' | 'game' | 'text'; gameType: string | null; options: string[]; correctAnswer: string; timerSeconds: number | null; special?: SpecialQuestion | null };
 // Credits and a first selection are personal; the board itself is shared by
 // everyone in a live matching session.
-type MatchingGame = { credits: number; selectedCard: number | null };
+type MatchingGame = { credits: number; selectedCard: number | null; score: number };
 type SharedMatchingAttempt = { id: string; participantId: string; participantName: string; cards: [number, number]; startedAt: Date; isMatch: boolean };
 type SharedMatchingGame = { cards: string[]; columns: number; rows: number; matchedCards: Set<number>; attempt: SharedMatchingAttempt | null; completionId: string | null };
-type BattleshipPlayer = { tokens: number };
+type BattleshipPlayer = { tokens: number; score: number };
 type SharedBattleshipGame = { size: number; shipCells: Set<number>; attacks: Map<number, 'hit' | 'miss'>; lastHit: { id: string; cell: number; participantName: string } | null; completionId: string | null };
 type TreasureMapPlayer = { tokens: number };
 type SharedTreasureMap = { size: number; treasureCell: number; blockedCells: Set<number>; digs: Map<number, { result: 'clue' | 'treasure'; hint: string }>; lastDig: { id: string; cell: number; participantName: string } | null; completionId: string | null };
@@ -151,6 +151,7 @@ export class ModeratedService {
       treasureMap: session.treasureMap && participant ? this.treasureMapState(session.treasureMap, participant) : null,
       archery: session.archery && participant ? this.archeryState(session.archery, participant) : null,
       curling: session.curling && participant ? this.curlingState(session.curling, participant) : null,
+      gameLeaderboard: this.gameLeaderboard(session),
       betweenQuestions: participant?.betweenQuestions ?? false,
       currentQuestion: question ? {
         ...this.publicQuestion(question),
@@ -193,6 +194,7 @@ export class ModeratedService {
           return { id: participant.id, name: participant.name, score: participant.pointScore.points, correct: score.correct, answered: score.answered, longestStreak: participant.pointScore.maxStreak };
         })
         .sort((a, b) => (session.scoringEnabled ? b.score - a.score : b.correct - a.correct) || a.name.localeCompare(b.name)),
+      gameLeaderboard: this.gameLeaderboard(session),
     };
     if (session.ownerId === user.id) return state;
     const aliases = new Map<string, string>();
@@ -258,8 +260,8 @@ export class ModeratedService {
       participant.matchProgress = new Map();
       participant.gameScores = new Map();
       participant.pointScore = this.newPointScore();
-      participant.matching = mode === 'matching' ? { credits: 0, selectedCard: null } : null;
-      participant.battleship = mode === 'battleship' ? { tokens: 0 } : null;
+      participant.matching = mode === 'matching' ? { credits: 0, selectedCard: null, score: 0 } : null;
+      participant.battleship = mode === 'battleship' ? { tokens: 0, score: 0 } : null;
       participant.treasureMap = mode === 'treasure_map' ? { tokens: 0 } : null;
       participant.archery = mode === 'archery' ? { arrows: 0, lastShot: null } : null;
       participant.curling = mode === 'curling' ? { stones: 0, lastStone: null } : null;
@@ -333,7 +335,7 @@ export class ModeratedService {
     if (session.lobbyLocked) throw new BadRequestException('The facilitator has locked this lobby');
     if (session.bannedClientIds.has(clientId)) throw new ForbiddenException('You have been removed from this live test');
     const questions = this.activeQuestions(session);
-    const participant: Participant = { id: randomUUID(), clientId, name: cleanName, questions: session.randomizeQuestionOrder ? this.shuffleQuestionsInPlace(questions, session.participants.values()) : [...questions], answers: new Map<string, string>(), matchProgress: new Map<string, MatchProgress>(), gameScores: new Map<string, number>(), pointScore: this.newPointScore(), matching: session.mode === 'matching' ? { credits: 0, selectedCard: null } : null, battleship: session.mode === 'battleship' ? { tokens: 0 } : null, treasureMap: session.mode === 'treasure_map' ? { tokens: 0 } : null, archery: session.mode === 'archery' ? { arrows: 0, lastShot: null } : null, curling: session.mode === 'curling' ? { stones: 0, lastStone: null } : null, betweenQuestions: false, joinedAt: new Date(), currentQuestionIndex: -1, currentQuestionOpenedAt: null, autoAdvanceTimer: null, completedAt: null };
+    const participant: Participant = { id: randomUUID(), clientId, name: cleanName, questions: session.randomizeQuestionOrder ? this.shuffleQuestionsInPlace(questions, session.participants.values()) : [...questions], answers: new Map<string, string>(), matchProgress: new Map<string, MatchProgress>(), gameScores: new Map<string, number>(), pointScore: this.newPointScore(), matching: session.mode === 'matching' ? { credits: 0, selectedCard: null, score: 0 } : null, battleship: session.mode === 'battleship' ? { tokens: 0, score: 0 } : null, treasureMap: session.mode === 'treasure_map' ? { tokens: 0 } : null, archery: session.mode === 'archery' ? { arrows: 0, lastShot: null } : null, curling: session.mode === 'curling' ? { stones: 0, lastStone: null } : null, betweenQuestions: false, joinedAt: new Date(), currentQuestionIndex: -1, currentQuestionOpenedAt: null, autoAdvanceTimer: null, completedAt: null };
     session.participants.set(participant.id, participant);
     if (session.phase === 'question') {
       if (session.mode === 'facilitated') participant.currentQuestionIndex = session.currentRoundIndex - 1;
@@ -423,6 +425,7 @@ export class ModeratedService {
     const cards: [number, number] = [player.selectedCard, card];
     const isMatch = matching.cards[cards[0]] === matching.cards[cards[1]];
     matching.attempt = { id: randomUUID(), participantId: participant.id, participantName: participant.name, cards, startedAt: new Date(), isMatch };
+    if (isMatch) player.score += 100;
     if (!isMatch) player.credits -= 1;
     for (const current of session.participants.values()) if (current.matching) current.matching.selectedCard = null;
     return this.matchingState(matching, player, participant.id);
@@ -448,6 +451,7 @@ export class ModeratedService {
     const result = game.shipCells.has(cell) ? 'hit' : 'miss';
     game.attacks.set(cell, result);
     if (result === 'hit') {
+      participant.battleship.score += 100;
       game.lastHit = { id: randomUUID(), cell, participantName: participant.name };
       if ([...game.attacks.values()].filter((attack) => attack === 'hit').length === game.shipCells.size) {
         game.completionId = randomUUID();
@@ -558,6 +562,7 @@ export class ModeratedService {
     const visibleAttempt = matching.attempt && (!participantId || matching.attempt.isMatch || matching.attempt.participantId === participantId) ? matching.attempt : null;
     return {
       credits: player?.credits ?? null,
+      score: player?.score ?? null,
       columns: matching.columns,
       rows: matching.rows,
       selectedCard: selectedCard === null || selectedCard === undefined ? null : { id: selectedCard, symbol: matching.cards[selectedCard] },
@@ -579,6 +584,7 @@ export class ModeratedService {
     return {
       size: game.size,
       tokens: player?.battleship?.tokens ?? null,
+      score: player?.battleship?.score ?? null,
       shipCells: game.shipCells.size,
       hits: [...game.attacks.values()].filter((result) => result === 'hit').length,
       cells: Array.from({ length: game.size ** 2 }, (_, id) => ({ result: game.attacks.get(id) ?? null })),
@@ -586,6 +592,17 @@ export class ModeratedService {
       complete: game.completionId !== null,
       completionId: game.completionId,
     };
+  }
+
+  private gameLeaderboard(session: ModeratedSession) {
+    if (session.mode !== 'matching' && session.mode !== 'battleship') return [];
+    return [...session.participants.values()]
+      .map((participant) => ({
+        id: participant.id,
+        name: participant.name,
+        score: session.mode === 'matching' ? participant.matching?.score ?? 0 : participant.battleship?.score ?? 0,
+      }))
+      .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
   }
 
   private treasureMapState(map: SharedTreasureMap, player?: Participant, includeSuccessName = false) {
@@ -832,10 +849,10 @@ export class ModeratedService {
   private startNewBoard(session: ModeratedSession) {
     if (session.mode === 'matching') {
       session.matching = this.newMatchingGame(session.quiz.matchingPairCount, randomUUID());
-      for (const participant of session.participants.values()) if (participant.matching) participant.matching = { credits: 0, selectedCard: null };
+      for (const participant of session.participants.values()) if (participant.matching) participant.matching = { credits: 0, selectedCard: null, score: participant.matching.score };
     } else if (session.mode === 'battleship') {
       session.battleship = this.newBattleshipGame(session.quiz.battleshipBoardSize, randomUUID());
-      for (const participant of session.participants.values()) if (participant.battleship) participant.battleship = { tokens: 0 };
+      for (const participant of session.participants.values()) if (participant.battleship) participant.battleship = { tokens: 0, score: participant.battleship.score };
     } else if (session.mode === 'treasure_map') {
       session.treasureMap = this.newTreasureMap(randomUUID());
       for (const participant of session.participants.values()) if (participant.treasureMap) participant.treasureMap = { tokens: 0 };
