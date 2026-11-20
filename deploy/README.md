@@ -55,6 +55,6 @@ The script runs Prisma migrations in a Cloud Run job before deploying the API. I
 
 ## POC constraints
 
-- The API is deliberately restricted to one Cloud Run instance with one warm instance. Moderated and homework session state exists only in memory, so it will still be lost whenever the API is revised, restarted, or otherwise replaced.
+- The API is deliberately restricted to one Cloud Run instance and has no warm-instance minimum, so Cloud Run can scale it to zero after it becomes idle. The first request after that has a cold-start delay. Moderated and homework session state exists only in memory, so it is lost if the API is scaled to zero, revised, restarted, or otherwise replaced. Active browser polling normally keeps a live test active, but Cloud Run cannot distinguish a live test from other traffic; do not leave a live test completely idle.
 - Student join/play endpoints remain public. Teacher library, dataset, quiz-creation, and run-list APIs require a Google ID token and are owner-scoped; the Google client ID is also verified server-side.
 - For a custom domain later, map the domain to the corresponding Cloud Run service, rebuild both frontend images with the new API/student URLs, and update `CLIENT_ORIGIN` on `trivia-api`.

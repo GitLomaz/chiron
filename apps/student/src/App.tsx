@@ -591,6 +591,7 @@ export function Facilitator({ sessionId, token, projector = false, metrics = fal
   const [updatingLobby, setUpdatingLobby] = useState(false);
   const [removingParticipantId, setRemovingParticipantId] = useState<string | null>(null);
   const [projectorMetric, setProjectorMetric] = useState<'scores' | 'correct'>('scores');
+  const [showMatchLeaderboard, setShowMatchLeaderboard] = useState(true);
   const load = useCallback(async () => { try { const next = await moderatedRequest<FacilitatorState>(`/${sessionId}/facilitator`); setState((current) => { const restarted = Boolean(next.endsAt && (!current?.endsAt || Date.parse(next.endsAt) > Date.parse(current.endsAt))); return current?.sessionId === next.sessionId && (current.endedByTeacher || current.expired) && !next.endedByTeacher && !next.expired && !restarted ? current : next; }); setError(''); } catch (err) { setError(err instanceof Error ? err.message : 'Could not load facilitator controls'); } }, [sessionId]);
   useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 2000); return () => window.clearInterval(timer); }, [load]);
   async function start() { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/start`, { method: 'POST' })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not start the test'); } finally { setActing(false); } }
@@ -634,7 +635,7 @@ export function Facilitator({ sessionId, token, projector = false, metrics = fal
     if (state.phase !== 'complete' && state.presentationMode === 'matching' && state.matching) {
       const matchedPairs = state.matching.cards.filter((card) => card.matched).length / 2;
       const denseBoard = state.matching.rows > 4;
-      return <main className={`projector-match-screen${denseBoard ? ' projector-dense-match-screen' : ''}`} aria-live="polite"><section className="projector-match-content"><header><div className="projector-title"><p>SHARED MEMORY BOARD</p><h1>Match Pairs</h1><span>{state.title}</span></div><div className="projector-match-header-stats"><ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} /><div className="projector-match-score"><span>PAIRS FOUND</span><strong>{matchedPairs} / {state.matching.cards.length / 2}</strong></div></div></header><div className="projector-match-game-layout"><div className="projector-match-board-frame"><SharedMatchBoard matching={state.matching} projector /></div><GameLeaderboard leaderboard={state.gameLeaderboard} game="Matching" projector /></div><p className="projector-match-tip">Each pair is worth 100 points. Students choose two cards on their own screens, and the pair is revealed here for everyone.</p></section></main>;
+      return <main className={`projector-match-screen${denseBoard ? ' projector-dense-match-screen' : ''}`} aria-live="polite"><section className="projector-match-content"><header><div className="projector-title"><p>SHARED MEMORY BOARD</p><h1>Match Pairs</h1><span>{state.title}</span></div><div className="projector-match-header-stats"><ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} /><div className="projector-match-score"><span>PAIRS FOUND</span><strong>{matchedPairs} / {state.matching.cards.length / 2}</strong></div><button type="button" className="projector-match-leaderboard-toggle" aria-pressed={showMatchLeaderboard} onClick={() => setShowMatchLeaderboard((visible) => !visible)}>{showMatchLeaderboard ? 'Hide scores' : 'Show scores'}</button></div></header><div className={`projector-match-game-layout${showMatchLeaderboard ? '' : ' scores-hidden'}`}><div className="projector-match-board-frame"><SharedMatchBoard matching={state.matching} projector /></div>{showMatchLeaderboard && <GameLeaderboard leaderboard={state.gameLeaderboard} game="Matching" projector />}</div><p className="projector-match-tip">Each pair is worth 100 points. Students choose two cards on their own screens, and the pair is revealed here for everyone.</p></section></main>;
     }
     if (state.phase !== 'complete' && state.presentationMode === 'battleship' && state.battleship) {
       return <main className="projector-match-screen projector-battleship-screen" aria-live="polite"><ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} /><section className="projector-match-content"><header><div className="projector-title"><p>SHARED BATTLE MAP</p><h1>Battleship</h1><span>{state.title}</span></div><div className="projector-match-header-stats"><div className="projector-match-score"><span>FLEET HIT</span><strong>{state.battleship.hits} / {state.battleship.shipCells}</strong></div></div></header><div className="projector-match-game-layout"><div className="projector-grid-board-frame"><SharedBattleshipBoard battleship={state.battleship} projector /></div><GameLeaderboard leaderboard={state.gameLeaderboard} game="Battleship" projector /></div><p className="projector-match-tip">Each hit is worth 100 points. Students earn attack tokens by answering correctly, then choose a square to fire on the shared map.</p></section></main>;
@@ -1033,6 +1034,52 @@ function CoinCatchGame({ title, durationSeconds, onComplete }: { title: string; 
 
 const MATCH_PAIR_SYMBOLS = ['🍎', '🍌', '🍇', '🍓', '🍍', '🍉'];
 
+type AtlasFrame = { x: number; y: number; w: number; h: number };
+
+// `cards.png` is a TexturePacker atlas. Keep the card chrome and the fruit
+// faces together in one request, rather than loading an image for every card.
+const MATCHING_CARD_FRAMES: Record<string, AtlasFrame> = {
+  '🍎': { x: 528, y: 528, w: 38, h: 48 },
+  '🍌': { x: 192, y: 48, w: 44, h: 48 },
+  '🍇': { x: 624, y: 528, w: 48, h: 46 },
+  '🍓': { x: 720, y: 576, w: 47, h: 48 },
+  '🍍': { x: 624, y: 576, w: 48, h: 43 },
+  '🍉': { x: 528, y: 624, w: 48, h: 39 },
+  '🍒': { x: 576, y: 528, w: 48, h: 45 },
+  '🥝': { x: 384, y: 240, w: 38, h: 48 },
+  '🍑': { x: 528, y: 336, w: 47, h: 48 },
+  '🍐': { x: 576, y: 336, w: 27, h: 48 },
+  '🍋': { x: 672, y: 288, w: 48, h: 32 },
+  '🍊': { x: 384, y: 336, w: 46, h: 48 },
+  '🍈': { x: 48, y: 336, w: 48, h: 42 },
+  '🥭': { x: 624, y: 576, w: 48, h: 43 },
+  '🍅': { x: 192, y: 624, w: 48, h: 32 },
+  '🥥': { x: 144, y: 144, w: 48, h: 39 },
+  '🍄': { x: 624, y: 288, w: 40, h: 48 },
+  '🌶️': { x: 672, y: 96, w: 48, h: 32 },
+  '🐷': { x: 432, y: 0, w: 28, h: 48 },
+};
+
+function AtlasSprite({ frame, className, fill = false }: { frame: AtlasFrame; className?: string; fill?: boolean }) {
+  const x = frame.x ? `${(frame.x / (768 - frame.w)) * 100}%` : '0%';
+  const y = frame.y ? `${(frame.y / (768 - frame.h)) * 100}%` : '0%';
+  const style = {
+    backgroundPosition: `${x} ${y}`,
+    backgroundSize: `${(768 / frame.w) * 100}% ${(768 / frame.h) * 100}%`,
+    ...(fill ? {} : { aspectRatio: `${frame.w} / ${frame.h}` }),
+  } as CSSProperties;
+  return <span className={`atlas-sprite${className ? ` ${className}` : ''}`} style={style} aria-hidden="true" />;
+}
+
+function MatchCardArtwork({ symbol, projector = false }: { symbol: string | null; projector?: boolean }) {
+  if (symbol === null) return null;
+  const face = symbol ? MATCHING_CARD_FRAMES[symbol] : null;
+  return <>
+    {face ? <AtlasSprite frame={face} className="match-card-symbol" /> : <span className="match-card-emoji" aria-hidden="true">{symbol}</span>}
+    {projector && <span className="match-card-value" aria-hidden="true">{symbol}</span>}
+  </>;
+}
+
 function playGameFanfare(kind: 'match' | 'hit' | 'complete', volume: number) {
   if (volume === 0) return;
   try {
@@ -1094,26 +1141,25 @@ function SharedMatchBoard({ matching, onFlip, projector = false, disabled = fals
     const finish = window.setTimeout(() => setResolved(true), 1550);
     return () => { window.clearTimeout(second); window.clearTimeout(finish); };
   }, [attemptId]);
-  // The player who made the second pick already knows a pair is being tried,
-  // so show both cards as soon as its response arrives. Other players only
-  // animate successful shared matches, one card at a time.
-  const attempt = matching.attempt && ((matching.attempt.isActor && matching.attempt.id !== shownAttemptId) || (matching.attempt.id === shownAttemptId && (!resolved || matching.attempt.isMatch))) ? matching.attempt : null;
+  // The projector polls less often than student screens, so it must reveal an
+  // entire received attempt immediately instead of relying on local flip timing.
+  const attempt = matching.attempt && (projector || (matching.attempt.isActor && matching.attempt.id !== shownAttemptId) || (matching.attempt.id === shownAttemptId && (!resolved || matching.attempt.isMatch))) ? matching.attempt : null;
   const revealed = new Map<number, string>();
   matching.cards.forEach((card, id) => { if (card.symbol !== null) revealed.set(id, card.symbol); });
   if (matching.selectedCard && !attempt) revealed.set(matching.selectedCard.id, matching.selectedCard.symbol);
   if (attempt) {
     revealed.set(attempt.cards[0].id, attempt.cards[0].symbol);
-    if (attempt.isActor || showSecond) revealed.set(attempt.cards[1].id, attempt.cards[1].symbol);
+    if (attempt.isActor || projector || showSecond) revealed.set(attempt.cards[1].id, attempt.cards[1].symbol);
   }
   const denseBoard = matching.rows > 4;
   const matchFanfareId = matching.completionId ?? (matching.attempt?.isMatch ? matching.attempt.id : null);
-  return <div className={`shared-match-board${projector ? ' projector-match-board' : ''}${denseBoard ? ' dense-match-board' : ''}`} style={{ gridTemplateColumns: `repeat(${matching.columns}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${matching.rows}, minmax(0, 1fr))` }} aria-label={projector ? 'Shared Match Pairs board' : 'Shared Match Pairs game area'}>
+  return <div className={`shared-match-board${projector ? ' projector-match-board' : ''}${denseBoard ? ' dense-match-board' : ''}`} style={{ gridTemplateColumns: `repeat(${matching.columns}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${matching.rows}, minmax(0, 1fr))`, '--match-columns': matching.columns, '--match-rows': matching.rows } as CSSProperties} aria-label={projector ? 'Shared Match Pairs board' : 'Shared Match Pairs game area'}>
     {matching.cards.map((card, id) => {
       const symbol = revealed.get(id) ?? null;
       const canFlip = !projector && !disabled && !matching.complete && !matching.attempt && !card.matched && matching.selectedCard?.id !== id && ((matching.credits ?? 0) > 0 || matching.selectedCard !== null);
       const className = `shared-match-card${symbol !== null ? ' flipped' : ''}${card.matched ? ' matched' : ''}`;
       const label = symbol === null ? `Face-down card ${id + 1}` : `Card ${id + 1}: ${symbol}${card.matched ? ', matched' : ''}`;
-      return projector ? <div key={id} className={className} aria-label={label}>{symbol !== null ? <span>{symbol}</span> : <b>?</b>}</div> : <button key={id} className={className} onClick={() => onFlip?.(id)} disabled={!canFlip} aria-label={label}>{symbol !== null ? <span>{symbol}</span> : <b>?</b>}</button>;
+      return projector ? <div key={id} className={className} aria-label={label}><MatchCardArtwork symbol={symbol} projector /></div> : <button key={id} className={className} onClick={() => onFlip?.(id)} disabled={!canFlip} aria-label={label}><MatchCardArtwork symbol={symbol} /></button>;
     })}
     <GameFanfare eventId={matchFanfareId} kind={matching.complete ? 'complete' : 'match'} successName={projector ? matching.attempt?.playerName : undefined} />
   </div>;
@@ -1295,7 +1341,7 @@ function SharedTreasureMap({ map, onDig, projector = false, disabled = false }: 
 
 function MatchBoard({ cards, onFlip, children }: { cards: { id: number; symbol: string | null; matched: boolean; disabled: boolean }[]; onFlip: (id: number) => void; children?: ReactNode }) {
   return <div className="match-board" aria-label="Match Pairs game area">
-    {cards.map((card) => <button key={card.id} className={`match-card${card.symbol !== null ? ' flipped' : ''}${card.matched ? ' matched' : ''}`} onClick={() => onFlip(card.id)} disabled={card.disabled} aria-label={card.symbol === null ? `Face-down card ${card.id + 1}` : `Card ${card.id + 1}: ${card.symbol}${card.matched ? ', matched' : ''}`}>{card.symbol !== null ? <span>{card.symbol}</span> : <b>?</b>}</button>)}
+    {cards.map((card) => <button key={card.id} className={`match-card${card.symbol !== null ? ' flipped' : ''}${card.matched ? ' matched' : ''}`} onClick={() => onFlip(card.id)} disabled={card.disabled} aria-label={card.symbol === null ? `Face-down card ${card.id + 1}` : `Card ${card.id + 1}: ${card.symbol}${card.matched ? ', matched' : ''}`}><MatchCardArtwork symbol={card.symbol} /></button>)}
     {children}
   </div>;
 }
@@ -1561,9 +1607,12 @@ function SpokenAnswer({ disabled, onRecord, onSkip }: { disabled: boolean; onRec
     onSkip();
   };
   return <div className="spoken-answer">
-    <div className={`voice-wave${listening ? ' is-listening' : ''}`} aria-hidden="true">{wave.map((height, index) => <i key={index} style={{ height: `${height}%` }} />)}</div>
+    <button type="button" className={`speak-button${listening ? ' recording' : ''}`} disabled={disabled || listening} onClick={() => void startListening()} aria-label={listening ? 'Listening' : 'Tap to speak'}>
+      <svg viewBox="0 0 48 48" aria-hidden="true"><rect x="16" y="5" width="16" height="25" rx="8" /><path d="M10 25a14 14 0 0 0 28 0M24 39v5M17 44h14" /></svg>
+      <span className={`voice-wave${listening ? ' is-listening' : ''}`} aria-hidden="true">{wave.map((height, index) => <i key={index} style={{ height: `${height}%` }} />)}</span>
+      <span className="speak-button-copy">{listening ? 'Listening' : 'Tap to speak'}</span>
+    </button>
     <p className="spoken-status" role="status">{message}</p>
-    <div className="spoken-controls"><button type="button" className={`speak-button${listening ? ' recording' : ''}`} disabled={disabled || listening} onClick={() => void startListening()} aria-label={listening ? 'Listening' : 'Listen again'}><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="16" y="5" width="16" height="25" rx="8" /><path d="M10 25a14 14 0 0 0 28 0M24 39v5M17 44h14" /></svg></button></div>
     <button type="button" className="spoken-skip" disabled={disabled || !onSkip} onClick={skip}>SHOW ANSWER</button>
   </div>;
 }
@@ -1623,7 +1672,7 @@ function Player({ quiz, onSubmitAnswer, onSubmitSpokenAnswer, onCompleteItem, on
     if (screen !== 'question' || !question || !onSubmitSpokenAnswer || !revealed || submitting) return;
     // Keep feedback visible long enough to read, then immediately continue
     // without asking the player to operate a Next button.
-    const timer = window.setTimeout(() => void advanceSpokenAnswer(), 1400);
+    const timer = window.setTimeout(() => void advanceSpokenAnswer(), 1900);
     return () => window.clearTimeout(timer);
   }, [screen, question, onSubmitSpokenAnswer, revealed, submitting, current]);
 
@@ -1826,30 +1875,18 @@ function Player({ quiz, onSubmitAnswer, onSubmitSpokenAnswer, onCompleteItem, on
   }
   if (onSubmitSpokenAnswer) {
     const isCorrect = spokenOutcomes[String(question.id)] ?? selected === question.correctAnswer;
+    const language = quiz.speechLanguage === 'fr-FR' ? 'French' : quiz.speechLanguage === 'es-ES' ? 'Spanish' : 'English';
+    const cardState = revealed ? isCorrect && !timedOut ? 'correct' : 'incorrect' : '';
+    const cardWord = revealed ? question.correctAnswer : question.text;
     return <main className={`page quiz-page theme-${quiz.theme}`}>
       <AnswerFeedbackEffects showConfetti={quiz.theme === 'kids'} outcome={revealed && !timedOut ? isCorrect : undefined} pronounceAnswer={revealed && !timedOut && !isCorrect ? question.correctAnswer : undefined} speechLanguage={quiz.speechLanguage} />
       <header className="quiz-header"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div><span className="question-header-meta"><span className="question-label">Speak the Answer · {current + 1} of {quiz.questions.length}</span>{remainingSeconds !== null && <TimerBadge seconds={remainingSeconds} expired={remainingSeconds === 0} />}</span></header>
       <div className="progress" aria-hidden="true"><span style={{ width: `${((current + 1) / quiz.questions.length) * 100}%` }} /></div>
       {spokenComboBurst !== null && <SpokenComboBurst key={`${question.id}-${spokenComboBurst}`} combo={spokenComboBurst} />}
       <section className={`question-card spoken-question-card${timerStyle ? ' timed-question' : ''}`} style={timerStyle}>
-        <p className="eyebrow">SPEAK YOUR ANSWER</p>
-        <h1 data-confetti-origin={revealed && isCorrect ? '' : undefined}>{question.text}</h1>
+        <p className="eyebrow">SPEAK THE {language.toUpperCase()} WORD</p>
+        <div className={`spoken-card-stack ${cardState}`}><h1 data-confetti-origin={revealed && isCorrect ? '' : undefined}>{cardWord}</h1></div>
         {!revealed ? <SpokenAnswer disabled={submitting || timedOut} onRecord={submitSpokenRecording} onSkip={skipSpokenAnswer} /> : <p className={isCorrect && !timedOut ? 'answer-feedback correct-feedback' : 'answer-feedback incorrect-feedback'} role="status">{timedOut ? "Time's up." : isCorrect ? 'Correct — nice work!' : 'Not quite.'}<br />Expected answer: <strong>{question.correctAnswer}</strong>.</p>}
-        {submissionError && <p className="form-error">{submissionError}</p>}
-      </section>
-    </main>;
-    const correctCount = Object.values(spokenOutcomes).filter(Boolean).length;
-    return <main className={`spoken-mode-page theme-${quiz.theme}`}>
-      <AnswerFeedbackEffects showConfetti={quiz.theme === 'kids'} outcome={revealed && !timedOut ? isCorrect : undefined} />
-      <header className="spoken-mode-header">
-        <button type="button" className="spoken-exit" onClick={() => goToQuiz('')} aria-label="Leave homework">×</button>
-        <div className="spoken-progress" aria-label={`Question ${current + 1} of ${quiz.questions.length}`}><span style={{ width: `${((current + 1) / quiz.questions.length) * 100}%` }} /></div>
-        <div className="spoken-hud" aria-label={`${correctCount} correct answers`}><span className="spoken-energy" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="m18 2-11 16h8l-1 12 11-17h-8z" /></svg></span><strong>{correctCount}</strong><i /><span aria-hidden="true">∞</span></div>
-      </header>
-      <section className="spoken-mode-card">
-        <h1 data-confetti-origin={revealed && isCorrect ? '' : undefined}>Speak the answer</h1>
-        <div className="spoken-prompt-card"><span>{question.text}</span></div>
-        {!revealed ? <SpokenAnswer disabled={submitting || timedOut} onRecord={submitSpokenRecording} onSkip={() => void checkOrAdvance()} /> : <div className={`spoken-result ${isCorrect && !timedOut ? 'correct' : 'incorrect'}`} role="status"><strong>{timedOut ? "Time's up." : isCorrect ? 'Correct!' : 'Not quite.'}</strong><span>Expected answer: <b>{question.correctAnswer}</b></span></div>}
         {submissionError && <p className="form-error">{submissionError}</p>}
       </section>
     </main>;

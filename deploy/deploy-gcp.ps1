@@ -69,7 +69,7 @@ if ($LASTEXITCODE -eq 0) {
 }
 Invoke-Gcloud run jobs execute trivia-migrate --project=$ProjectId --region=$Region --wait
 
-Invoke-Gcloud run deploy trivia-api --project=$ProjectId --region=$Region --image=$apiImage --service-account=$runtimeServiceAccount --set-secrets="DATABASE_URL=$DatabaseSecret:latest" --set-env-vars="CLIENT_ORIGIN=https://placeholder.invalid,GOOGLE_CLIENT_ID=$GoogleClientId" --min-instances=1 --max-instances=1 --allow-unauthenticated
+Invoke-Gcloud run deploy trivia-api --project=$ProjectId --region=$Region --image=$apiImage --service-account=$runtimeServiceAccount --set-secrets="DATABASE_URL=$DatabaseSecret:latest" --set-env-vars="CLIENT_ORIGIN=https://placeholder.invalid,GOOGLE_CLIENT_ID=$GoogleClientId" --min-instances=0 --max-instances=1 --allow-unauthenticated
 $apiUrl = Get-RunUrl 'trivia-api'
 
 & gcloud run services describe trivia-teacher --project=$ProjectId --region=$Region *> $null

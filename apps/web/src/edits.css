@@ -899,9 +899,10 @@ body:has(.dark-mode) { background: #111827; }
 .preview-theme-night .preview-option { border-color: #2b3950; background: #202e45; color: #e7effc; }
 .preview-theme-night .preview-option span { background: #33435f; color: #d5e2f7; }
 .session-history { margin-top: 24px; }
-.running-session-row { min-height: 72px; }
-.running-session-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-left: auto; }
-.running-session-labels { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; margin-left: auto; }
+.running-session-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto auto; min-height: 72px; gap: 14px; }
+.running-session-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-left: 0; }
+.running-session-actions a.subtle-button { display: inline-flex; align-items: center; text-decoration: none; }
+.running-session-labels { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; margin-left: 0; }
 .running-session-labels b, .running-session-labels em { border-radius: 999px; padding: 4px 7px; font: 700 .58rem 'DM Mono', monospace; font-style: normal; letter-spacing: .02em; white-space: nowrap; }
 .running-session-labels b { color: #276a56; background: #e8f7ef; }
 .running-session-labels em { color: #3f619a; background: #eaf1fd; }
@@ -910,7 +911,7 @@ body:has(.dark-mode) { background: #111827; }
 .dark-mode .history-delete { border-color: #874758; background: #3a232e; color: #ffb5c0; }.dark-mode .history-delete:hover:not(:disabled) { background: #512a38; color: #ffd5dc; }
 .end-session-button { border: 1px solid #d87584; border-radius: 7px; background: #fff5f6; color: #a1344d; padding: 7px 10px; font-size: .72rem; font-weight: 800; }.end-session-button:hover:not(:disabled) { background: #ffe9ec; }.end-session-button:disabled { cursor: wait; opacity: .6; }
 .dark-mode .end-session-button { border-color: #874758; background: #3a232e; color: #ffb5c0; }.dark-mode .end-session-button:hover:not(:disabled) { background: #512a38; color: #ffd5dc; }
-@media (max-width: 720px) { .running-session-row { align-items: flex-start; flex-wrap: wrap; } .running-session-labels { margin-left: 48px; } .running-session-actions { width: 100%; margin-left: 48px; justify-content: flex-start; } }
+@media (max-width: 720px) { .running-session-row { grid-template-columns: 34px minmax(0, 1fr); align-items: flex-start; } .running-session-labels { grid-column: 2; justify-content: flex-start; } .running-session-actions { grid-column: 2; width: 100%; justify-content: flex-start; } }
 .archived-quizzes { margin-top: 24px; }
 .quiz-library-row { gap: 0; padding: 8px 10px; }
 .quiz-library-open { display: flex; align-items: center; min-width: 0; flex: 1; gap: 14px; border: 0; background: transparent; color: inherit; padding: 8px 0; text-align: left; }

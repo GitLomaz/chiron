@@ -95,7 +95,7 @@ run run deploy trivia-api \
   --service-account="$RUNTIME_SERVICE_ACCOUNT" \
   --set-secrets="DATABASE_URL=${DATABASE_SECRET}:latest" \
   --set-env-vars="CLIENT_ORIGIN=https://placeholder.invalid,GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}" \
-  --min-instances=1 \
+  --min-instances=0 \
   --max-instances=1 \
   --allow-unauthenticated
 API_URL="$(service_url trivia-api)"

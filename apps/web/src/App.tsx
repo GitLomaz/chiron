@@ -137,14 +137,15 @@ function RunningQuizzesPage({ go }: { go: (path: string) => void }) {
       const summary = session.kind === 'live'
         ? `${session.phase === 'lobby' ? 'Lobby' : 'In progress'} · PIN ${session.pin}`
         : `${history ? session.expired ? 'Expired' : 'Ended' : 'In progress'}`;
+      const sessionPath = `/running/${session.kind}/${session.sessionId}`;
       return <article className="quiz-row running-session-row" key={`${session.kind}-${session.sessionId}`}>
         <span className="list-icon">{session.kind === 'live' ? '▶' : '⌂'}</span>
         <span className="row-main"><strong>{session.title}</strong><small>{summary} · {session.participantCount} participant{session.participantCount === 1 ? '' : 's'} · Created {new Date(session.createdAt).toLocaleString()}{session.endsAt ? ` · ${history ? 'Closed' : 'Ends'} ${new Date(session.endsAt).toLocaleString()}` : ''}</small></span>
         <span className="running-session-labels" aria-label={`Type ${session.kind === 'live' ? 'Live' : 'Homework'}, mode ${sessionModeLabels[mode] ?? mode}`}><b>{session.kind === 'live' ? 'Live' : 'Homework'}</b><em>{sessionModeLabels[mode] ?? mode}</em></span>
         <span className="running-session-actions">
           <button className="subtle-button" onClick={() => choose(session, 'details')} disabled={opening}>Details</button>
-          <button className="subtle-button" onClick={() => choose(session, 'metrics')} disabled={opening}>Metrics</button>
-          <button className="subtle-button" onClick={() => choose(session, 'presenter')} disabled={opening}>Presenter</button>
+          <a className="subtle-button" href={`${sessionPath}/metrics`} target="_blank" rel="noreferrer">Metrics</a>
+          <a className="subtle-button" href={`${sessionPath}/presenter`} target="_blank" rel="noreferrer">Presenter</a>
           {!history && <button className="end-session-button" onClick={() => confirmAction({ title: session.kind === 'live' ? 'End live quiz?' : 'End homework?', message: session.kind === 'live' ? 'Participants will no longer be able to answer this quiz.' : 'Students will no longer be able to answer or join this homework.', confirmLabel: session.kind === 'live' ? 'End quiz' : 'End homework', onConfirm: () => void endSession(session) })} disabled={endingSessionId !== null}>{isEnding ? 'Ending…' : 'End session'}</button>}
           {history && <button className="history-delete" onClick={() => confirmAction({ title: 'Delete homework history?', message: `Permanently delete “${session.title}” and all saved attempts?`, confirmLabel: 'Delete history', onConfirm: () => void deleteHistory(session) })} disabled={deletingSessionId !== null}>{deletingSessionId === session.sessionId ? 'Deleting…' : 'Delete'}</button>}
         </span>
