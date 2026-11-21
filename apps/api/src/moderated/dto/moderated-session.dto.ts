@@ -60,8 +60,8 @@ export class UpdateLobbyLockDto extends FacilitatorActionDto {
 }
 
 export class UpdatePresentationModeDto extends FacilitatorActionDto {
-  @IsIn(['scores', 'matching', 'battleship', 'treasure_map', 'archery', 'curling'])
-  presentationMode!: 'scores' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling';
+  @IsIn(['scores', 'matching', 'matching_leaderboard', 'battleship', 'battleship_leaderboard', 'treasure_map', 'treasure_map_leaderboard', 'archery', 'archery_leaderboard', 'curling', 'curling_leaderboard'])
+  presentationMode!: 'scores' | 'matching' | 'matching_leaderboard' | 'battleship' | 'battleship_leaderboard' | 'treasure_map' | 'treasure_map_leaderboard' | 'archery' | 'archery_leaderboard' | 'curling' | 'curling_leaderboard';
 }
 
 export class RestartModeratedSessionDto extends FacilitatorActionDto {

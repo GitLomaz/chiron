@@ -23,7 +23,8 @@ type SharedArcheryGame = { arrows: ArcheryArrow[] };
 type CurlingPlayer = { stones: number; lastStone: CurlingStone | null };
 type CurlingStone = { id: string; participantId: string; participantName: string; direction: number; speed: number; x: number; y: number; score: number };
 type SharedCurlingGame = { stones: CurlingStone[] };
-const MATCHING_SYMBOLS = ['🍎', '🍌', '🍇', '🍓', '🍍', '🍉', '🍒', '🥝', '🍑', '🍐', '🍋', '🍊', '🍈', '🥭', '🍅', '🥕', '🌽', '🥑', '🥦', '🥥', '🍄', '🌶️', '🫐', '🍓‍❄️', '🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁', '🐮', '🐷', '🐸', '🐵', '🦄', '🐝', '🦋', '🐢', '🐬', '🐳', '🦉', '🦜', '🦖', '🌈', '⭐'];
+type ProjectorPresentationMode = 'scores' | 'matching' | 'matching_leaderboard' | 'battleship' | 'battleship_leaderboard' | 'treasure_map' | 'treasure_map_leaderboard' | 'archery' | 'archery_leaderboard' | 'curling' | 'curling_leaderboard';
+const MATCHING_SYMBOLS = ['atlas:gold-egg', 'atlas:blue-egg', 'atlas:green-egg', 'atlas:red-egg', 'atlas:turquoise-egg', 'atlas:black-chicken', 'atlas:brown-hen', 'atlas:ewe', 'atlas:pig', 'atlas:baseball', 'atlas:basketball', 'atlas:football', 'atlas:tennis-ball', 'atlas:blue-starfish', 'atlas:green-starfish', 'atlas:red-starfish', 'atlas:yellow-starfish', 'atlas:hex-gem', 'atlas:star-gem', 'atlas:round-gem', 'atlas:target', 'atlas:fire', 'atlas:ice', 'atlas:water', 'atlas:blue-poppy', 'atlas:pink-poppy', 'atlas:red-poppy', 'atlas:yellow-poppy', 'atlas:pumpkin-one', 'atlas:pumpkin-two', 'atlas:day', 'atlas:night'];
 type PointScore = { points: number; streak: number; maxStreak: number; lastAward: { base: number; streak: number; speed: number; total: number } | null };
 type Participant = { id: string; clientId: string; name: string; questions: SessionQuestion[]; answers: Map<string, string>; matchProgress: Map<string, MatchProgress>; gameScores: Map<string, number>; pointScore: PointScore; matching: MatchingGame | null; battleship: BattleshipPlayer | null; treasureMap: TreasureMapPlayer | null; archery: ArcheryPlayer | null; curling: CurlingPlayer | null; betweenQuestions: boolean; joinedAt: Date; currentQuestionIndex: number; currentQuestionOpenedAt: Date | null; autoAdvanceTimer: NodeJS.Timeout | null; completedAt: Date | null };
 type ModeratedSession = {
@@ -43,7 +44,7 @@ type ModeratedSession = {
   durationSeconds: number;
   endsAt: Date | null;
   lobbyLocked: boolean;
-  presentationMode: 'scores' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling';
+  presentationMode: ProjectorPresentationMode;
   matching: SharedMatchingGame | null;
   battleship: SharedBattleshipGame | null;
   treasureMap: SharedTreasureMap | null;
@@ -291,11 +292,12 @@ export class ModeratedService {
 
   updatePresentationMode(sessionId: string, user: AuthUser, presentationMode: ModeratedSession['presentationMode']) {
     const session = this.authorize(sessionId, user);
-    if (presentationMode === 'matching' && !session.matching) throw new BadRequestException('The matching board is only available in Matching mode');
-    if (presentationMode === 'battleship' && !session.battleship) throw new BadRequestException('The Battleship board is only available in Battleship mode');
-    if (presentationMode === 'treasure_map' && !session.treasureMap) throw new BadRequestException('The Treasure Map is only available in Treasure Map mode');
-    if (presentationMode === 'archery' && !session.archery) throw new BadRequestException('The archery board is only available in Archery mode');
-    if (presentationMode === 'curling' && !session.curling) throw new BadRequestException('The curling sheet is only available in Curling mode');
+    const boardMode = presentationMode.endsWith('_leaderboard') ? presentationMode.slice(0, -'_leaderboard'.length) : presentationMode;
+    if (boardMode === 'matching' && !session.matching) throw new BadRequestException('The matching board is only available in Matching mode');
+    if (boardMode === 'battleship' && !session.battleship) throw new BadRequestException('The Battleship board is only available in Battleship mode');
+    if (boardMode === 'treasure_map' && !session.treasureMap) throw new BadRequestException('The Treasure Map is only available in Treasure Map mode');
+    if (boardMode === 'archery' && !session.archery) throw new BadRequestException('The archery board is only available in Archery mode');
+    if (boardMode === 'curling' && !session.curling) throw new BadRequestException('The curling sheet is only available in Curling mode');
     session.presentationMode = presentationMode;
     return this.facilitatorState(sessionId, user);
   }
@@ -758,16 +760,38 @@ export class ModeratedService {
     const shipLengths = size === 6 ? [3, 2, 2] : size === 8 ? [4, 3, 2, 2] : [5, 4, 3, 3, 2];
     let state = [...seed].reduce((total, character) => ((total * 31) + character.charCodeAt(0)) >>> 0, 0) || 1;
     const next = () => { state = (state * 1664525 + 1013904223) >>> 0; return state; };
-    for (const length of shipLengths) {
-      for (let attempts = 0; attempts < 500; attempts += 1) {
-        const horizontal = next() % 2 === 0;
-        const row = next() % size;
-        const column = next() % size;
+    const placementsFor = (length: number) => {
+      const placements: number[][] = [];
+      for (const horizontal of [true, false]) for (let row = 0; row < size; row += 1) for (let column = 0; column < size; column += 1) {
         if ((horizontal && column + length > size) || (!horizontal && row + length > size)) continue;
-        const ship = Array.from({ length }, (_, index) => (horizontal ? row * size + column + index : (row + index) * size + column));
-        if (ship.every((cell) => !cells.has(cell))) { ship.forEach((cell) => cells.add(cell)); break; }
+        placements.push(Array.from({ length }, (_, index) => horizontal ? row * size + column + index : (row + index) * size + column));
       }
-    }
+      // Keep boards varied while preserving repeatability for a given seed.
+      for (let index = placements.length - 1; index > 0; index -= 1) {
+        const swap = next() % (index + 1);
+        [placements[index], placements[swap]] = [placements[swap], placements[index]];
+      }
+      return placements;
+    };
+    const hasBuffer = (ship: number[]) => ship.some((cell) => {
+      const row = Math.floor(cell / size), column = cell % size;
+      for (let rowOffset = -1; rowOffset <= 1; rowOffset += 1) for (let columnOffset = -1; columnOffset <= 1; columnOffset += 1) {
+        const neighborRow = row + rowOffset, neighborColumn = column + columnOffset;
+        if (neighborRow >= 0 && neighborRow < size && neighborColumn >= 0 && neighborColumn < size && cells.has(neighborRow * size + neighborColumn)) return true;
+      }
+      return false;
+    });
+    const placeFleet = (shipIndex: number): boolean => {
+      if (shipIndex === shipLengths.length) return true;
+      for (const ship of placementsFor(shipLengths[shipIndex])) {
+        if (hasBuffer(ship)) continue;
+        ship.forEach((cell) => cells.add(cell));
+        if (placeFleet(shipIndex + 1)) return true;
+        ship.forEach((cell) => cells.delete(cell));
+      }
+      return false;
+    };
+    if (!placeFleet(0)) throw new Error(`Could not place a buffered Battleship fleet on a ${size}×${size} board`);
     return { size, shipCells: cells, attacks: new Map(), lastHit: null, completionId: null };
   }
 

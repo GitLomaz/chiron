@@ -352,13 +352,14 @@ type MatchingAttempt = { id: string; cards: { id: number; symbol: string }[]; st
 type MatchingState = { credits: number | null; score: number | null; columns: number; rows: number; selectedCard: { id: number; symbol: string } | null; cards: { symbol: string | null; matched: boolean }[]; attempt: MatchingAttempt | null; complete: boolean; completionId: string | null };
 type BattleshipState = { size: number; tokens: number | null; score: number | null; shipCells: number; hits: number; cells: { result: 'hit' | 'miss' | null }[]; lastHit: { id: string; cell: number; participantName: string } | null; complete: boolean; completionId: string | null };
 type GameLeaderboardEntry = { id: string; name: string; score: number };
+type ProjectorPresentationMode = 'scores' | 'matching' | 'matching_leaderboard' | 'battleship' | 'battleship_leaderboard' | 'treasure_map' | 'treasure_map_leaderboard' | 'archery' | 'archery_leaderboard' | 'curling' | 'curling_leaderboard';
 type TreasureMapState = { size: number; tokens: number | null; cells: { result: 'clue' | 'treasure' | null; hint: string | null; terrain: 'land' | 'stream' }[]; lastDig: { id: string; cell: number; participantName: string } | null; complete: boolean; completionId: string | null };
 type ArcheryState = { arrows: number | null; lastShot: { id: string; x: number; y: number; score: number; participantName?: string } | null; attempts: { id: string; x: number; y: number; score: number; participantName?: string }[] };
 type CurlingState = { stones: number | null; lastStone: { id: string; direction: number; speed: number; x: number; y: number; score: number; participantName?: string } | null; attempts: { id: string; direction: number; speed: number; x: number; y: number; score: number; participantName?: string }[] };
 type ModeratedStudentState = { endless: boolean; scoringEnabled: boolean; pin: string; title: string; description: string | null; theme: QuizTheme; mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling'; matching: MatchingState | null; battleship: BattleshipState | null; treasureMap: TreasureMapState | null; archery: ArcheryState | null; curling: CurlingState | null; gameLeaderboard: GameLeaderboardEntry[]; betweenQuestions: boolean; phase: 'lobby' | 'question' | 'complete'; endedByTeacher: boolean; expired: boolean; endsAt: string | null; removed: boolean; participant: { id: string; name: string } | null; score: ModeratedScore | null; currentQuestion: ModeratedQuestion | null };
-type FacilitatorState = { endless: boolean; scoringEnabled: boolean; sessionId: string; pin: string; title: string; description: string | null; mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling'; presentationMode: 'scores' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling'; matching: MatchingState | null; battleship: BattleshipState | null; treasureMap: TreasureMapState | null; archery: ArcheryState | null; curling: CurlingState | null; gameLeaderboard: GameLeaderboardEntry[]; currentRound: number; phase: 'lobby' | 'question' | 'complete'; endedByTeacher: boolean; expired: boolean; endsAt: string | null; durationSeconds: number; lobbyLocked: boolean; autoBoardReset: boolean; boardResetAt: string | null; questionCount: number; completedCount: number; participants: { id: string; name: string; completed: boolean; completedItems: number; currentItemType: 'question' | 'game' | 'text' | null; currentAnswered: boolean; score: ModeratedScore }[]; scoreLeaderboard: { id: string; name: string; score: number; correct: number; answered: number; longestStreak: number }[] };
+type FacilitatorState = { endless: boolean; scoringEnabled: boolean; sessionId: string; pin: string; title: string; description: string | null; mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling'; presentationMode: ProjectorPresentationMode; matching: MatchingState | null; battleship: BattleshipState | null; treasureMap: TreasureMapState | null; archery: ArcheryState | null; curling: CurlingState | null; gameLeaderboard: GameLeaderboardEntry[]; currentRound: number; phase: 'lobby' | 'question' | 'complete'; endedByTeacher: boolean; expired: boolean; endsAt: string | null; durationSeconds: number; lobbyLocked: boolean; autoBoardReset: boolean; boardResetAt: string | null; questionCount: number; completedCount: number; participants: { id: string; name: string; completed: boolean; completedItems: number; currentItemType: 'question' | 'game' | 'text' | null; currentAnswered: boolean; score: ModeratedScore }[]; scoreLeaderboard: { id: string; name: string; score: number; correct: number; answered: number; longestStreak: number }[] };
 
-function GameLeaderboard({ leaderboard, playerId, game, projector = false }: { leaderboard: GameLeaderboardEntry[]; playerId?: string; game: 'Matching' | 'Battleship'; projector?: boolean }) {
+function GameLeaderboard({ leaderboard, playerId, game, projector = false }: { leaderboard: GameLeaderboardEntry[]; playerId?: string; game: string; projector?: boolean }) {
   const visible = projector ? leaderboard : leaderboard.slice(0, 5);
   return <section className={`game-leaderboard${projector ? ' projector-game-leaderboard' : ''}`} aria-label={`${game} leaderboard`}>
     <p>{game.toUpperCase()} LEADERBOARD</p>
@@ -591,7 +592,6 @@ export function Facilitator({ sessionId, token, projector = false, metrics = fal
   const [updatingLobby, setUpdatingLobby] = useState(false);
   const [removingParticipantId, setRemovingParticipantId] = useState<string | null>(null);
   const [projectorMetric, setProjectorMetric] = useState<'scores' | 'correct'>('scores');
-  const [showMatchLeaderboard, setShowMatchLeaderboard] = useState(true);
   const load = useCallback(async () => { try { const next = await moderatedRequest<FacilitatorState>(`/${sessionId}/facilitator`); setState((current) => { const restarted = Boolean(next.endsAt && (!current?.endsAt || Date.parse(next.endsAt) > Date.parse(current.endsAt))); return current?.sessionId === next.sessionId && (current.endedByTeacher || current.expired) && !next.endedByTeacher && !next.expired && !restarted ? current : next; }); setError(''); } catch (err) { setError(err instanceof Error ? err.message : 'Could not load facilitator controls'); } }, [sessionId]);
   useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 2000); return () => window.clearInterval(timer); }, [load]);
   async function start() { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/start`, { method: 'POST' })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not start the test'); } finally { setActing(false); } }
@@ -605,10 +605,13 @@ export function Facilitator({ sessionId, token, projector = false, metrics = fal
   async function resetBoardNow() { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/board/reset`, { method: 'POST' })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not reset the shared board'); } finally { setActing(false); } }
   async function updateBoardAutoReset(autoBoardReset: boolean) { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/board/auto-reset`, { method: 'POST', body: JSON.stringify({ autoBoardReset }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not update automatic board reset'); } finally { setActing(false); } }
   async function updateLobbyLock(lobbyLocked: boolean) { setUpdatingLobby(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/lobby`, { method: 'POST', body: JSON.stringify({ lobbyLocked }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not update the lobby'); } finally { setUpdatingLobby(false); } }
-  async function updatePresentationMode(presentationMode: 'scores' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling') { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/presentation`, { method: 'POST', body: JSON.stringify({ presentationMode }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not update the projector display'); } finally { setActing(false); } }
+  async function updatePresentationMode(presentationMode: ProjectorPresentationMode) { setActing(true); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/presentation`, { method: 'POST', body: JSON.stringify({ presentationMode }) })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not update the projector display'); } finally { setActing(false); } }
   async function removeParticipant(participantId: string) { setRemovingParticipantId(participantId); setError(''); try { setState(await moderatedRequest<FacilitatorState>(`/${sessionId}/participants/${participantId}/remove`, { method: 'POST' })); } catch (err) { setError(err instanceof Error ? err.message : 'Could not remove this participant'); } finally { setRemovingParticipantId(null); } }
   if (!state) return <main className="page status-page"><div className="brand"><span className="brand-mark">Q</span> Quizboard</div>{error ? <section className="error-card"><h1>Facilitator access unavailable.</h1><p>{error}</p></section> : <div className="loader" />}</main>;
   if (projector) {
+    const boardPresentationMode = state.presentationMode.replace(/_leaderboard$/, '') as Exclude<ProjectorPresentationMode, 'scores' | `${string}_leaderboard`>;
+    const showGameLeaderboard = state.presentationMode.endsWith('_leaderboard');
+    const projectorLeaderboard = state.gameLeaderboard.length ? state.gameLeaderboard : state.scoreLeaderboard.map(({ id, name, score }) => ({ id, name, score }));
     if (state.phase === 'lobby') {
       const playerCount = state.participants.length;
       const playerColumns = Math.max(1, Math.ceil(Math.sqrt(playerCount)));
@@ -632,23 +635,23 @@ export function Facilitator({ sessionId, token, projector = false, metrics = fal
         </section>
       </main>;
     }
-    if (state.phase !== 'complete' && state.presentationMode === 'matching' && state.matching) {
+    if (state.phase !== 'complete' && boardPresentationMode === 'matching' && state.matching) {
       const matchedPairs = state.matching.cards.filter((card) => card.matched).length / 2;
       const denseBoard = state.matching.rows > 4;
-      return <main className={`projector-match-screen${denseBoard ? ' projector-dense-match-screen' : ''}`} aria-live="polite"><section className="projector-match-content"><header><div className="projector-title"><p>SHARED MEMORY BOARD</p><h1>Match Pairs</h1><span>{state.title}</span></div><div className="projector-match-header-stats"><ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} /><div className="projector-match-score"><span>PAIRS FOUND</span><strong>{matchedPairs} / {state.matching.cards.length / 2}</strong></div><button type="button" className="projector-match-leaderboard-toggle" aria-pressed={showMatchLeaderboard} onClick={() => setShowMatchLeaderboard((visible) => !visible)}>{showMatchLeaderboard ? 'Hide scores' : 'Show scores'}</button></div></header><div className={`projector-match-game-layout${showMatchLeaderboard ? '' : ' scores-hidden'}`}><div className="projector-match-board-frame"><SharedMatchBoard matching={state.matching} projector /></div>{showMatchLeaderboard && <GameLeaderboard leaderboard={state.gameLeaderboard} game="Matching" projector />}</div><p className="projector-match-tip">Each pair is worth 100 points. Students choose two cards on their own screens, and the pair is revealed here for everyone.</p></section></main>;
+      return <main className={`projector-match-screen${denseBoard ? ' projector-dense-match-screen' : ''}`} aria-live="polite"><section className="projector-match-content"><header><div className="projector-title"><p>SHARED MEMORY BOARD</p><h1>Match Pairs</h1><span>{state.title}</span></div><div className="projector-match-header-stats"><ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} /><div className="projector-match-score"><span>PAIRS FOUND</span><strong>{matchedPairs} / {state.matching.cards.length / 2}</strong></div></div></header><div className={`projector-match-game-layout${showGameLeaderboard ? '' : ' scores-hidden'}`}><div className="projector-match-board-frame"><SharedMatchBoard matching={state.matching} projector /></div>{showGameLeaderboard && <GameLeaderboard leaderboard={projectorLeaderboard} game="Matching" projector />}</div><p className="projector-match-tip">Each pair is worth 100 points. Students choose two cards on their own screens, and the pair is revealed here for everyone.</p></section></main>;
     }
-    if (state.phase !== 'complete' && state.presentationMode === 'battleship' && state.battleship) {
-      return <main className="projector-match-screen projector-battleship-screen" aria-live="polite"><ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} /><section className="projector-match-content"><header><div className="projector-title"><p>SHARED BATTLE MAP</p><h1>Battleship</h1><span>{state.title}</span></div><div className="projector-match-header-stats"><div className="projector-match-score"><span>FLEET HIT</span><strong>{state.battleship.hits} / {state.battleship.shipCells}</strong></div></div></header><div className="projector-match-game-layout"><div className="projector-grid-board-frame"><SharedBattleshipBoard battleship={state.battleship} projector /></div><GameLeaderboard leaderboard={state.gameLeaderboard} game="Battleship" projector /></div><p className="projector-match-tip">Each hit is worth 100 points. Students earn attack tokens by answering correctly, then choose a square to fire on the shared map.</p></section></main>;
+    if (state.phase !== 'complete' && boardPresentationMode === 'battleship' && state.battleship) {
+      return <main className="projector-match-screen projector-battleship-screen" aria-live="polite"><ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} /><section className="projector-match-content"><header><div className="projector-title"><p>SHARED BATTLE MAP</p><h1>Battleship</h1><span>{state.title}</span></div><div className="projector-match-header-stats"><div className="projector-match-score"><span>FLEET HIT</span><strong>{state.battleship.hits} / {state.battleship.shipCells}</strong></div></div></header><div className={`projector-match-game-layout${showGameLeaderboard ? '' : ' scores-hidden'}`}><div className="projector-grid-board-frame"><SharedBattleshipBoard battleship={state.battleship} projector /></div>{showGameLeaderboard && <GameLeaderboard leaderboard={projectorLeaderboard} game="Battleship" projector />}</div><p className="projector-match-tip">Each hit is worth 100 points. Students earn attack tokens by answering correctly, then choose a square to fire on the shared map.</p></section></main>;
     }
-    if (state.phase !== 'complete' && state.presentationMode === 'treasure_map' && state.treasureMap) {
+    if (state.phase !== 'complete' && boardPresentationMode === 'treasure_map' && state.treasureMap) {
       const clues = state.treasureMap.cells.filter((cell) => cell.result === 'clue').length;
-      return <main className="projector-match-screen projector-treasure-map-screen" aria-live="polite"><ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} /><section className="projector-match-content"><header><div className="projector-title"><p>SHARED TREASURE HUNT</p><h1>Treasure Map</h1><span>{state.title}</span></div><div className="projector-match-score"><span>CLUES FOUND</span><strong>{clues}</strong></div></header><div className="projector-grid-board-frame"><SharedTreasureMap map={state.treasureMap} projector /></div><p className="projector-match-tip">Students earn scout tokens with correct answers, then uncover clues to find the treasure together.</p></section></main>;
+      return <main className="projector-match-screen projector-treasure-map-screen" aria-live="polite"><ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} /><section className="projector-match-content"><header><div className="projector-title"><p>SHARED TREASURE HUNT</p><h1>Treasure Map</h1><span>{state.title}</span></div><div className="projector-match-score"><span>CLUES FOUND</span><strong>{clues}</strong></div></header><div className={`projector-match-game-layout${showGameLeaderboard ? '' : ' scores-hidden'}`}><div className="projector-grid-board-frame"><SharedTreasureMap map={state.treasureMap} projector /></div>{showGameLeaderboard && <GameLeaderboard leaderboard={projectorLeaderboard} game="Treasure Map" projector />}</div><p className="projector-match-tip">Students earn scout tokens with correct answers, then uncover clues to find the treasure together.</p></section></main>;
     }
-    if (state.phase !== 'complete' && state.presentationMode === 'archery' && state.archery) {
-      return <main className="projector-match-screen projector-archery-screen" aria-live="polite"><ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} /><section className="projector-match-content"><header><div className="projector-title"><p>SHARED ARCHERY RANGE</p><h1>Archery</h1><span>{state.title}</span></div><div className="projector-match-score"><span>BEST BULLSEYE</span><strong>{state.archery.attempts[0]?.score ?? '—'}</strong></div></header><SharedArcheryBoard archery={state.archery} projector /><p className="projector-match-tip">Students place their shot using the bars beside and below the target.</p></section></main>;
+    if (state.phase !== 'complete' && boardPresentationMode === 'archery' && state.archery) {
+      return <main className="projector-match-screen projector-archery-screen" aria-live="polite"><ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} /><section className="projector-match-content"><header><div className="projector-title"><p>SHARED ARCHERY RANGE</p><h1>Archery</h1><span>{state.title}</span></div><div className="projector-match-score"><span>BEST BULLSEYE</span><strong>{state.archery.attempts[0]?.score ?? '—'}</strong></div></header><div className={`projector-match-game-layout${showGameLeaderboard ? '' : ' scores-hidden'}`}><div className="projector-grid-board-frame"><SharedArcheryBoard archery={state.archery} projector /></div>{showGameLeaderboard && <GameLeaderboard leaderboard={projectorLeaderboard} game="Archery" projector />}</div><p className="projector-match-tip">Students place their shot using the bars beside and below the target.</p></section></main>;
     }
-    if (state.phase !== 'complete' && state.presentationMode === 'curling' && state.curling) {
-      return <main className="projector-match-screen projector-curling-screen" aria-live="polite"><ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} /><section className="projector-match-content"><header><div className="projector-title"><p>SHARED CURLING SHEET</p><h1>Curling</h1><span>{state.title}</span></div><div className="projector-match-score"><span>BEST STONE</span><strong>{state.curling.attempts[0]?.score ?? '—'}</strong></div></header><SharedCurlingSheet curling={state.curling} projector /><p className="projector-match-tip">Each stone lands independently—stones do not interact.</p></section></main>;
+    if (state.phase !== 'complete' && boardPresentationMode === 'curling' && state.curling) {
+      return <main className="projector-match-screen projector-curling-screen" aria-live="polite"><ProjectorSessionTimer endsAt={state.endsAt} durationSeconds={state.durationSeconds} running={state.phase === 'question'} /><section className="projector-match-content"><header><div className="projector-title"><p>SHARED CURLING SHEET</p><h1>Curling</h1><span>{state.title}</span></div><div className="projector-match-score"><span>BEST STONE</span><strong>{state.curling.attempts[0]?.score ?? '—'}</strong></div></header><div className={`projector-match-game-layout${showGameLeaderboard ? '' : ' scores-hidden'}`}><div className="projector-grid-board-frame"><SharedCurlingSheet curling={state.curling} projector /></div>{showGameLeaderboard && <GameLeaderboard leaderboard={projectorLeaderboard} game="Curling" projector />}</div><p className="projector-match-tip">Each stone lands independently—stones do not interact.</p></section></main>;
     }
     const complete = state.phase === 'complete';
     const scoring = state.scoringEnabled;
@@ -692,10 +695,11 @@ function SessionEndEditor({ endsAt, durationSeconds, mode, onUpdate }: { endsAt:
   return <section className="session-duration-control"><p className="eyebrow">{mode === 'date' ? 'SESSION END' : 'SESSION DURATION'}</p>{mode === 'date' ? <label>End date and time<input type="datetime-local" value={endDate} min={dateTimeLocalValue(new Date(Date.now() + 60000).toISOString())} max={dateTimeLocalValue(new Date(Date.now() + 604800000).toISOString())} disabled={updating} onChange={(event) => setEndDate(event.target.value)} /></label> : <label>Duration in minutes<input type="number" min="1" max="10080" step="1" inputMode="numeric" value={durationMinutes} disabled={updating} onChange={(event) => setDurationMinutes(event.target.value)} /></label>}<button className="primary-button" disabled={updating} onClick={() => void save()}>{updating ? 'Updating…' : mode === 'date' ? 'Update deadline' : 'Update duration'}</button><small>{mode === 'date' ? 'Choose a deadline from 1 minute to 7 days from now.' : 'Choose a whole-number duration from 1 minute to 7 days.'}</small>{validationError && <p className="form-error">{validationError}</p>}</section>;
 }
 
-function LiveFacilitatorView({ state, sessionId, token, acting, updatingLobby, removingParticipantId, error, onStart, onNext, onEnd, onUpdateDuration, onRestart, onResetBoard, onBoardAutoReset, onLobbyLock, onPresentationMode, onRemoveParticipant }: { state: FacilitatorState; sessionId: string; token: string; acting: boolean; updatingLobby: boolean; removingParticipantId: string | null; error: string; onStart: () => Promise<void>; onNext: () => Promise<void>; onEnd: () => Promise<void>; onUpdateDuration: (durationSeconds: number) => Promise<void>; onRestart: (mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling') => Promise<void>; onResetBoard: () => Promise<void>; onBoardAutoReset: (autoReset: boolean) => Promise<void>; onLobbyLock: (locked: boolean) => Promise<void>; onPresentationMode: (mode: 'scores' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling') => Promise<void>; onRemoveParticipant: (participantId: string) => Promise<void> }) {
+function LiveFacilitatorView({ state, sessionId, token, acting, updatingLobby, removingParticipantId, error, onStart, onNext, onEnd, onUpdateDuration, onRestart, onResetBoard, onBoardAutoReset, onLobbyLock, onPresentationMode, onRemoveParticipant }: { state: FacilitatorState; sessionId: string; token: string; acting: boolean; updatingLobby: boolean; removingParticipantId: string | null; error: string; onStart: () => Promise<void>; onNext: () => Promise<void>; onEnd: () => Promise<void>; onUpdateDuration: (durationSeconds: number) => Promise<void>; onRestart: (mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling') => Promise<void>; onResetBoard: () => Promise<void>; onBoardAutoReset: (autoReset: boolean) => Promise<void>; onLobbyLock: (locked: boolean) => Promise<void>; onPresentationMode: (mode: ProjectorPresentationMode) => Promise<void>; onRemoveParticipant: (participantId: string) => Promise<void> }) {
   const [studentLinkCopied, setStudentLinkCopied] = useState(false);
   const [restartMode, setRestartMode] = useState<'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling'>(state.mode);
   const studentUrl = moderatedStudentUrl(state.pin);
+  const projectorBoard = state.mode === 'matching' ? { mode: 'matching', label: 'Matching Pairs' } : state.mode === 'battleship' ? { mode: 'battleship', label: 'Battleship' } : state.mode === 'treasure_map' ? { mode: 'treasure_map', label: 'Treasure Map' } : state.mode === 'archery' ? { mode: 'archery', label: 'Archery' } : { mode: 'curling', label: 'Curling' };
   const scoreDisplayUrl = projectorUrl(sessionId);
   const activeParticipantCount = state.participants.filter((participant) => !participant.completed).length;
   async function copyStudentLink() { try { await navigator.clipboard.writeText(studentUrl); setStudentLinkCopied(true); window.setTimeout(() => setStudentLinkCopied(false), 2000); } catch { /* Clipboard access is optional. */ } }
@@ -710,7 +714,7 @@ function LiveFacilitatorView({ state, sessionId, token, acting, updatingLobby, r
         {state.phase === 'lobby' ? <button className="primary-button" disabled={acting} onClick={() => void onStart()}>{acting ? 'Starting…' : 'Start test'}</button> : <div className="score-so-far"><span>Completed</span><strong>{state.completedCount} / {state.participants.length}</strong><small>{state.endless ? 'Endless questions' : `${state.questionCount} quiz items per participant`}</small></div>}
         {state.phase !== 'complete' && <SessionEndEditor endsAt={state.endsAt} durationSeconds={state.durationSeconds} mode="duration" onUpdate={onUpdateDuration} />}
         {state.mode === 'facilitated' && state.phase === 'question' && <button className="primary-button" disabled={acting} onClick={() => void onNext()}>{acting ? 'Releasing…' : state.currentRound >= state.questionCount ? 'Finish test' : 'Release next round'}</button>}
-        {(state.mode === 'matching' || state.mode === 'battleship' || state.mode === 'treasure_map' || state.mode === 'archery' || state.mode === 'curling') && <label className="projector-presentation-control"><span><strong>Projector display</strong><small>Choose what the class sees on the projector.</small></span><select value={state.presentationMode} disabled={acting} onChange={(event) => void onPresentationMode(event.target.value as 'scores' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling')}>{state.mode === 'matching' ? <option value="matching">Matching pairs grid</option> : state.mode === 'battleship' ? <option value="battleship">Battleship map</option> : state.mode === 'treasure_map' ? <option value="treasure_map">Treasure map</option> : state.mode === 'archery' ? <option value="archery">Archery target</option> : <option value="curling">Curling sheet</option>}<option value="scores">High scores</option></select></label>}
+        {(state.mode === 'matching' || state.mode === 'battleship' || state.mode === 'treasure_map' || state.mode === 'archery' || state.mode === 'curling') && <label className="projector-presentation-control"><span><strong>Projector display</strong><small>Choose what the class sees on the projector.</small></span><select value={state.presentationMode} disabled={acting} onChange={(event) => void onPresentationMode(event.target.value as ProjectorPresentationMode)}><option value={projectorBoard.mode}>{projectorBoard.label}</option><option value={`${projectorBoard.mode}_leaderboard`}>{projectorBoard.label} &amp; Leaderboard</option><option value="scores">High Scores</option></select></label>}
         {(state.mode === 'matching' || state.mode === 'battleship' || state.mode === 'treasure_map') && (() => {
           const boardComplete = state.mode === 'matching' ? state.matching?.complete : state.mode === 'battleship' ? state.battleship?.complete : state.treasureMap?.complete;
           const boardName = state.mode === 'matching' ? 'matching board' : state.mode === 'battleship' ? 'Battleship board' : 'treasure map';
@@ -1032,32 +1036,45 @@ function CoinCatchGame({ title, durationSeconds, onComplete }: { title: string; 
   </section>;
 }
 
-const MATCH_PAIR_SYMBOLS = ['🍎', '🍌', '🍇', '🍓', '🍍', '🍉'];
+const MATCH_PAIR_SYMBOLS = ['atlas:gold-egg', 'atlas:blue-egg', 'atlas:green-egg', 'atlas:red-egg', 'atlas:turquoise-egg', 'atlas:black-chicken'];
 
 type AtlasFrame = { x: number; y: number; w: number; h: number };
 
-// `cards.png` is a TexturePacker atlas. Keep the card chrome and the fruit
-// faces together in one request, rather than loading an image for every card.
+// `cards.png` is a TexturePacker atlas. Pair identities are atlas IDs, so the
+// board never has to substitute a similarly-looking emoji or fruit sprite.
 const MATCHING_CARD_FRAMES: Record<string, AtlasFrame> = {
-  '🍎': { x: 528, y: 528, w: 38, h: 48 },
-  '🍌': { x: 192, y: 48, w: 44, h: 48 },
-  '🍇': { x: 624, y: 528, w: 48, h: 46 },
-  '🍓': { x: 720, y: 576, w: 47, h: 48 },
-  '🍍': { x: 624, y: 576, w: 48, h: 43 },
-  '🍉': { x: 528, y: 624, w: 48, h: 39 },
-  '🍒': { x: 576, y: 528, w: 48, h: 45 },
-  '🥝': { x: 384, y: 240, w: 38, h: 48 },
-  '🍑': { x: 528, y: 336, w: 47, h: 48 },
-  '🍐': { x: 576, y: 336, w: 27, h: 48 },
-  '🍋': { x: 672, y: 288, w: 48, h: 32 },
-  '🍊': { x: 384, y: 336, w: 46, h: 48 },
-  '🍈': { x: 48, y: 336, w: 48, h: 42 },
-  '🥭': { x: 624, y: 576, w: 48, h: 43 },
-  '🍅': { x: 192, y: 624, w: 48, h: 32 },
-  '🥥': { x: 144, y: 144, w: 48, h: 39 },
-  '🍄': { x: 624, y: 288, w: 40, h: 48 },
-  '🌶️': { x: 672, y: 96, w: 48, h: 32 },
-  '🐷': { x: 432, y: 0, w: 28, h: 48 },
+  'atlas:gold-egg': { x: 0, y: 0, w: 39, h: 48 },
+  'atlas:blue-egg': { x: 48, y: 0, w: 39, h: 48 },
+  'atlas:green-egg': { x: 96, y: 0, w: 39, h: 48 },
+  'atlas:red-egg': { x: 144, y: 0, w: 39, h: 48 },
+  'atlas:turquoise-egg': { x: 192, y: 0, w: 39, h: 48 },
+  'atlas:black-chicken': { x: 240, y: 0, w: 29, h: 48 },
+  'atlas:brown-hen': { x: 288, y: 0, w: 29, h: 48 },
+  'atlas:ewe': { x: 336, y: 0, w: 26, h: 48 },
+  'atlas:pig': { x: 432, y: 0, w: 28, h: 48 },
+  'atlas:baseball': { x: 240, y: 48, w: 48, h: 48 },
+  'atlas:basketball': { x: 288, y: 48, w: 48, h: 48 },
+  'atlas:football': { x: 384, y: 192, w: 48, h: 48 },
+  'atlas:tennis-ball': { x: 144, y: 624, w: 48, h: 48 },
+  'atlas:blue-starfish': { x: 720, y: 48, w: 48, h: 47 },
+  'atlas:green-starfish': { x: 480, y: 240, w: 48, h: 47 },
+  'atlas:red-starfish': { x: 672, y: 528, w: 48, h: 47 },
+  'atlas:yellow-starfish': { x: 720, y: 624, w: 48, h: 47 },
+  'atlas:hex-gem': { x: 720, y: 240, w: 48, h: 45 },
+  'atlas:star-gem': { x: 672, y: 576, w: 48, h: 46 },
+  'atlas:round-gem': { x: 144, y: 576, w: 48, h: 48 },
+  'atlas:target': { x: 96, y: 624, w: 48, h: 46 },
+  'atlas:fire': { x: 192, y: 192, w: 32, h: 48 },
+  'atlas:ice': { x: 192, y: 288, w: 48, h: 48 },
+  'atlas:water': { x: 432, y: 624, w: 48, h: 34 },
+  'atlas:blue-poppy': { x: 432, y: 480, w: 48, h: 42 },
+  'atlas:pink-poppy': { x: 480, y: 480, w: 48, h: 42 },
+  'atlas:red-poppy': { x: 528, y: 480, w: 48, h: 42 },
+  'atlas:yellow-poppy': { x: 624, y: 480, w: 48, h: 42 },
+  'atlas:pumpkin-one': { x: 48, y: 528, w: 48, h: 47 },
+  'atlas:pumpkin-two': { x: 96, y: 528, w: 48, h: 47 },
+  'atlas:day': { x: 432, y: 144, w: 48, h: 48 },
+  'atlas:night': { x: 240, y: 336, w: 43, h: 48 },
 };
 
 function AtlasSprite({ frame, className, fill = false }: { frame: AtlasFrame; className?: string; fill?: boolean }) {
@@ -1071,12 +1088,11 @@ function AtlasSprite({ frame, className, fill = false }: { frame: AtlasFrame; cl
   return <span className={`atlas-sprite${className ? ` ${className}` : ''}`} style={style} aria-hidden="true" />;
 }
 
-function MatchCardArtwork({ symbol, projector = false }: { symbol: string | null; projector?: boolean }) {
+function MatchCardArtwork({ symbol }: { symbol: string | null }) {
   if (symbol === null) return null;
   const face = symbol ? MATCHING_CARD_FRAMES[symbol] : null;
   return <>
     {face ? <AtlasSprite frame={face} className="match-card-symbol" /> : <span className="match-card-emoji" aria-hidden="true">{symbol}</span>}
-    {projector && <span className="match-card-value" aria-hidden="true">{symbol}</span>}
   </>;
 }
 
@@ -1159,7 +1175,7 @@ function SharedMatchBoard({ matching, onFlip, projector = false, disabled = fals
       const canFlip = !projector && !disabled && !matching.complete && !matching.attempt && !card.matched && matching.selectedCard?.id !== id && ((matching.credits ?? 0) > 0 || matching.selectedCard !== null);
       const className = `shared-match-card${symbol !== null ? ' flipped' : ''}${card.matched ? ' matched' : ''}`;
       const label = symbol === null ? `Face-down card ${id + 1}` : `Card ${id + 1}: ${symbol}${card.matched ? ', matched' : ''}`;
-      return projector ? <div key={id} className={className} aria-label={label}><MatchCardArtwork symbol={symbol} projector /></div> : <button key={id} className={className} onClick={() => onFlip?.(id)} disabled={!canFlip} aria-label={label}><MatchCardArtwork symbol={symbol} /></button>;
+      return projector ? <div key={id} className={className} aria-label={label}><MatchCardArtwork symbol={symbol} /></div> : <button key={id} className={className} onClick={() => onFlip?.(id)} disabled={!canFlip} aria-label={label}><MatchCardArtwork symbol={symbol} /></button>;
     })}
     <GameFanfare eventId={matchFanfareId} kind={matching.complete ? 'complete' : 'match'} successName={projector ? matching.attempt?.playerName : undefined} />
   </div>;

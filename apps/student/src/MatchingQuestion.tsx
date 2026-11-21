@@ -4,13 +4,23 @@ type Pair = { question: string; answer: string };
 type Progress = { matched: number[]; mistakes: number };
 type Selection = { side: 'left' | 'right'; index: number };
 
+function shuffledOrder(length: number) {
+  const order = Array.from({ length }, (_, index) => index);
+  for (let index = order.length - 1; index > 0; index -= 1) {
+    const swap = Math.floor(Math.random() * (index + 1));
+    [order[index], order[swap]] = [order[swap], order[index]];
+  }
+  return order;
+}
+
 export function MatchingQuestion({ pairs, progress, disabled, onMatch }: { pairs: Pair[]; progress: Progress | null; disabled: boolean; onMatch: (left: number, right: number) => void }) {
   const [selected, setSelected] = useState<Selection | null>(null);
   const [wrongMatch, setWrongMatch] = useState<{ left: number; right: number } | null>(null);
+  const [leftOrder] = useState(() => shuffledOrder(pairs.length));
+  const [rightOrder] = useState(() => shuffledOrder(pairs.length));
   const found = progress?.matched ?? [];
   const remaining = Math.max(0, 3 - (progress?.mistakes ?? 0));
   const showingSolutions = remaining === 0 && wrongMatch === null;
-  const order = [...pairs.keys()].reverse();
 
   function select(side: Selection['side'], index: number) {
     if (wrongMatch) return;
@@ -33,6 +43,6 @@ export function MatchingQuestion({ pairs, progress, disabled, onMatch }: { pairs
 
   return <div className="matching-question">
     <div className="matching-intro"><p>Select an item from either column, then choose its match.</p><div className="matching-stats" aria-live="polite"><span><strong>{found.length}/{pairs.length}</strong> matched</span><span className={remaining === 1 ? 'matching-tries is-low' : 'matching-tries'}><strong>{remaining}</strong> {remaining === 1 ? 'try' : 'tries'} left</span></div></div>
-    {showingSolutions ? <section className="matching-solution" aria-label="Correct matches"><header><h2>Correct matches</h2><p>Here are the pairs for this question.</p></header><ol>{pairs.map((pair, index) => <li key={index}><span>{pair.question}</span><b aria-hidden="true">→</b><strong>{pair.answer}</strong></li>)}</ol></section> : <div className="matching-columns"><section className="matching-column" aria-label="Questions"><h2>Questions</h2><div className="matching-options">{pairs.map((pair, index) => option('left', index, pair.question))}</div></section><section className="matching-column" aria-label="Answers"><h2>Answers</h2><div className="matching-options">{order.map((index) => option('right', index, pairs[index].answer))}</div></section></div>}
+    {showingSolutions ? <section className="matching-solution" aria-label="Correct matches"><header><h2>Correct matches</h2><p>Here are the pairs for this question.</p></header><ol>{pairs.map((pair, index) => <li key={index}><span>{pair.question}</span><b aria-hidden="true">→</b><strong>{pair.answer}</strong></li>)}</ol></section> : <div className="matching-columns"><section className="matching-column" aria-label="Questions"><h2>Questions</h2><div className="matching-options">{leftOrder.map((index) => option('left', index, pairs[index].question))}</div></section><section className="matching-column" aria-label="Answers"><h2>Answers</h2><div className="matching-options">{rightOrder.map((index) => option('right', index, pairs[index].answer))}</div></section></div>}
   </div>;
 }
