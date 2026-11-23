@@ -1036,53 +1036,56 @@ function CoinCatchGame({ title, durationSeconds, onComplete }: { title: string; 
   </section>;
 }
 
-const MATCH_PAIR_SYMBOLS = ['atlas:gold-egg', 'atlas:blue-egg', 'atlas:green-egg', 'atlas:red-egg', 'atlas:turquoise-egg', 'atlas:black-chicken'];
+const MATCH_PAIR_SYMBOLS = ['atlas:blue-orb', 'atlas:gold-orb', 'atlas:green-orb', 'atlas:purple-orb', 'atlas:red-orb', 'atlas:silver-orb'];
 
 type AtlasFrame = { x: number; y: number; w: number; h: number };
 
-// `cards.png` is a TexturePacker atlas. Pair identities are atlas IDs, so the
-// board never has to substitute a similarly-looking emoji or fruit sprite.
+// `cards.png` is a 16 × 15 sheet of 512px tiles. Pair identities map directly
+// to its grid coordinates, so the board never has to substitute emoji artwork.
 const MATCHING_CARD_FRAMES: Record<string, AtlasFrame> = {
-  'atlas:gold-egg': { x: 0, y: 0, w: 39, h: 48 },
-  'atlas:blue-egg': { x: 48, y: 0, w: 39, h: 48 },
-  'atlas:green-egg': { x: 96, y: 0, w: 39, h: 48 },
-  'atlas:red-egg': { x: 144, y: 0, w: 39, h: 48 },
-  'atlas:turquoise-egg': { x: 192, y: 0, w: 39, h: 48 },
-  'atlas:black-chicken': { x: 240, y: 0, w: 29, h: 48 },
-  'atlas:brown-hen': { x: 288, y: 0, w: 29, h: 48 },
-  'atlas:ewe': { x: 336, y: 0, w: 26, h: 48 },
-  'atlas:pig': { x: 432, y: 0, w: 28, h: 48 },
-  'atlas:baseball': { x: 240, y: 48, w: 48, h: 48 },
-  'atlas:basketball': { x: 288, y: 48, w: 48, h: 48 },
-  'atlas:football': { x: 384, y: 192, w: 48, h: 48 },
-  'atlas:tennis-ball': { x: 144, y: 624, w: 48, h: 48 },
-  'atlas:blue-starfish': { x: 720, y: 48, w: 48, h: 47 },
-  'atlas:green-starfish': { x: 480, y: 240, w: 48, h: 47 },
-  'atlas:red-starfish': { x: 672, y: 528, w: 48, h: 47 },
-  'atlas:yellow-starfish': { x: 720, y: 624, w: 48, h: 47 },
-  'atlas:hex-gem': { x: 720, y: 240, w: 48, h: 45 },
-  'atlas:star-gem': { x: 672, y: 576, w: 48, h: 46 },
-  'atlas:round-gem': { x: 144, y: 576, w: 48, h: 48 },
-  'atlas:target': { x: 96, y: 624, w: 48, h: 46 },
-  'atlas:fire': { x: 192, y: 192, w: 32, h: 48 },
-  'atlas:ice': { x: 192, y: 288, w: 48, h: 48 },
-  'atlas:water': { x: 432, y: 624, w: 48, h: 34 },
-  'atlas:blue-poppy': { x: 432, y: 480, w: 48, h: 42 },
-  'atlas:pink-poppy': { x: 480, y: 480, w: 48, h: 42 },
-  'atlas:red-poppy': { x: 528, y: 480, w: 48, h: 42 },
-  'atlas:yellow-poppy': { x: 624, y: 480, w: 48, h: 42 },
-  'atlas:pumpkin-one': { x: 48, y: 528, w: 48, h: 47 },
-  'atlas:pumpkin-two': { x: 96, y: 528, w: 48, h: 47 },
-  'atlas:day': { x: 432, y: 144, w: 48, h: 48 },
-  'atlas:night': { x: 240, y: 336, w: 43, h: 48 },
+  'atlas:blue-orb': { x: 0, y: 0, w: 512, h: 512 },
+  'atlas:gold-orb': { x: 512, y: 0, w: 512, h: 512 },
+  'atlas:green-orb': { x: 1024, y: 0, w: 512, h: 512 },
+  'atlas:purple-orb': { x: 1536, y: 0, w: 512, h: 512 },
+  'atlas:red-orb': { x: 2048, y: 0, w: 512, h: 512 },
+  'atlas:silver-orb': { x: 2560, y: 0, w: 512, h: 512 },
+  'atlas:gold-star': { x: 3072, y: 0, w: 512, h: 512 },
+  'atlas:silver-star': { x: 3584, y: 0, w: 512, h: 512 },
+  'atlas:clover': { x: 4096, y: 0, w: 512, h: 512 },
+  'atlas:sprout': { x: 4608, y: 0, w: 512, h: 512 },
+  'atlas:bronze-coin': { x: 5120, y: 0, w: 512, h: 512 },
+  'atlas:gold-coin': { x: 5632, y: 0, w: 512, h: 512 },
+  'atlas:silver-coin': { x: 6144, y: 0, w: 512, h: 512 },
+  'atlas:black-gem': { x: 6656, y: 0, w: 512, h: 512 },
+  'atlas:blue-gem': { x: 7168, y: 0, w: 512, h: 512 },
+  'atlas:green-gem': { x: 7680, y: 0, w: 512, h: 512 },
+  'atlas:orange-gem': { x: 0, y: 512, w: 512, h: 512 },
+  'atlas:pink-gem': { x: 512, y: 512, w: 512, h: 512 },
+  'atlas:purple-gem': { x: 1024, y: 512, w: 512, h: 512 },
+  'atlas:red-gem': { x: 1536, y: 512, w: 512, h: 512 },
+  'atlas:white-gem': { x: 2048, y: 512, w: 512, h: 512 },
+  'atlas:yellow-gem': { x: 2560, y: 512, w: 512, h: 512 },
+  'atlas:fire': { x: 3072, y: 512, w: 512, h: 512 },
+  'atlas:leaf': { x: 3584, y: 512, w: 512, h: 512 },
+  'atlas:water-drop': { x: 4096, y: 512, w: 512, h: 512 },
+  'atlas:pink-blossom': { x: 4608, y: 512, w: 512, h: 512 },
+  'atlas:pink-petal': { x: 5120, y: 512, w: 512, h: 512 },
+  'atlas:orange-flower': { x: 5632, y: 512, w: 512, h: 512 },
+  'atlas:pink-flower': { x: 6144, y: 512, w: 512, h: 512 },
+  'atlas:purple-flower': { x: 6656, y: 512, w: 512, h: 512 },
+  'atlas:red-flower': { x: 7168, y: 512, w: 512, h: 512 },
+  'atlas:white-flower': { x: 7680, y: 512, w: 512, h: 512 },
 };
 
+const ATLAS_WIDTH = 8192;
+const ATLAS_HEIGHT = 7680;
+
 function AtlasSprite({ frame, className, fill = false }: { frame: AtlasFrame; className?: string; fill?: boolean }) {
-  const x = frame.x ? `${(frame.x / (768 - frame.w)) * 100}%` : '0%';
-  const y = frame.y ? `${(frame.y / (768 - frame.h)) * 100}%` : '0%';
+  const x = frame.x ? `${(frame.x / (ATLAS_WIDTH - frame.w)) * 100}%` : '0%';
+  const y = frame.y ? `${(frame.y / (ATLAS_HEIGHT - frame.h)) * 100}%` : '0%';
   const style = {
     backgroundPosition: `${x} ${y}`,
-    backgroundSize: `${(768 / frame.w) * 100}% ${(768 / frame.h) * 100}%`,
+    backgroundSize: `${(ATLAS_WIDTH / frame.w) * 100}% ${(ATLAS_HEIGHT / frame.h) * 100}%`,
     ...(fill ? {} : { aspectRatio: `${frame.w} / ${frame.h}` }),
   } as CSSProperties;
   return <span className={`atlas-sprite${className ? ` ${className}` : ''}`} style={style} aria-hidden="true" />;
