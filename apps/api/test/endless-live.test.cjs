@@ -2,7 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
-const { ModeratedService } = require('../src/moderated/moderated.service');
+const { ModeratedService } = require('../dist/moderated/moderated.service');
 const quiz = { title: 'Test', description: null, theme: 'standard', defaultTimerSeconds: -1, randomizeQuestionOrder: false, questions: [1, 2].map(id => ({ id, text: `Question ${id}`, itemType: 'question', gameType: null, options: ['Yes', 'No'], correctAnswer: 'Yes', answerCount: null, timerSeconds: null })) };
 const prisma = { quiz: { findUnique: async () => quiz } };
 for (const mode of ['classic', 'matching']) test(`${mode} endless repeats questions and counts each attempt`, async () => {

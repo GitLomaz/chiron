@@ -7,6 +7,8 @@ import { GoogleAuthGuard } from '../auth/google-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AuthUser } from '../auth/auth.types';
 
+const orderedPairs = { pairs: { orderBy: { position: 'asc' as const } } };
+
 @Controller('data-sets')
 @UseGuards(GoogleAuthGuard)
 export class DataSetsController {
@@ -14,7 +16,7 @@ export class DataSetsController {
 
   @Get()
   list(@CurrentUser() user: AuthUser) {
-    return this.prisma.dataSet.findMany({ where: { ownerId: user.id }, orderBy: { updatedAt: 'desc' }, include: { pairs: { orderBy: { position: 'asc' } } } });
+    return this.prisma.dataSet.findMany({ where: { ownerId: user.id }, orderBy: { updatedAt: 'desc' }, include: orderedPairs });
   }
 
   private clean(data: DataSetDto) {
@@ -24,10 +26,15 @@ export class DataSetsController {
     return { name, pairs };
   }
 
+  private async requireOwnedDataSet(id: number, ownerId: string) {
+    const dataSet = await this.prisma.dataSet.findFirst({ where: { id, ownerId }, select: { id: true } });
+    if (!dataSet) throw new NotFoundException('Data set not found');
+  }
+
   @Post()
   create(@Body() data: DataSetDto, @CurrentUser() user: AuthUser) {
     const { name, pairs } = this.clean(data);
-    return this.prisma.dataSet.create({ data: { name, ownerId: user.id, pairs: { create: pairs } }, include: { pairs: { orderBy: { position: 'asc' } } } });
+    return this.prisma.dataSet.create({ data: { name, ownerId: user.id, pairs: { create: pairs } }, include: orderedPairs });
   }
 
   @Post('generate-quiz')
@@ -43,13 +50,13 @@ export class DataSetsController {
   @Put(':id')
   async update(@Param('id', ParseIntPipe) id: number, @Body() data: DataSetDto, @CurrentUser() user: AuthUser) {
     const { name, pairs } = this.clean(data);
-    if (!await this.prisma.dataSet.findFirst({ where: { id, ownerId: user.id } })) throw new NotFoundException('Data set not found');
-    return this.prisma.dataSet.update({ where: { id }, data: { name, pairs: { deleteMany: {}, create: pairs } }, include: { pairs: { orderBy: { position: 'asc' } } } });
+    await this.requireOwnedDataSet(id, user.id);
+    return this.prisma.dataSet.update({ where: { id }, data: { name, pairs: { deleteMany: {}, create: pairs } }, include: orderedPairs });
   }
 
   @Delete(':id')
   async remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: AuthUser) {
-    if (!await this.prisma.dataSet.findFirst({ where: { id, ownerId: user.id } })) throw new NotFoundException('Data set not found');
+    await this.requireOwnedDataSet(id, user.id);
     await this.prisma.dataSet.delete({ where: { id } });
     return { deleted: true };
   }

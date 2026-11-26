@@ -2,7 +2,7 @@ require('reflect-metadata');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
-const { ModeratedService } = require('../src/moderated/moderated.service');
+const { ModeratedService } = require('../dist/moderated/moderated.service');
 
 const quiz = {
   title: 'Restartable quiz', description: null, theme: 'standard', defaultTimerSeconds: -1, randomizeQuestionOrder: false,

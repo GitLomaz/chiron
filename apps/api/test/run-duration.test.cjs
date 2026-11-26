@@ -3,10 +3,10 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const { validate } = require('class-validator');
-const { ModeratedService } = require('../src/moderated/moderated.service');
-const { HomeworkService } = require('../src/homework/homework.service');
-const { CreateModeratedSessionDto } = require('../src/moderated/dto/moderated-session.dto');
-const { CreateHomeworkSessionDto } = require('../src/homework/dto/homework-session.dto');
+const { ModeratedService } = require('../dist/moderated/moderated.service');
+const { HomeworkService } = require('../dist/homework/homework.service');
+const { CreateModeratedSessionDto } = require('../dist/moderated/dto/moderated-session.dto');
+const { CreateHomeworkSessionDto } = require('../dist/homework/dto/homework-session.dto');
 
 const quiz = {
   title: 'Test', description: null, theme: 'standard', defaultTimerSeconds: -1,

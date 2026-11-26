@@ -15,8 +15,6 @@ type SharedMatchingAttempt = { id: string; participantId: string; participantNam
 type SharedMatchingGame = { cards: string[]; columns: number; rows: number; matchedCards: Set<number>; attempt: SharedMatchingAttempt | null; completionId: string | null };
 type BattleshipPlayer = { tokens: number; score: number };
 type SharedBattleshipGame = { size: number; shipCells: Set<number>; attacks: Map<number, 'hit' | 'miss'>; lastHit: { id: string; cell: number; participantName: string } | null; completionId: string | null };
-type TreasureMapPlayer = { tokens: number };
-type SharedTreasureMap = { size: number; treasureCell: number; blockedCells: Set<number>; digs: Map<number, { result: 'clue' | 'treasure'; hint: string }>; lastDig: { id: string; cell: number; participantName: string } | null; completionId: string | null };
 type ArcheryPlayer = { arrows: number; lastShot: ArcheryArrow | null };
 type ArcheryArrow = { id: string; participantId: string; participantName: string; x: number; y: number; score: number };
 type SharedArcheryGame = { arrows: ArcheryArrow[] };
@@ -31,16 +29,16 @@ type SharedSimonGame = Record<string, never>;
 type SnakesLaddersPlayer = { rolls: number; position: number; lastRoll: number | null };
 type SnakesLaddersMove = { id: string; participantId: string; participantName: string; roll: number; from: number; landed: number; to: number };
 type SharedSnakesLaddersGame = { trackLength: number; jumps: Map<number, number>; lastMove: SnakesLaddersMove | null; recentMoves: SnakesLaddersMove[] };
-type ProjectorPresentationMode = 'scores' | 'matching' | 'matching_leaderboard' | 'battleship' | 'battleship_leaderboard' | 'treasure_map' | 'treasure_map_leaderboard' | 'archery' | 'archery_leaderboard' | 'curling' | 'curling_leaderboard' | 'simon' | 'snakes_ladders' | 'snakes_ladders_leaderboard';
+type ProjectorPresentationMode = 'scores' | 'matching' | 'matching_leaderboard' | 'battleship' | 'battleship_leaderboard' | 'archery' | 'archery_leaderboard' | 'curling' | 'curling_leaderboard' | 'simon' | 'snakes_ladders' | 'snakes_ladders_leaderboard';
 const MATCHING_SYMBOLS = ['atlas:blue-orb', 'atlas:gold-orb', 'atlas:green-orb', 'atlas:purple-orb', 'atlas:red-orb', 'atlas:silver-orb', 'atlas:gold-star', 'atlas:silver-star', 'atlas:clover', 'atlas:sprout', 'atlas:bronze-coin', 'atlas:gold-coin', 'atlas:silver-coin', 'atlas:black-gem', 'atlas:blue-gem', 'atlas:green-gem', 'atlas:orange-gem', 'atlas:pink-gem', 'atlas:purple-gem', 'atlas:red-gem', 'atlas:white-gem', 'atlas:yellow-gem', 'atlas:fire', 'atlas:leaf', 'atlas:water-drop', 'atlas:pink-blossom', 'atlas:pink-petal', 'atlas:orange-flower', 'atlas:pink-flower', 'atlas:purple-flower', 'atlas:red-flower', 'atlas:white-flower'];
 type PointScore = { points: number; streak: number; maxStreak: number; lastAward: { base: number; streak: number; speed: number; total: number } | null };
-type Participant = { id: string; clientId: string; name: string; questions: SessionQuestion[]; answers: Map<string, string>; matchProgress: Map<string, MatchProgress>; gameScores: Map<string, number>; pointScore: PointScore; matching: MatchingGame | null; battleship: BattleshipPlayer | null; treasureMap: TreasureMapPlayer | null; archery: ArcheryPlayer | null; curling: CurlingPlayer | null; simon: SimonPlayer | null; snakesLadders: SnakesLaddersPlayer | null; betweenQuestions: boolean; joinedAt: Date; currentQuestionIndex: number; currentQuestionOpenedAt: Date | null; autoAdvanceTimer: NodeJS.Timeout | null; completedAt: Date | null };
+type Participant = { id: string; clientId: string; name: string; questions: SessionQuestion[]; answers: Map<string, string>; matchProgress: Map<string, MatchProgress>; gameScores: Map<string, number>; pointScore: PointScore; matching: MatchingGame | null; battleship: BattleshipPlayer | null; archery: ArcheryPlayer | null; curling: CurlingPlayer | null; simon: SimonPlayer | null; snakesLadders: SnakesLaddersPlayer | null; betweenQuestions: boolean; joinedAt: Date; currentQuestionIndex: number; currentQuestionOpenedAt: Date | null; autoAdvanceTimer: NodeJS.Timeout | null; completedAt: Date | null };
 type ModeratedSession = {
   id: string;
   ownerId: string;
   pin: string;
   facilitatorToken: string;
-  mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling' | 'simon' | 'snakes_ladders';
+  mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'archery' | 'curling' | 'simon' | 'snakes_ladders';
   endless: boolean;
   scoringEnabled: boolean;
   currentRoundIndex: number;
@@ -55,7 +53,6 @@ type ModeratedSession = {
   presentationMode: ProjectorPresentationMode;
   matching: SharedMatchingGame | null;
   battleship: SharedBattleshipGame | null;
-  treasureMap: SharedTreasureMap | null;
   archery: SharedArcheryGame | null;
   curling: SharedCurlingGame | null;
   simon: SharedSimonGame | null;
@@ -124,10 +121,9 @@ export class ModeratedService {
     const session = {
       id, ownerId: user.id, pin, facilitatorToken, mode, endless, scoringEnabled, currentRoundIndex: -1, randomizeQuestionOrder: quiz.randomizeQuestionOrder,
       quiz: { title: quiz.title, description: quiz.description, theme: quiz.theme, answerMatching: quiz.answerMatching === 'exact' ? 'exact' : 'close', matchingPairCount, battleshipBoardSize, snakesLaddersTrackLength, creditEveryCorrectAnswers, questions: authoredQuestions },
-      phase: 'lobby', endedByTeacher: false, expired: false, durationSeconds, endsAt: null, lobbyLocked: false, presentationMode: mode === 'matching' ? 'matching' : mode === 'battleship' ? 'battleship' : mode === 'treasure_map' ? 'treasure_map' : mode === 'archery' ? 'archery' : mode === 'curling' ? 'curling' : mode === 'simon' ? 'simon' : mode === 'snakes_ladders' ? 'snakes_ladders' : 'scores',
+      phase: 'lobby', endedByTeacher: false, expired: false, durationSeconds, endsAt: null, lobbyLocked: false, presentationMode: mode === 'matching' ? 'matching' : mode === 'battleship' ? 'battleship' : mode === 'archery' ? 'archery' : mode === 'curling' ? 'curling' : mode === 'simon' ? 'simon' : mode === 'snakes_ladders' ? 'snakes_ladders' : 'scores',
       matching: mode === 'matching' ? this.newMatchingGame(matchingPairCount, randomUUID()) : null,
       battleship: mode === 'battleship' ? this.newBattleshipGame(battleshipBoardSize, id) : null,
-      treasureMap: mode === 'treasure_map' ? this.newTreasureMap(id) : null,
       archery: mode === 'archery' ? this.newArcheryGame() : null,
       curling: mode === 'curling' ? this.newCurlingGame() : null,
       simon: mode === 'simon' ? {} : null,
@@ -162,7 +158,6 @@ export class ModeratedService {
       score: participant ? this.score(session, participant) : null,
       matching: session.matching && participant?.matching ? this.matchingState(session.matching, participant.matching, participant.id) : null,
       battleship: session.battleship && participant ? this.battleshipState(session.battleship, participant) : null,
-      treasureMap: session.treasureMap && participant ? this.treasureMapState(session.treasureMap, participant) : null,
       archery: session.archery && participant ? this.archeryState(session.archery, participant) : null,
       curling: session.curling && participant ? this.curlingState(session.curling, participant) : null,
       simon: session.simon && participant ? this.simonState(session, participant) : null,
@@ -191,7 +186,6 @@ export class ModeratedService {
       questionCount: this.activeQuestions(session).length,
       matching: session.matching ? this.matchingState(session.matching, undefined, undefined, true) : null,
       battleship: session.battleship ? this.battleshipState(session.battleship, undefined, true) : null,
-      treasureMap: session.treasureMap ? this.treasureMapState(session.treasureMap, undefined, true) : null,
       archery: session.archery ? this.archeryState(session.archery, undefined, true) : null,
       curling: session.curling ? this.curlingState(session.curling, undefined, true) : null,
       simon: session.simon ? this.simonState(session) : null,
@@ -263,10 +257,9 @@ export class ModeratedService {
     session.expired = false;
     session.endsAt = new Date(Date.now() + session.durationSeconds * 1000);
     session.currentRoundIndex = 0;
-    session.presentationMode = mode === 'matching' ? 'matching' : mode === 'battleship' ? 'battleship' : mode === 'treasure_map' ? 'treasure_map' : mode === 'archery' ? 'archery' : mode === 'curling' ? 'curling' : mode === 'simon' ? 'simon' : mode === 'snakes_ladders' ? 'snakes_ladders' : 'scores';
+    session.presentationMode = mode === 'matching' ? 'matching' : mode === 'battleship' ? 'battleship' : mode === 'archery' ? 'archery' : mode === 'curling' ? 'curling' : mode === 'simon' ? 'simon' : mode === 'snakes_ladders' ? 'snakes_ladders' : 'scores';
     session.matching = mode === 'matching' ? this.newMatchingGame(session.quiz.matchingPairCount, randomUUID()) : null;
     session.battleship = mode === 'battleship' ? this.newBattleshipGame(session.quiz.battleshipBoardSize, randomUUID()) : null;
-    session.treasureMap = mode === 'treasure_map' ? this.newTreasureMap(randomUUID()) : null;
     session.archery = mode === 'archery' ? this.newArcheryGame() : null;
     session.curling = mode === 'curling' ? this.newCurlingGame() : null;
     session.simon = mode === 'simon' ? {} : null;
@@ -282,7 +275,6 @@ export class ModeratedService {
       participant.pointScore = this.newPointScore();
       participant.matching = mode === 'matching' ? { credits: 0, selectedCard: null, score: 0 } : null;
       participant.battleship = mode === 'battleship' ? { tokens: 0, score: 0 } : null;
-      participant.treasureMap = mode === 'treasure_map' ? { tokens: 0 } : null;
       participant.archery = mode === 'archery' ? { arrows: 0, lastShot: null } : null;
       participant.curling = mode === 'curling' ? { stones: 0, lastStone: null } : null;
       participant.simon = mode === 'simon' ? this.newSimonPlayer() : null;
@@ -316,7 +308,6 @@ export class ModeratedService {
     const boardMode = presentationMode.endsWith('_leaderboard') ? presentationMode.slice(0, -'_leaderboard'.length) : presentationMode;
     if (boardMode === 'matching' && !session.matching) throw new BadRequestException('The matching board is only available in Matching mode');
     if (boardMode === 'battleship' && !session.battleship) throw new BadRequestException('The Battleship board is only available in Battleship mode');
-    if (boardMode === 'treasure_map' && !session.treasureMap) throw new BadRequestException('The Treasure Map is only available in Treasure Map mode');
     if (boardMode === 'archery' && !session.archery) throw new BadRequestException('The archery board is only available in Archery mode');
     if (boardMode === 'curling' && !session.curling) throw new BadRequestException('The curling sheet is only available in Curling mode');
     if (boardMode === 'simon' && !session.simon) throw new BadRequestException('The Simon high score is only available in Simon mode');
@@ -327,7 +318,7 @@ export class ModeratedService {
 
   updateBoardAutoReset(sessionId: string, user: AuthUser, autoBoardReset: boolean) {
     const session = this.authorize(sessionId, user);
-    if (session.mode !== 'matching' && session.mode !== 'battleship' && session.mode !== 'treasure_map') throw new BadRequestException('Automatic board reset is only available in shared game modes');
+    if (session.mode !== 'matching' && session.mode !== 'battleship') throw new BadRequestException('Automatic board reset is only available in shared game modes');
     session.autoBoardReset = autoBoardReset;
     if (autoBoardReset && this.boardComplete(session)) this.scheduleBoardReset(session);
     if (!autoBoardReset) session.boardResetAt = null;
@@ -360,7 +351,7 @@ export class ModeratedService {
     if (session.lobbyLocked) throw new BadRequestException('The facilitator has locked this lobby');
     if (session.bannedClientIds.has(clientId)) throw new ForbiddenException('You have been removed from this live test');
     const questions = this.activeQuestions(session);
-    const participant: Participant = { id: randomUUID(), clientId, name: cleanName, questions: session.randomizeQuestionOrder ? this.shuffleQuestionsInPlace(questions, session.participants.values()) : [...questions], answers: new Map<string, string>(), matchProgress: new Map<string, MatchProgress>(), gameScores: new Map<string, number>(), pointScore: this.newPointScore(), matching: session.mode === 'matching' ? { credits: 0, selectedCard: null, score: 0 } : null, battleship: session.mode === 'battleship' ? { tokens: 0, score: 0 } : null, treasureMap: session.mode === 'treasure_map' ? { tokens: 0 } : null, archery: session.mode === 'archery' ? { arrows: 0, lastShot: null } : null, curling: session.mode === 'curling' ? { stones: 0, lastStone: null } : null, simon: session.mode === 'simon' ? this.newSimonPlayer() : null, snakesLadders: session.mode === 'snakes_ladders' ? this.newSnakesLaddersPlayer() : null, betweenQuestions: false, joinedAt: new Date(), currentQuestionIndex: -1, currentQuestionOpenedAt: null, autoAdvanceTimer: null, completedAt: null };
+    const participant: Participant = { id: randomUUID(), clientId, name: cleanName, questions: session.randomizeQuestionOrder ? this.shuffleQuestionsInPlace(questions, session.participants.values()) : [...questions], answers: new Map<string, string>(), matchProgress: new Map<string, MatchProgress>(), gameScores: new Map<string, number>(), pointScore: this.newPointScore(), matching: session.mode === 'matching' ? { credits: 0, selectedCard: null, score: 0 } : null, battleship: session.mode === 'battleship' ? { tokens: 0, score: 0 } : null, archery: session.mode === 'archery' ? { arrows: 0, lastShot: null } : null, curling: session.mode === 'curling' ? { stones: 0, lastStone: null } : null, simon: session.mode === 'simon' ? this.newSimonPlayer() : null, snakesLadders: session.mode === 'snakes_ladders' ? this.newSnakesLaddersPlayer() : null, betweenQuestions: false, joinedAt: new Date(), currentQuestionIndex: -1, currentQuestionOpenedAt: null, autoAdvanceTimer: null, completedAt: null };
     session.participants.set(participant.id, participant);
     if (session.phase === 'question') {
       if (session.mode === 'facilitated') participant.currentQuestionIndex = session.currentRoundIndex - 1;
@@ -402,10 +393,6 @@ export class ModeratedService {
       this.clearParticipantTimer(participant);
     } else if (participant.battleship) {
       if (earnsCredit) participant.battleship.tokens += 1;
-      participant.betweenQuestions = true;
-      this.clearParticipantTimer(participant);
-    } else if (participant.treasureMap) {
-      if (earnsCredit) participant.treasureMap.tokens += 1;
       participant.betweenQuestions = true;
       this.clearParticipantTimer(participant);
     } else if (participant.archery) {
@@ -612,35 +599,6 @@ export class ModeratedService {
     return this.advanceParticipant(session, participant);
   }
 
-  digTreasureMap(pin: string, participantId: string, cell: number) {
-    const session = this.getByPin(pin);
-    const participant = session.participants.get(participantId);
-    const map = session.treasureMap;
-    if (session.phase !== 'question' || !participant?.treasureMap || !participant.betweenQuestions || !map) throw new BadRequestException('Treasure Map is available between questions');
-    if (!Number.isInteger(cell) || cell < 0 || cell >= map.size ** 2) throw new BadRequestException('Choose a square on the map');
-    if (participant.treasureMap.tokens < 1) throw new BadRequestException('Earn a scout token by answering a question correctly');
-    if (map.completionId) throw new BadRequestException('The treasure has already been found');
-    if (map.blockedCells.has(cell)) throw new BadRequestException('Streams cannot be explored');
-    if (map.digs.has(cell)) throw new BadRequestException('That square has already been explored');
-    participant.treasureMap.tokens -= 1;
-    const found = cell === map.treasureCell;
-    const hint = found ? 'Treasure found!' : this.treasureHint(map, cell);
-    map.digs.set(cell, { result: found ? 'treasure' : 'clue', hint });
-    map.lastDig = { id: randomUUID(), cell, participantName: participant.name };
-    if (found) {
-      map.completionId = randomUUID();
-      this.scheduleBoardReset(session);
-    }
-    return this.treasureMapState(map, participant);
-  }
-
-  nextTreasureMapQuestion(pin: string, participantId: string) {
-    const session = this.getByPin(pin);
-    const participant = session.participants.get(participantId);
-    if (session.phase !== 'question' || session.mode !== 'treasure_map' || !participant?.treasureMap || !participant.betweenQuestions) throw new BadRequestException('There is no next question to start');
-    return this.advanceParticipant(session, participant);
-  }
-
   nextQuestion(pin: string, participantId: string) {
     const session = this.getByPin(pin);
     const participant = session.participants.get(participantId);
@@ -706,20 +664,6 @@ export class ModeratedService {
         score: session.mode === 'matching' ? participant.matching?.score ?? 0 : participant.battleship?.score ?? 0,
       }))
       .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
-  }
-
-  private treasureMapState(map: SharedTreasureMap, player?: Participant, includeSuccessName = false) {
-    return {
-      size: map.size,
-      tokens: player?.treasureMap?.tokens ?? null,
-      cells: Array.from({ length: map.size ** 2 }, (_, id) => {
-        const dig = map.digs.get(id);
-        return { result: dig?.result ?? null, hint: dig?.hint ?? null, terrain: map.blockedCells.has(id) ? 'stream' : 'land' };
-      }),
-      lastDig: includeSuccessName ? map.lastDig : null,
-      complete: map.completionId !== null,
-      completionId: map.completionId,
-    };
   }
 
   private archeryState(game: SharedArcheryGame, player?: Participant, includeNames = false) {
@@ -884,7 +828,7 @@ export class ModeratedService {
   }
 
   private questionsForMode(questions: SessionQuestion[], mode: ModeratedSession['mode']) {
-    return mode === 'matching' || mode === 'battleship' || mode === 'treasure_map' || mode === 'archery' || mode === 'curling' || mode === 'simon' || mode === 'snakes_ladders' ? questions.filter((item) => item.itemType === 'question') : questions;
+    return mode === 'matching' || mode === 'battleship' || mode === 'archery' || mode === 'curling' || mode === 'simon' || mode === 'snakes_ladders' ? questions.filter((item) => item.itemType === 'question') : questions;
   }
 
   private activeQuestions(session: ModeratedSession) {
@@ -948,27 +892,6 @@ export class ModeratedService {
     return { size, shipCells: cells, attacks: new Map(), lastHit: null, completionId: null };
   }
 
-  private newTreasureMap(seed: string): SharedTreasureMap {
-    const size = 14;
-    let state = [...seed].reduce((total, character) => ((total * 31) + character.charCodeAt(0)) >>> 0, 0) || 1;
-    const next = () => { state = (state * 1664525 + 1013904223) >>> 0; return state; };
-    const blockedCells = new Set<number>();
-    let streamColumn = 3 + (next() % 8);
-    for (let row = 0; row < size; row += 1) {
-      blockedCells.add(row * size + streamColumn);
-      // Hold a direction for a couple of rows, then make a one-tile bend.
-      // Adding the destination on this row keeps every bend connected instead
-      // of leaving diagonal or detached water tiles.
-      if (row % 2 === 1 && row < size - 1) {
-        const nextColumn = Math.max(2, Math.min(size - 3, streamColumn + ((next() % 3) - 1)));
-        if (nextColumn !== streamColumn) blockedCells.add(row * size + nextColumn);
-        streamColumn = nextColumn;
-      }
-    }
-    const landCells = Array.from({ length: size ** 2 }, (_, id) => id).filter((id) => !blockedCells.has(id));
-    return { size, treasureCell: landCells[next() % landCells.length], blockedCells, digs: new Map(), lastDig: null, completionId: null };
-  }
-
   private newArcheryGame(): SharedArcheryGame { return { arrows: [] }; }
 
   private newCurlingGame(): SharedCurlingGame { return { stones: [] }; }
@@ -988,35 +911,8 @@ export class ModeratedService {
     return { x, y, score: Math.max(1, Math.round(1000 - (distance * 8))) };
   }
 
-  private treasureHint(map: SharedTreasureMap, cell: number) {
-    const { size, treasureCell } = map;
-    const row = Math.floor(cell / size), column = cell % size;
-    const treasureRow = Math.floor(treasureCell / size), treasureColumn = treasureCell % size;
-    const distance = Math.max(Math.abs(treasureRow - row), Math.abs(treasureColumn - column));
-    const clueType = map.digs.size % 5;
-    if (clueType === 1) {
-      const region = treasureRow < Math.floor(size / 3) ? 'northern' : treasureRow >= Math.ceil(size * 2 / 3) ? 'southern' : 'central';
-      return `A torn map says the treasure is in the ${region} third of the island.`;
-    }
-    if (clueType === 2) {
-      const region = treasureColumn < Math.floor(size / 3) ? 'western' : treasureColumn >= Math.ceil(size * 2 / 3) ? 'eastern' : 'central';
-      return `A landmark clue places the treasure in the ${region} third of the island.`;
-    }
-    if (clueType === 3 && map.lastDig) {
-      const previousRow = Math.floor(map.lastDig.cell / size), previousColumn = map.lastDig.cell % size;
-      const previousDistance = Math.max(Math.abs(treasureRow - previousRow), Math.abs(treasureColumn - previousColumn));
-      const previousCoordinate = `${String.fromCharCode(65 + previousColumn)}${previousRow + 1}`;
-      return distance < previousDistance ? `The sand is warmer than at ${previousCoordinate}.` : distance > previousDistance ? `The sand is colder than at ${previousCoordinate}.` : `The sand feels just as warm as at ${previousCoordinate}.`;
-    }
-    if (clueType === 4) return `The treasure is on an ${treasureRow % 2 === 0 ? 'odd' : 'even'}-numbered row.`;
-    const vertical = treasureRow < row ? 'north' : treasureRow > row ? 'south' : '';
-    const horizontal = treasureColumn < column ? 'west' : treasureColumn > column ? 'east' : '';
-    const direction = [vertical, horizontal].filter(Boolean).join('-');
-    return `The treasure is ${direction}.`;
-  }
-
   private boardComplete(session: ModeratedSession) {
-    return Boolean(session.matching?.completionId || session.battleship?.completionId || session.treasureMap?.completionId);
+    return Boolean(session.matching?.completionId || session.battleship?.completionId);
   }
 
   private scheduleBoardReset(session: ModeratedSession) {
@@ -1030,9 +926,6 @@ export class ModeratedService {
     } else if (session.mode === 'battleship') {
       session.battleship = this.newBattleshipGame(session.quiz.battleshipBoardSize, randomUUID());
       for (const participant of session.participants.values()) if (participant.battleship) participant.battleship = { tokens: 0, score: participant.battleship.score };
-    } else if (session.mode === 'treasure_map') {
-      session.treasureMap = this.newTreasureMap(randomUUID());
-      for (const participant of session.participants.values()) if (participant.treasureMap) participant.treasureMap = { tokens: 0 };
     }
     session.boardResetAt = null;
   }

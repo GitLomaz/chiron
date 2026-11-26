@@ -2,8 +2,8 @@ require('reflect-metadata');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
-const { ModeratedService } = require('../src/moderated/moderated.service');
-const { HomeworkService } = require('../src/homework/homework.service');
+const { ModeratedService } = require('../dist/moderated/moderated.service');
+const { HomeworkService } = require('../dist/homework/homework.service');
 const pairs = [{ question: 'Cat', answer: 'Chat' }, { question: 'Dog', answer: 'Chien' }, { question: 'Bird', answer: 'Oiseau' }];
 const quiz = { title: 'Test', description: null, theme: 'standard', defaultTimerSeconds: -1, randomizeQuestionOrder: false, questions: [
   { id: 1, text: 'Is this right?', itemType: 'question', gameType: null, gameDurationSeconds: null, options: { kind: 'true_false', statement: 'Cat = chat' }, correctAnswer: 'True', answerCount: null, timerSeconds: null },
@@ -38,7 +38,7 @@ test('live facilitated matching records progress and a correct completion', asyn
   assert.equal(service.studentState(run.pin, student.participantId).score.correct, 2);
 });
 test('quiz authoring stores the statement and validates matching pairs', async () => {
-  const { QuizzesService } = require('../src/quizzes/quizzes.service');
+  const { QuizzesService } = require('../dist/quizzes/quizzes.service');
   let stored;
   const prisma = { quiz: { findUnique: async () => ({ id: 1 }) }, question: { aggregate: async () => ({ _max: { position: null } }), create: async ({ data }) => (stored = data) } };
   const service = new QuizzesService(prisma);

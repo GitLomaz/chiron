@@ -1,8 +1,8 @@
 require('reflect-metadata');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { ModeratedService } = require('../src/moderated/moderated.service');
-const { HomeworkService } = require('../src/homework/homework.service');
+const { ModeratedService } = require('../dist/moderated/moderated.service');
+const { HomeworkService } = require('../dist/homework/homework.service');
 
 const quiz = { title: 'Vocabulary', description: null, theme: 'standard', randomizeQuestionOrder: false, defaultTimerSeconds: -1, questions: [{ id: 1, text: 'Hello', itemType: 'question', gameType: null, options: ['Hello', 'Bye'], correctAnswer: 'Hello', timerSeconds: null }] };
 const prisma = { quiz: { findUnique: async () => quiz } };

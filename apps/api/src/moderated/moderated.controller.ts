@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, ParseIntPipe, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
-import { AdvanceModeratedQuestionDto, ArcheryNextDto, ArcheryShotDto, BattleshipAttackDto, BattleshipNextDto, CreateModeratedSessionDto, CurlingNextDto, CurlingReleaseDto, FacilitatorActionDto, FlipMatchingCardDto, JoinModeratedSessionDto, MatchingNextDto, ReportModeratedGameScoreDto, RestartModeratedSessionDto, SimonColorDto, SimonNextDto, SimonStartDto, SnakesLaddersNextDto, SnakesLaddersRollDto, SubmitModeratedAnswerDto, TreasureMapDigDto, TreasureMapNextDto, UpdateBoardAutoResetDto, UpdateLobbyLockDto, UpdateModeratedDurationDto, UpdatePresentationModeDto } from './dto/moderated-session.dto';
+import { AdvanceModeratedQuestionDto, ArcheryNextDto, ArcheryShotDto, BattleshipAttackDto, BattleshipNextDto, CreateModeratedSessionDto, CurlingNextDto, CurlingReleaseDto, FacilitatorActionDto, FlipMatchingCardDto, JoinModeratedSessionDto, MatchingNextDto, ReportModeratedGameScoreDto, RestartModeratedSessionDto, SimonColorDto, SimonNextDto, SimonStartDto, SnakesLaddersNextDto, SnakesLaddersRollDto, SubmitModeratedAnswerDto, UpdateBoardAutoResetDto, UpdateLobbyLockDto, UpdateModeratedDurationDto, UpdatePresentationModeDto } from './dto/moderated-session.dto';
 import { ModeratedService } from './moderated.service';
 import { GoogleAuthGuard } from '../auth/google-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -103,16 +103,6 @@ export class ModeratedController {
   @Post('pin/:pin/snakes-ladders/next')
   nextSnakesLaddersQuestion(@Param('pin') pin: string, @Body() body: SnakesLaddersNextDto) {
     return this.moderatedService.nextSnakesLaddersQuestion(pin, body.participantId);
-  }
-
-  @Post('pin/:pin/treasure-map/dig')
-  digTreasureMap(@Param('pin') pin: string, @Body() body: TreasureMapDigDto) {
-    return this.moderatedService.digTreasureMap(pin, body.participantId, body.cell);
-  }
-
-  @Post('pin/:pin/treasure-map/next')
-  nextTreasureMapQuestion(@Param('pin') pin: string, @Body() body: TreasureMapNextDto) {
-    return this.moderatedService.nextTreasureMapQuestion(pin, body.participantId);
   }
 
   @Post('pin/:pin/next')

@@ -1,83 +1,19 @@
-# Quizboard project overview
+# Quizboard
 
-Quizboard is a teacher-led quiz and learning-game platform. Teachers use an admin application to build quizzes, organize reusable content, and run activities. Students use a separate, focused player to join live sessions or complete homework through a shareable link.
+Quizboard is a teacher-led quiz and learning-game platform. Teachers author quizzes, reusable questions, answer pools, and data sets; students join live activities or complete homework through a separate player.
 
-## What the project supports
+The npm-workspaces repository contains:
 
-### Quiz creation and content management
+- `apps/api`: NestJS API, Prisma, and PostgreSQL. `quizzes`, `data-sets`, `moderated`, and `homework` cover authoring and activities.
+- `apps/web`: React/Vite teacher application.
+- `apps/student`: React/Vite student player.
+- `data`, `scripts`, and `deploy`: content data, simulation tools, and deployment configuration.
 
-- Create quizzes with a title, description, question order setting, student theme, and default timer.
-- Add, edit, reorder, enable, and remove questions.
-- Build standard multiple-choice questions, including true/false and matching question types.
-- Add game breaks such as Coin Catch, Match Pairs, and Tower Stack.
-- Reuse questions from a common-question library.
-- Create answer pools and have questions draw a configured number of answers from them.
-- Manage data sets made of question-and-answer pairs, then generate quiz content from them.
-- Preview the student question view while editing.
+Quiz content, users, homework sessions, and homework participants are stored in PostgreSQL. Live moderated sessions are held in API memory and are lost when the API restarts. Teacher sign-in uses Google ID tokens; owned resources are scoped to the signed-in user, with a separate flag for viewing all quizzes. Student flows use session links or PINs and participant identifiers. Speak the Answer homework uses Google Cloud Speech-to-Text; recordings are processed in memory.
 
-### Student experiences
+## Local setup
 
-- Take a standard quiz at a shareable quiz URL.
-- Join a live activity with a session PIN and a displayed name.
-- Complete homework through a private link before its deadline.
-- Receive per-question feedback, score updates, timers, progress indicators, and end-of-quiz results.
-- Use matching interactions and the available game activities when they are part of the quiz.
-- View the selected quiz theme: Standard, Kid-friendly, Christmas, Halloween, or Night.
-
-### Teacher-led activities
-
-- Start live tests in Classic, Facilitated, or Matching mode.
-- Use Classic mode for self-paced participation.
-- Use Facilitated mode to control when each question is released.
-- Use Matching mode for a shared Match Pairs board: teachers choose grids from 2×2 through 10×10; students earn credits, choose cards, and completed attempts animate on the projector.
-- Optionally enable live points scoring: correct answers earn base, streak, and speed bonuses.
-- Monitor participant progress and scores during a live activity.
-- End a session or remove a participant when needed.
-- Create homework runs with a closing time and review the results while the API process is running.
-- Create **Speak the Answer** homework in English, French, or Spanish. Students record a short spoken response; Google Cloud Speech-to-Text Chirp 3 returns a transcript for scoring, while recordings are never stored.
-
-## Architecture
-
-| Area | Technology | Responsibility |
-| --- | --- | --- |
-| `apps/api` | NestJS, Prisma, PostgreSQL | API, validation, quiz storage, content libraries, live sessions, and homework state |
-| `apps/web` | React, Vite | Teacher/admin interface for quiz authoring and activity management |
-| `apps/student` | React, Vite | Student quiz player, live-session join flow, homework player, and themes |
-| `data` | JSON files | Source data used for generated quiz content and seed-like workflows |
-
-The repository is an npm-workspaces monorepo. `npm run dev` starts the API, teacher app, and student app together. By default, the teacher app runs on port 5173, the student app on 5174, and the API on 3000.
-
-## Core data model
-
-- **Quiz** owns its ordered questions and contains presentation settings such as theme, question randomization, and default timer.
-- **Question** can be a standard question or a game item. It stores options, the correct answer, optional timer override, and optional answer-pool configuration.
-- **CommonQuestion** is reusable content that can be added to quizzes.
-- **AnswerPool** contains reusable answer values for dynamically composed questions.
-- **DataSet** contains ordered question-and-answer pairs used to generate quiz content.
-
-Quiz and content data are stored in PostgreSQL. Live moderated sessions and homework runs are kept in memory, so they are reset if the API process restarts.
-
-## API areas
-
-The API is organized around these functional areas:
-
-- `quizzes`: quiz, question, common-question, and answer-pool management
-- `data-sets`: data-set management and quiz generation
-- `play`: standard student quiz delivery and answer submission
-- `moderated`: live-session creation, joining, progression, and scoring
-- `homework`: homework-run creation, completion, deadlines, and results
-- `health`: service status endpoint
-
-## Current limitations and likely next steps
-
-- Live and homework session state is not persistent across API restarts.
-- There is no authentication or role management yet; teacher-facing routes rely on the current local deployment model.
-- The database schema is intentionally compact and focuses on quiz authoring rather than schools, classes, rosters, or long-term analytics.
-- Future work could add persistent session storage, accounts and permissions, class management, richer reporting, and more question or game types.
-
-## Running locally
-
-The project requires Node.js 20+, npm 10+, and PostgreSQL 14+. Configure `DATABASE_URL` in `apps/api/.env`, then run:
+Install Node.js 20+, npm 10+, and PostgreSQL 14+. Create a PostgreSQL database, copy `apps/api/.env.example` to `apps/api/.env` and `apps/web/.env.example` to `apps/web/.env`, and configure `DATABASE_URL`. Set the same Google OAuth web client ID in the API's `GOOGLE_CLIENT_ID` and the teacher app's `VITE_GOOGLE_CLIENT_ID` to use teacher sign-in. Configure Google Cloud credentials and a project when using speech recognition. Keep actual credentials out of version control.
 
 ```sh
 npm install
@@ -86,4 +22,4 @@ npm run db:migrate
 npm run dev
 ```
 
-For the full setup detail and available commands, see [README.md](README.md).
+The teacher app defaults to http://localhost:5173, the student app to http://localhost:5174, and the API to http://localhost:3000. `GET /health` checks the API. The example database URL uses port 5433; adjust it for your PostgreSQL installation. See [COMMANDS.md](COMMANDS.md) for commands, [deploy/README.md](deploy/README.md) for deployment, and [AGENTS.md](AGENTS.md) for repository guidance.

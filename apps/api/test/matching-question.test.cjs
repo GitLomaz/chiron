@@ -1,7 +1,7 @@
 ﻿require('reflect-metadata');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { matchSelection } = require('../src/question-types/matching');
+const { matchSelection } = require('../dist/question-types/matching');
 const pairs = [{ question: 'one', answer: 'un' }, { question: 'two', answer: 'deux' }, { question: 'three', answer: 'trois' }];
 test('matching retains correct pairs and ends after three mistakes', () => {
   let progress = { matched: [], mistakes: 0 };
