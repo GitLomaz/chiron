@@ -1,0 +1,103 @@
+import { IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
+
+export class CreateHomeworkSessionDto {
+  @IsInt()
+  @Min(60)
+  @Max(604800)
+  durationSeconds!: number;
+
+  @IsOptional()
+  @IsIn(['classic', 'archery', 'curling', 'speak'])
+  mode?: 'classic' | 'archery' | 'curling' | 'speak';
+
+  @IsOptional()
+  @IsIn(['en-US', 'fr-FR', 'es-ES'])
+  speechLanguage?: 'en-US' | 'fr-FR' | 'es-ES';
+}
+
+class LegacyFacilitatorTokenDto {
+  // Kept only so an already-cached teacher frontend can complete its request
+  // while the new Authorization-header-only frontend is rolling out.
+  @IsOptional()
+  @IsString()
+  @MaxLength(8192)
+  facilitatorToken?: string;
+}
+
+export class EndHomeworkSessionDto extends LegacyFacilitatorTokenDto {}
+
+export class UpdateHomeworkDurationDto extends LegacyFacilitatorTokenDto {
+  @IsInt()
+  @Min(60)
+  @Max(604800)
+  durationSeconds!: number;
+}
+
+export class JoinHomeworkSessionDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
+  name!: string;
+}
+
+export class SubmitHomeworkAnswerDto {
+  @IsUUID('4')
+  participantId!: string;
+
+  @IsString()
+  @MinLength(1)
+  questionId!: string;
+
+  @IsString()
+  @MaxLength(500)
+  answer!: string;
+}
+
+export class SubmitSpokenHomeworkAnswerDto {
+  @IsUUID('4')
+  participantId!: string;
+
+  @IsString()
+  @MinLength(1)
+  questionId!: string;
+}
+
+export class CompleteHomeworkItemDto {
+  @IsUUID('4')
+  participantId!: string;
+
+  @IsString()
+  @MinLength(1)
+  questionId!: string;
+}
+
+export class RestartHomeworkDto {
+  @IsUUID('4')
+  participantId!: string;
+}
+
+export class ShootHomeworkArcheryDto {
+  @IsUUID('4')
+  participantId!: string;
+
+  @IsNumber()
+  @Min(-100)
+  @Max(100)
+  x!: number;
+
+  @IsNumber()
+  @Min(-100)
+  @Max(100)
+  y!: number;
+}
+
+export class ReleaseHomeworkCurlingDto {
+  @IsUUID('4')
+  participantId!: string;
+
+  @IsInt() @Min(-100) @Max(100)
+  direction!: number;
+
+  @IsInt() @Min(0) @Max(100)
+  speed!: number;
+}

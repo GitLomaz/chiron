@@ -1,67 +1,25 @@
-# Trivia
+# Quizboard
 
-A minimal quiz-management foundation built as an npm-workspaces monorepo.
+Quizboard is a teacher-led quiz and learning-game platform. Teachers author quizzes, reusable questions, answer pools, and data sets; students join live activities or complete homework through a separate player.
 
-## Requirements
+The npm-workspaces repository contains:
 
-- Node.js 20 or newer
-- npm 10 or newer
-- PostgreSQL 14 or newer
+- `apps/api`: NestJS API, Prisma, and PostgreSQL. `quizzes`, `data-sets`, `moderated`, and `homework` cover authoring and activities.
+- `apps/web`: React/Vite teacher application.
+- `apps/student`: React/Vite student player.
+- `data`, `scripts`, and `deploy`: content data, simulation tools, and deployment configuration.
 
-## Quick start
+Quiz content, users, homework sessions, and homework participants are stored in PostgreSQL. Live moderated sessions are held in API memory and are lost when the API restarts. Teacher sign-in uses Google ID tokens; owned resources are scoped to the signed-in user, with a separate flag for viewing all quizzes. Student flows use session links or PINs and participant identifiers. Speak the Answer homework uses Google Cloud Speech-to-Text; recordings are processed in memory.
 
-1. Create a PostgreSQL database named `trivia`:
+## Local setup
 
-   ```sql
-   CREATE DATABASE trivia;
-   ```
-
-2. Copy the environment examples for each application:
-
-   ```sh
-   cp apps/api/.env.example apps/api/.env
-   cp apps/web/.env.example apps/web/.env
-   ```
-
-   On Windows PowerShell, use `Copy-Item apps/api/.env.example apps/api/.env` and `Copy-Item apps/web/.env.example apps/web/.env` instead. Update `DATABASE_URL` if your PostgreSQL credentials or port differ.
-
-3. Install packages, create the Prisma client, and apply the included initial migration:
-
-   ```sh
-   npm install
-   npm run db:generate
-   npm run db:migrate
-   ```
-
-4. Start both applications:
-
-   ```sh
-   npm run dev
-   ```
-
-   The frontend is served at `http://localhost:5173`; the API is at `http://localhost:3000` and `GET /health` returns its status.
-
-## Commands
-
-- `npm run dev` — run React and NestJS together
-- `npm run build` — type-check and build both applications
-- `npm run db:generate` — regenerate Prisma Client after schema changes
-- `npm run db:migrate` — apply pending development migrations
-
-## PostgreSQL notes
-
-The connection string follows the normal PostgreSQL URL format:
-
-```text
-postgresql://USER:PASSWORD@HOST:PORT/DATABASE?schema=public
-```
-
-For Docker-based local PostgreSQL, one possible command is:
+Install Node.js 20+, npm 10+, and PostgreSQL 14+. Create a PostgreSQL database, copy `apps/api/.env.example` to `apps/api/.env` and `apps/web/.env.example` to `apps/web/.env`, and configure `DATABASE_URL`. Set the same Google OAuth web client ID in the API's `GOOGLE_CLIENT_ID` and the teacher app's `VITE_GOOGLE_CLIENT_ID` to use teacher sign-in. Configure Google Cloud credentials and a project when using speech recognition. Keep actual credentials out of version control.
 
 ```sh
-docker run --name trivia-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=trivia -p 5433:5432 -d postgres:16
+npm install
+npm run db:generate
+npm run db:migrate
+npm run dev
 ```
 
-The Docker command maps PostgreSQL to host port `5433`; the included `.env.example` files match it. If you use an existing PostgreSQL installation, set its host and port in `DATABASE_URL` instead.
-
-The schema intentionally contains only `Quiz` and `Question`. A quiz owns its questions; deleting it cascades to those questions.
+The teacher app defaults to http://localhost:5173, the student app to http://localhost:5174, and the API to http://localhost:3000. `GET /health` checks the API. The example database URL uses port 5433; adjust it for your PostgreSQL installation. See [COMMANDS.md](COMMANDS.md) for commands, [deploy/README.md](deploy/README.md) for deployment, and [AGENTS.md](AGENTS.md) for repository guidance.

@@ -1,0 +1,2 @@
+-- Launch settings are held in the live-session runtime state; this migration
+-- deliberately records the schema version without changing the database.
