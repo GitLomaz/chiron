@@ -52,7 +52,7 @@ export class QuizzesService {
     return quiz;
   }
 
-  create({ title, description, randomizeQuestionOrder, theme, answerMatching, defaultTimerSeconds, matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers }: CreateQuizDto, user: AuthUser) {
+  create({ title, description, randomizeQuestionOrder, theme, answerMatching, defaultTimerSeconds, matchingPairCount, battleshipBoardSize, snakesLaddersTrackLength, creditEveryCorrectAnswers }: CreateQuizDto, user: AuthUser) {
     if (!title.trim()) {
       throw new BadRequestException('title cannot be blank');
     }
@@ -67,18 +67,19 @@ export class QuizzesService {
         defaultTimerSeconds: defaultTimerSeconds ?? -1,
         matchingPairCount: matchingPairCount ?? 6,
         battleshipBoardSize: battleshipBoardSize ?? 10,
+        snakesLaddersTrackLength: snakesLaddersTrackLength ?? 30,
         creditEveryCorrectAnswers: creditEveryCorrectAnswers ?? 1,
         ownerId: user.id,
       },
     });
   }
 
-  async update(id: number, { title, description, randomizeQuestionOrder, theme, answerMatching, defaultTimerSeconds, matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers }: UpdateQuizDto, user: AuthUser) {
+  async update(id: number, { title, description, randomizeQuestionOrder, theme, answerMatching, defaultTimerSeconds, matchingPairCount, battleshipBoardSize, snakesLaddersTrackLength, creditEveryCorrectAnswers }: UpdateQuizDto, user: AuthUser) {
     await this.findOne(id, user);
     if (title !== undefined && !title.trim()) throw new BadRequestException('title cannot be blank');
     return this.prisma.quiz.update({
       where: { id },
-      data: { title: title?.trim(), description: description === undefined ? undefined : description.trim() || null, randomizeQuestionOrder, theme, answerMatching, defaultTimerSeconds, matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers },
+      data: { title: title?.trim(), description: description === undefined ? undefined : description.trim() || null, randomizeQuestionOrder, theme, answerMatching, defaultTimerSeconds, matchingPairCount, battleshipBoardSize, snakesLaddersTrackLength, creditEveryCorrectAnswers },
     });
   }
 

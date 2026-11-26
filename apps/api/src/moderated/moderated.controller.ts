@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, ParseIntPipe, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
-import { AdvanceModeratedQuestionDto, ArcheryNextDto, ArcheryShotDto, BattleshipAttackDto, BattleshipNextDto, CreateModeratedSessionDto, CurlingNextDto, CurlingReleaseDto, FacilitatorActionDto, FlipMatchingCardDto, JoinModeratedSessionDto, MatchingNextDto, ReportModeratedGameScoreDto, RestartModeratedSessionDto, SubmitModeratedAnswerDto, TreasureMapDigDto, TreasureMapNextDto, UpdateBoardAutoResetDto, UpdateLobbyLockDto, UpdateModeratedDurationDto, UpdatePresentationModeDto } from './dto/moderated-session.dto';
+import { AdvanceModeratedQuestionDto, ArcheryNextDto, ArcheryShotDto, BattleshipAttackDto, BattleshipNextDto, CreateModeratedSessionDto, CurlingNextDto, CurlingReleaseDto, FacilitatorActionDto, FlipMatchingCardDto, JoinModeratedSessionDto, MatchingNextDto, ReportModeratedGameScoreDto, RestartModeratedSessionDto, SimonColorDto, SimonNextDto, SimonStartDto, SnakesLaddersNextDto, SnakesLaddersRollDto, SubmitModeratedAnswerDto, TreasureMapDigDto, TreasureMapNextDto, UpdateBoardAutoResetDto, UpdateLobbyLockDto, UpdateModeratedDurationDto, UpdatePresentationModeDto } from './dto/moderated-session.dto';
 import { ModeratedService } from './moderated.service';
 import { GoogleAuthGuard } from '../auth/google-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -78,6 +78,31 @@ export class ModeratedController {
   @Post('pin/:pin/curling/next')
   nextCurlingQuestion(@Param('pin') pin: string, @Body() body: CurlingNextDto) {
     return this.moderatedService.nextCurlingQuestion(pin, body.participantId);
+  }
+
+  @Post('pin/:pin/simon/start')
+  startSimon(@Param('pin') pin: string, @Body() body: SimonStartDto) {
+    return this.moderatedService.startSimon(pin, body.participantId);
+  }
+
+  @Post('pin/:pin/simon/input')
+  playSimonColor(@Param('pin') pin: string, @Body() body: SimonColorDto) {
+    return this.moderatedService.playSimonColor(pin, body.participantId, body.color);
+  }
+
+  @Post('pin/:pin/simon/next')
+  nextSimonQuestion(@Param('pin') pin: string, @Body() body: SimonNextDto) {
+    return this.moderatedService.nextSimonQuestion(pin, body.participantId);
+  }
+
+  @Post('pin/:pin/snakes-ladders/roll')
+  rollSnakesLadders(@Param('pin') pin: string, @Body() body: SnakesLaddersRollDto) {
+    return this.moderatedService.rollSnakesLadders(pin, body.participantId);
+  }
+
+  @Post('pin/:pin/snakes-ladders/next')
+  nextSnakesLaddersQuestion(@Param('pin') pin: string, @Body() body: SnakesLaddersNextDto) {
+    return this.moderatedService.nextSnakesLaddersQuestion(pin, body.participantId);
   }
 
   @Post('pin/:pin/treasure-map/dig')

@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Delete, Get, NotFoundException, Param, ParseIntPipe, Post, Put, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { GenerateQuizService } from './generate-quiz.service';
-import { GenerateQuizDto } from './generate-quiz.dto';
+import { GenerateQuizDto, GenerateQuizFromDataSetsDto } from './generate-quiz.dto';
 import { DataSetDto } from './data-set.dto';
 import { GoogleAuthGuard } from '../auth/google-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -30,9 +30,14 @@ export class DataSetsController {
     return this.prisma.dataSet.create({ data: { name, ownerId: user.id, pairs: { create: pairs } }, include: { pairs: { orderBy: { position: 'asc' } } } });
   }
 
+  @Post('generate-quiz')
+  generateQuizFromDataSets(@Body() data: GenerateQuizFromDataSetsDto, @CurrentUser() user: AuthUser) {
+    return this.quizGenerator.generate(data.dataSetIds, data, user);
+  }
+
   @Post(':id/generate-quiz')
   generateQuiz(@Param('id', ParseIntPipe) id: number, @Body() data: GenerateQuizDto, @CurrentUser() user: AuthUser) {
-    return this.quizGenerator.generate(id, data, user);
+    return this.quizGenerator.generate([id], data, user);
   }
 
   @Put(':id')

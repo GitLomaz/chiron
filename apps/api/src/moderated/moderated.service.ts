@@ -23,21 +23,29 @@ type SharedArcheryGame = { arrows: ArcheryArrow[] };
 type CurlingPlayer = { stones: number; lastStone: CurlingStone | null };
 type CurlingStone = { id: string; participantId: string; participantName: string; direction: number; speed: number; x: number; y: number; score: number };
 type SharedCurlingGame = { stones: CurlingStone[] };
-type ProjectorPresentationMode = 'scores' | 'matching' | 'matching_leaderboard' | 'battleship' | 'battleship_leaderboard' | 'treasure_map' | 'treasure_map_leaderboard' | 'archery' | 'archery_leaderboard' | 'curling' | 'curling_leaderboard';
+// A Simon sequence belongs to each player. Every resolved pattern spends one
+// token, whether it is completed or missed. A miss leaves the sequence intact
+// so the next token resumes that same level.
+type SimonPlayer = { tokens: number; sequence: number[]; progress: number; highScore: number; playing: boolean };
+type SharedSimonGame = Record<string, never>;
+type SnakesLaddersPlayer = { rolls: number; position: number; lastRoll: number | null };
+type SnakesLaddersMove = { id: string; participantId: string; participantName: string; roll: number; from: number; landed: number; to: number };
+type SharedSnakesLaddersGame = { trackLength: number; jumps: Map<number, number>; lastMove: SnakesLaddersMove | null; recentMoves: SnakesLaddersMove[] };
+type ProjectorPresentationMode = 'scores' | 'matching' | 'matching_leaderboard' | 'battleship' | 'battleship_leaderboard' | 'treasure_map' | 'treasure_map_leaderboard' | 'archery' | 'archery_leaderboard' | 'curling' | 'curling_leaderboard' | 'simon' | 'snakes_ladders' | 'snakes_ladders_leaderboard';
 const MATCHING_SYMBOLS = ['atlas:blue-orb', 'atlas:gold-orb', 'atlas:green-orb', 'atlas:purple-orb', 'atlas:red-orb', 'atlas:silver-orb', 'atlas:gold-star', 'atlas:silver-star', 'atlas:clover', 'atlas:sprout', 'atlas:bronze-coin', 'atlas:gold-coin', 'atlas:silver-coin', 'atlas:black-gem', 'atlas:blue-gem', 'atlas:green-gem', 'atlas:orange-gem', 'atlas:pink-gem', 'atlas:purple-gem', 'atlas:red-gem', 'atlas:white-gem', 'atlas:yellow-gem', 'atlas:fire', 'atlas:leaf', 'atlas:water-drop', 'atlas:pink-blossom', 'atlas:pink-petal', 'atlas:orange-flower', 'atlas:pink-flower', 'atlas:purple-flower', 'atlas:red-flower', 'atlas:white-flower'];
 type PointScore = { points: number; streak: number; maxStreak: number; lastAward: { base: number; streak: number; speed: number; total: number } | null };
-type Participant = { id: string; clientId: string; name: string; questions: SessionQuestion[]; answers: Map<string, string>; matchProgress: Map<string, MatchProgress>; gameScores: Map<string, number>; pointScore: PointScore; matching: MatchingGame | null; battleship: BattleshipPlayer | null; treasureMap: TreasureMapPlayer | null; archery: ArcheryPlayer | null; curling: CurlingPlayer | null; betweenQuestions: boolean; joinedAt: Date; currentQuestionIndex: number; currentQuestionOpenedAt: Date | null; autoAdvanceTimer: NodeJS.Timeout | null; completedAt: Date | null };
+type Participant = { id: string; clientId: string; name: string; questions: SessionQuestion[]; answers: Map<string, string>; matchProgress: Map<string, MatchProgress>; gameScores: Map<string, number>; pointScore: PointScore; matching: MatchingGame | null; battleship: BattleshipPlayer | null; treasureMap: TreasureMapPlayer | null; archery: ArcheryPlayer | null; curling: CurlingPlayer | null; simon: SimonPlayer | null; snakesLadders: SnakesLaddersPlayer | null; betweenQuestions: boolean; joinedAt: Date; currentQuestionIndex: number; currentQuestionOpenedAt: Date | null; autoAdvanceTimer: NodeJS.Timeout | null; completedAt: Date | null };
 type ModeratedSession = {
   id: string;
   ownerId: string;
   pin: string;
   facilitatorToken: string;
-  mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling';
+  mode: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling' | 'simon' | 'snakes_ladders';
   endless: boolean;
   scoringEnabled: boolean;
   currentRoundIndex: number;
   randomizeQuestionOrder: boolean;
-  quiz: { title: string; description: string | null; theme: string; answerMatching: AnswerMatching; matchingPairCount: number; battleshipBoardSize: number; creditEveryCorrectAnswers: number; questions: SessionQuestion[] };
+  quiz: { title: string; description: string | null; theme: string; answerMatching: AnswerMatching; matchingPairCount: number; battleshipBoardSize: number; snakesLaddersTrackLength: number; creditEveryCorrectAnswers: number; questions: SessionQuestion[] };
   phase: 'lobby' | 'question' | 'complete';
   endedByTeacher: boolean;
   expired: boolean;
@@ -50,6 +58,8 @@ type ModeratedSession = {
   treasureMap: SharedTreasureMap | null;
   archery: SharedArcheryGame | null;
   curling: SharedCurlingGame | null;
+  simon: SharedSimonGame | null;
+  snakesLadders: SharedSnakesLaddersGame | null;
   autoBoardReset: boolean;
   boardResetAt: Date | null;
   participants: Map<string, Participant>;
@@ -110,15 +120,18 @@ export class ModeratedService {
     const matchingPairCount = this.supportedMatchingPairCount(quiz.matchingPairCount ?? 6);
     const battleshipBoardSize = quiz.battleshipBoardSize ?? 10;
     const creditEveryCorrectAnswers = quiz.creditEveryCorrectAnswers ?? 1;
+    const snakesLaddersTrackLength = this.supportedTrackLength(quiz.snakesLaddersTrackLength ?? 30);
     const session = {
       id, ownerId: user.id, pin, facilitatorToken, mode, endless, scoringEnabled, currentRoundIndex: -1, randomizeQuestionOrder: quiz.randomizeQuestionOrder,
-      quiz: { title: quiz.title, description: quiz.description, theme: quiz.theme, answerMatching: quiz.answerMatching === 'exact' ? 'exact' : 'close', matchingPairCount, battleshipBoardSize, creditEveryCorrectAnswers, questions: authoredQuestions },
-      phase: 'lobby', endedByTeacher: false, expired: false, durationSeconds, endsAt: null, lobbyLocked: false, presentationMode: mode === 'matching' ? 'matching' : mode === 'battleship' ? 'battleship' : mode === 'treasure_map' ? 'treasure_map' : mode === 'archery' ? 'archery' : mode === 'curling' ? 'curling' : 'scores',
+      quiz: { title: quiz.title, description: quiz.description, theme: quiz.theme, answerMatching: quiz.answerMatching === 'exact' ? 'exact' : 'close', matchingPairCount, battleshipBoardSize, snakesLaddersTrackLength, creditEveryCorrectAnswers, questions: authoredQuestions },
+      phase: 'lobby', endedByTeacher: false, expired: false, durationSeconds, endsAt: null, lobbyLocked: false, presentationMode: mode === 'matching' ? 'matching' : mode === 'battleship' ? 'battleship' : mode === 'treasure_map' ? 'treasure_map' : mode === 'archery' ? 'archery' : mode === 'curling' ? 'curling' : mode === 'simon' ? 'simon' : mode === 'snakes_ladders' ? 'snakes_ladders' : 'scores',
       matching: mode === 'matching' ? this.newMatchingGame(matchingPairCount, randomUUID()) : null,
       battleship: mode === 'battleship' ? this.newBattleshipGame(battleshipBoardSize, id) : null,
       treasureMap: mode === 'treasure_map' ? this.newTreasureMap(id) : null,
       archery: mode === 'archery' ? this.newArcheryGame() : null,
       curling: mode === 'curling' ? this.newCurlingGame() : null,
+      simon: mode === 'simon' ? {} : null,
+      snakesLadders: mode === 'snakes_ladders' ? this.newSnakesLaddersGame(snakesLaddersTrackLength) : null,
       autoBoardReset: false, boardResetAt: null,
       participants: new Map(), bannedClientIds: new Set(), createdAt: new Date(),
     } satisfies ModeratedSession;
@@ -152,6 +165,8 @@ export class ModeratedService {
       treasureMap: session.treasureMap && participant ? this.treasureMapState(session.treasureMap, participant) : null,
       archery: session.archery && participant ? this.archeryState(session.archery, participant) : null,
       curling: session.curling && participant ? this.curlingState(session.curling, participant) : null,
+      simon: session.simon && participant ? this.simonState(session, participant) : null,
+      snakesLadders: session.snakesLadders && participant ? this.snakesLaddersState(session, participant) : null,
       gameLeaderboard: this.gameLeaderboard(session),
       betweenQuestions: participant?.betweenQuestions ?? false,
       currentQuestion: question ? {
@@ -179,6 +194,8 @@ export class ModeratedService {
       treasureMap: session.treasureMap ? this.treasureMapState(session.treasureMap, undefined, true) : null,
       archery: session.archery ? this.archeryState(session.archery, undefined, true) : null,
       curling: session.curling ? this.curlingState(session.curling, undefined, true) : null,
+      simon: session.simon ? this.simonState(session) : null,
+      snakesLadders: session.snakesLadders ? this.snakesLaddersState(session) : null,
       completedCount: participants.filter((participant) => participant.completedAt !== null).length,
       participants: participants.map((participant) => ({
         id: participant.id,
@@ -246,12 +263,14 @@ export class ModeratedService {
     session.expired = false;
     session.endsAt = new Date(Date.now() + session.durationSeconds * 1000);
     session.currentRoundIndex = 0;
-    session.presentationMode = mode === 'matching' ? 'matching' : mode === 'battleship' ? 'battleship' : mode === 'treasure_map' ? 'treasure_map' : mode === 'archery' ? 'archery' : mode === 'curling' ? 'curling' : 'scores';
+    session.presentationMode = mode === 'matching' ? 'matching' : mode === 'battleship' ? 'battleship' : mode === 'treasure_map' ? 'treasure_map' : mode === 'archery' ? 'archery' : mode === 'curling' ? 'curling' : mode === 'simon' ? 'simon' : mode === 'snakes_ladders' ? 'snakes_ladders' : 'scores';
     session.matching = mode === 'matching' ? this.newMatchingGame(session.quiz.matchingPairCount, randomUUID()) : null;
     session.battleship = mode === 'battleship' ? this.newBattleshipGame(session.quiz.battleshipBoardSize, randomUUID()) : null;
     session.treasureMap = mode === 'treasure_map' ? this.newTreasureMap(randomUUID()) : null;
     session.archery = mode === 'archery' ? this.newArcheryGame() : null;
     session.curling = mode === 'curling' ? this.newCurlingGame() : null;
+    session.simon = mode === 'simon' ? {} : null;
+    session.snakesLadders = mode === 'snakes_ladders' ? this.newSnakesLaddersGame(session.quiz.snakesLaddersTrackLength) : null;
     session.boardResetAt = null;
 
     for (const participant of session.participants.values()) {
@@ -266,6 +285,8 @@ export class ModeratedService {
       participant.treasureMap = mode === 'treasure_map' ? { tokens: 0 } : null;
       participant.archery = mode === 'archery' ? { arrows: 0, lastShot: null } : null;
       participant.curling = mode === 'curling' ? { stones: 0, lastStone: null } : null;
+      participant.simon = mode === 'simon' ? this.newSimonPlayer() : null;
+      participant.snakesLadders = mode === 'snakes_ladders' ? this.newSnakesLaddersPlayer() : null;
       participant.betweenQuestions = false;
       participant.currentQuestionIndex = -1;
       participant.currentQuestionOpenedAt = null;
@@ -298,6 +319,8 @@ export class ModeratedService {
     if (boardMode === 'treasure_map' && !session.treasureMap) throw new BadRequestException('The Treasure Map is only available in Treasure Map mode');
     if (boardMode === 'archery' && !session.archery) throw new BadRequestException('The archery board is only available in Archery mode');
     if (boardMode === 'curling' && !session.curling) throw new BadRequestException('The curling sheet is only available in Curling mode');
+    if (boardMode === 'simon' && !session.simon) throw new BadRequestException('The Simon high score is only available in Simon mode');
+    if (boardMode === 'snakes_ladders' && !session.snakesLadders) throw new BadRequestException('The Snakes & Ladders board is only available in Snakes & Ladders mode');
     session.presentationMode = presentationMode;
     return this.facilitatorState(sessionId, user);
   }
@@ -337,7 +360,7 @@ export class ModeratedService {
     if (session.lobbyLocked) throw new BadRequestException('The facilitator has locked this lobby');
     if (session.bannedClientIds.has(clientId)) throw new ForbiddenException('You have been removed from this live test');
     const questions = this.activeQuestions(session);
-    const participant: Participant = { id: randomUUID(), clientId, name: cleanName, questions: session.randomizeQuestionOrder ? this.shuffleQuestionsInPlace(questions, session.participants.values()) : [...questions], answers: new Map<string, string>(), matchProgress: new Map<string, MatchProgress>(), gameScores: new Map<string, number>(), pointScore: this.newPointScore(), matching: session.mode === 'matching' ? { credits: 0, selectedCard: null, score: 0 } : null, battleship: session.mode === 'battleship' ? { tokens: 0, score: 0 } : null, treasureMap: session.mode === 'treasure_map' ? { tokens: 0 } : null, archery: session.mode === 'archery' ? { arrows: 0, lastShot: null } : null, curling: session.mode === 'curling' ? { stones: 0, lastStone: null } : null, betweenQuestions: false, joinedAt: new Date(), currentQuestionIndex: -1, currentQuestionOpenedAt: null, autoAdvanceTimer: null, completedAt: null };
+    const participant: Participant = { id: randomUUID(), clientId, name: cleanName, questions: session.randomizeQuestionOrder ? this.shuffleQuestionsInPlace(questions, session.participants.values()) : [...questions], answers: new Map<string, string>(), matchProgress: new Map<string, MatchProgress>(), gameScores: new Map<string, number>(), pointScore: this.newPointScore(), matching: session.mode === 'matching' ? { credits: 0, selectedCard: null, score: 0 } : null, battleship: session.mode === 'battleship' ? { tokens: 0, score: 0 } : null, treasureMap: session.mode === 'treasure_map' ? { tokens: 0 } : null, archery: session.mode === 'archery' ? { arrows: 0, lastShot: null } : null, curling: session.mode === 'curling' ? { stones: 0, lastStone: null } : null, simon: session.mode === 'simon' ? this.newSimonPlayer() : null, snakesLadders: session.mode === 'snakes_ladders' ? this.newSnakesLaddersPlayer() : null, betweenQuestions: false, joinedAt: new Date(), currentQuestionIndex: -1, currentQuestionOpenedAt: null, autoAdvanceTimer: null, completedAt: null };
     session.participants.set(participant.id, participant);
     if (session.phase === 'question') {
       if (session.mode === 'facilitated') participant.currentQuestionIndex = session.currentRoundIndex - 1;
@@ -391,6 +414,14 @@ export class ModeratedService {
       this.clearParticipantTimer(participant);
     } else if (participant.curling) {
       if (earnsCredit) participant.curling.stones += 1;
+      participant.betweenQuestions = true;
+      this.clearParticipantTimer(participant);
+    } else if (participant.simon) {
+      if (earnsCredit) participant.simon.tokens += 1;
+      participant.betweenQuestions = true;
+      this.clearParticipantTimer(participant);
+    } else if (participant.snakesLadders) {
+      if (earnsCredit) participant.snakesLadders.rolls += 1;
       participant.betweenQuestions = true;
       this.clearParticipantTimer(participant);
     } else if (session.mode !== 'facilitated') {
@@ -514,6 +545,73 @@ export class ModeratedService {
     return this.advanceParticipant(session, participant);
   }
 
+  startSimon(pin: string, participantId: string) {
+    const session = this.getByPin(pin);
+    const participant = session.participants.get(participantId);
+    const simon = participant?.simon;
+    if (session.phase !== 'question' || !participant || !simon || !participant.betweenQuestions) throw new BadRequestException('Simon is available between questions');
+    if (simon.playing) throw new BadRequestException('Finish the current Simon pattern first');
+    if (simon.tokens < 1) throw new BadRequestException('Answer a question correctly to earn a Simon token');
+    simon.progress = 0;
+    simon.playing = true;
+    return this.simonState(session, participant);
+  }
+
+  playSimonColor(pin: string, participantId: string, color: number) {
+    const session = this.getByPin(pin);
+    const participant = session.participants.get(participantId);
+    const simon = participant?.simon;
+    if (session.phase !== 'question' || !participant || !simon || !participant.betweenQuestions || !simon.playing) throw new BadRequestException('Start a Simon turn before selecting a color');
+    if (!Number.isInteger(color) || color < 0 || color > 5) throw new BadRequestException('Choose a Simon color');
+    if (simon.sequence[simon.progress] !== color) {
+      simon.tokens -= 1;
+      simon.progress = 0;
+      simon.playing = false;
+      return { ...this.simonState(session, participant), correct: false, completedLevel: false };
+    }
+    simon.progress += 1;
+    if (simon.progress === simon.sequence.length) {
+      simon.tokens -= 1;
+      simon.highScore = Math.max(simon.highScore, simon.sequence.length);
+      simon.sequence.push(randomInt(6));
+      simon.progress = 0;
+      simon.playing = simon.tokens > 0;
+      return { ...this.simonState(session, participant), correct: true, completedLevel: true };
+    }
+    return { ...this.simonState(session, participant), correct: true, completedLevel: false };
+  }
+
+  nextSimonQuestion(pin: string, participantId: string) {
+    const session = this.getByPin(pin);
+    const participant = session.participants.get(participantId);
+    if (session.phase !== 'question' || session.mode !== 'simon' || !participant?.simon || !participant.betweenQuestions) throw new BadRequestException('There is no next question to start');
+    if (participant.simon.playing) throw new BadRequestException('Finish the current Simon turn before continuing');
+    return this.advanceParticipant(session, participant);
+  }
+
+  rollSnakesLadders(pin: string, participantId: string) {
+    const session = this.getByPin(pin);
+    const participant = session.participants.get(participantId);
+    const game = session.snakesLadders;
+    const player = participant?.snakesLadders;
+    if (session.phase !== 'question' || !participant || !player || !game || !participant.betweenQuestions) throw new BadRequestException('Snakes & Ladders is available between questions');
+    if (player.rolls < 1) throw new BadRequestException('Answer a question correctly to earn a dice roll');
+    const roll = randomInt(1, 7), from = player.position, landed = Math.min(game.trackLength, from + roll), to = game.jumps.get(landed) ?? landed;
+    player.rolls -= 1;
+    player.position = to;
+    player.lastRoll = roll;
+    game.lastMove = { id: randomUUID(), participantId: participant.id, participantName: participant.name, roll, from, landed, to };
+    game.recentMoves.push(game.lastMove);
+    if (game.recentMoves.length > 500) game.recentMoves.splice(0, game.recentMoves.length - 500);
+    return this.snakesLaddersState(session, participant);
+  }
+
+  nextSnakesLaddersQuestion(pin: string, participantId: string) {
+    const session = this.getByPin(pin), participant = session.participants.get(participantId);
+    if (session.phase !== 'question' || session.mode !== 'snakes_ladders' || !participant?.snakesLadders || !participant.betweenQuestions) throw new BadRequestException('There is no next question to start');
+    return this.advanceParticipant(session, participant);
+  }
+
   digTreasureMap(pin: string, participantId: string, cell: number) {
     const session = this.getByPin(pin);
     const participant = session.participants.get(participantId);
@@ -553,6 +651,9 @@ export class ModeratedService {
   }
 
   private advanceParticipant(session: ModeratedSession, participant: Participant) {
+    // Token-game actions intentionally never call this themselves, including
+    // when they spend a player's last token. Every live mode keeps the player
+    // on its game screen until they explicitly choose its Next question action.
     participant.betweenQuestions = false;
     if (participant.matching) participant.matching.selectedCard = null;
     this.openParticipantQuestion(session, participant);
@@ -664,6 +765,35 @@ export class ModeratedService {
     };
   }
 
+  private newSimonPlayer(): SimonPlayer {
+    return { tokens: 0, sequence: [randomInt(6)], progress: 0, highScore: 0, playing: false };
+  }
+
+  private simonState(session: ModeratedSession, player?: Participant) {
+    const leaderboard = [...session.participants.values()]
+      .filter((participant) => participant.simon)
+      .map((participant) => ({ id: participant.id, name: participant.name, score: participant.simon!.highScore }))
+      .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+    const highScore = leaderboard[0]?.score ?? 0;
+    return {
+      tokens: player?.simon?.tokens ?? null,
+      sequence: player?.simon?.sequence ?? [],
+      progress: player?.simon?.progress ?? 0,
+      playing: player?.simon?.playing ?? false,
+      highScore: player?.simon?.highScore ?? highScore,
+      classHighScore: highScore,
+      leaderboard,
+    };
+  }
+
+  private snakesLaddersState(session: ModeratedSession, player?: Participant) {
+    const game = session.snakesLadders!;
+    const players = [...session.participants.values()].filter((participant) => participant.snakesLadders)
+      .map((participant) => ({ id: participant.id, name: participant.name, position: participant.snakesLadders!.position }))
+      .sort((a, b) => b.position - a.position || a.name.localeCompare(b.name));
+    return { trackLength: game.trackLength, jumps: [...game.jumps.entries()].map(([from, to]) => ({ from, to })), rolls: player?.snakesLadders?.rolls ?? null, position: player?.snakesLadders?.position ?? null, lastRoll: player?.snakesLadders?.lastRoll ?? null, players, lastMove: game.lastMove, recentMoves: player ? [] : game.recentMoves };
+  }
+
   reportGameScore(pin: string, body: ReportModeratedGameScoreDto) {
     const session = this.getByPin(pin);
     const participant = session.participants.get(body.participantId);
@@ -730,8 +860,31 @@ export class ModeratedService {
     return [2, 4, 6, 8, 18, 32].includes(pairCount) ? pairCount : 32;
   }
 
+  private supportedTrackLength(length: number) { return [30, 50, 80, 100].includes(length) ? length : 30; }
+
+  private newSnakesLaddersPlayer(): SnakesLaddersPlayer { return { rolls: 0, position: 0, lastRoll: null }; }
+
+  private newSnakesLaddersGame(trackLength: number): SharedSnakesLaddersGame {
+    const length = this.supportedTrackLength(trackLength), jumps = new Map<number, number>();
+    const add = (from: number, to: number) => { if (from > 0 && to > 0 && from < length && to < length) jumps.set(from, to); };
+    // These endpoints share a column on the alternating, winding track.
+    const ladders: Record<number, [number, number][]> = {
+      30: [[4, 9], [14, 23], [21, 28]],
+      50: [[6, 15], [23, 38], [37, 44]],
+      80: [[6, 26], [23, 43], [47, 54], [62, 79]],
+      100: [[6, 26], [23, 43], [47, 67], [62, 79], [83, 98]],
+    };
+    for (const [from, to] of ladders[length]) add(from, to);
+    add(Math.round(length * .28), Math.round(length * .08));
+    add(Math.round(length * .64), Math.round(length * .38));
+    add(Math.round(length * .9), Math.round(length * .58));
+    if (length === 80) add(66, 42);
+    if (length === 100) add(76, 55);
+    return { trackLength: length, jumps, lastMove: null, recentMoves: [] };
+  }
+
   private questionsForMode(questions: SessionQuestion[], mode: ModeratedSession['mode']) {
-    return mode === 'matching' || mode === 'battleship' || mode === 'treasure_map' || mode === 'archery' || mode === 'curling' ? questions.filter((item) => item.itemType === 'question') : questions;
+    return mode === 'matching' || mode === 'battleship' || mode === 'treasure_map' || mode === 'archery' || mode === 'curling' || mode === 'simon' || mode === 'snakes_ladders' ? questions.filter((item) => item.itemType === 'question') : questions;
   }
 
   private activeQuestions(session: ModeratedSession) {

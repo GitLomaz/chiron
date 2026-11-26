@@ -16,17 +16,18 @@ const GAMES = [
 export class GenerateQuizService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async generate(dataSetId: number, input: GenerateQuizDto, user: AuthUser) {
+  async generate(dataSetIds: number[], input: GenerateQuizDto, user: AuthUser) {
     const title = input.title.trim();
     if (!title) throw new BadRequestException('Enter a quiz title');
     if (input.questionCount < input.questionTypes.length) throw new BadRequestException('Choose at least one question per selected type');
-    const set = await this.prisma.dataSet.findFirst({ where: { id: dataSetId, ownerId: user.id }, include: { pairs: { orderBy: { position: 'asc' } } } });
-    if (!set) throw new NotFoundException('Data set not found');
+    const ids = [...new Set(dataSetIds)];
+    const sets = await this.prisma.dataSet.findMany({ where: { id: { in: ids }, ownerId: user.id }, include: { pairs: { orderBy: { position: 'asc' } } } });
+    if (sets.length !== ids.length) throw new NotFoundException('One or more data sets were not found');
     // Existing question editors limit answers to 500 characters; omit entries
     // that could not be edited as generated questions.
-    const pairs = set.pairs.map(({ question, answer }) => ({ question: question.trim(), answer: answer.trim() }))
+    const pairs = sets.flatMap((set) => set.pairs.map(({ question, answer }) => ({ question: question.trim(), answer: answer.trim() })))
       .filter(({ question, answer }) => question.length > 0 && question.length <= 2000 && answer.length > 0 && answer.length <= 500);
-    if (!pairs.length) throw new BadRequestException('This data set needs a pair with an answer of at most 500 characters');
+    if (!pairs.length) throw new BadRequestException('The selected data sets need a pair with an answer of at most 500 characters');
     const matchPairs = this.uniqueMatchingPairs(pairs.filter((pair) => pair.question.length <= 500));
     if (input.questionTypes.includes('matching') && matchPairs.length < 2) throw new BadRequestException('Matching needs two pairs with unique questions and answers, each at most 500 characters');
     const choices = pairs.filter((pair) => this.alternatives(pair, pairs).length > 0);

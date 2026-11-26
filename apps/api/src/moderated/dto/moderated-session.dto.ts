@@ -7,8 +7,8 @@ export class CreateModeratedSessionDto {
   durationSeconds!: number;
 
   @IsOptional()
-  @IsIn(['classic', 'facilitated', 'matching', 'battleship', 'treasure_map', 'archery', 'curling'])
-  mode?: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling';
+  @IsIn(['classic', 'facilitated', 'matching', 'battleship', 'treasure_map', 'archery', 'curling', 'simon', 'snakes_ladders'])
+  mode?: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling' | 'simon' | 'snakes_ladders';
 
   @IsOptional()
   @IsBoolean()
@@ -60,13 +60,13 @@ export class UpdateLobbyLockDto extends FacilitatorActionDto {
 }
 
 export class UpdatePresentationModeDto extends FacilitatorActionDto {
-  @IsIn(['scores', 'matching', 'matching_leaderboard', 'battleship', 'battleship_leaderboard', 'treasure_map', 'treasure_map_leaderboard', 'archery', 'archery_leaderboard', 'curling', 'curling_leaderboard'])
-  presentationMode!: 'scores' | 'matching' | 'matching_leaderboard' | 'battleship' | 'battleship_leaderboard' | 'treasure_map' | 'treasure_map_leaderboard' | 'archery' | 'archery_leaderboard' | 'curling' | 'curling_leaderboard';
+  @IsIn(['scores', 'matching', 'matching_leaderboard', 'battleship', 'battleship_leaderboard', 'treasure_map', 'treasure_map_leaderboard', 'archery', 'archery_leaderboard', 'curling', 'curling_leaderboard', 'simon', 'snakes_ladders', 'snakes_ladders_leaderboard'])
+  presentationMode!: 'scores' | 'matching' | 'matching_leaderboard' | 'battleship' | 'battleship_leaderboard' | 'treasure_map' | 'treasure_map_leaderboard' | 'archery' | 'archery_leaderboard' | 'curling' | 'curling_leaderboard' | 'simon' | 'snakes_ladders' | 'snakes_ladders_leaderboard';
 }
 
 export class RestartModeratedSessionDto extends FacilitatorActionDto {
-  @IsIn(['classic', 'facilitated', 'matching', 'battleship', 'treasure_map', 'archery', 'curling'])
-  mode!: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling';
+  @IsIn(['classic', 'facilitated', 'matching', 'battleship', 'treasure_map', 'archery', 'curling', 'simon', 'snakes_ladders'])
+  mode!: 'classic' | 'facilitated' | 'matching' | 'battleship' | 'treasure_map' | 'archery' | 'curling' | 'simon' | 'snakes_ladders';
 }
 
 export class UpdateBoardAutoResetDto extends FacilitatorActionDto {
@@ -162,6 +162,36 @@ export class CurlingReleaseDto {
 }
 
 export class CurlingNextDto {
+  @IsUUID('4')
+  participantId!: string;
+}
+
+export class SimonStartDto {
+  @IsUUID('4')
+  participantId!: string;
+}
+
+export class SimonColorDto {
+  @IsUUID('4')
+  participantId!: string;
+
+  @IsInt()
+  @Min(0)
+  @Max(5)
+  color!: number;
+}
+
+export class SimonNextDto {
+  @IsUUID('4')
+  participantId!: string;
+}
+
+export class SnakesLaddersRollDto {
+  @IsUUID('4')
+  participantId!: string;
+}
+
+export class SnakesLaddersNextDto {
   @IsUUID('4')
   participantId!: string;
 }

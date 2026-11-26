@@ -1,5 +1,5 @@
 import { IsBoolean, IsIn, IsInt, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
-import { BATTLESHIP_BOARD_SIZES, CREDIT_EARNING_INTERVALS, MATCHING_PAIR_COUNTS, QUIZ_THEMES, QuizTheme, TIMER_SECONDS } from './create-quiz.dto';
+import { BATTLESHIP_BOARD_SIZES, CREDIT_EARNING_INTERVALS, MATCHING_PAIR_COUNTS, QUIZ_THEMES, QuizTheme, SNAKES_LADDERS_TRACK_LENGTHS, TIMER_SECONDS } from './create-quiz.dto';
 import { ANSWER_MATCHING_MODES, AnswerMatching } from '../../question-types/answer-matching';
 
 export class UpdateQuizDto {
@@ -40,6 +40,11 @@ export class UpdateQuizDto {
   @IsInt()
   @IsIn(BATTLESHIP_BOARD_SIZES)
   battleshipBoardSize?: number;
+
+  @IsOptional()
+  @IsInt()
+  @IsIn(SNAKES_LADDERS_TRACK_LENGTHS)
+  snakesLaddersTrackLength?: number;
 
   @IsOptional()
   @IsInt()

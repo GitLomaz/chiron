@@ -10,3 +10,8 @@ export class GenerateQuizDto {
   questionTypes!: GeneratedQuestionType[];
   @IsInt() @Min(0) @Max(20) gameCount!: number;
 }
+
+export class GenerateQuizFromDataSetsDto extends GenerateQuizDto {
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(100) @ArrayUnique() @IsInt({ each: true }) @Min(1, { each: true })
+  dataSetIds!: number[];
+}
